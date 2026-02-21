@@ -155,7 +155,7 @@ app.use(cors({
 }));
 
 // Handle OPTIONS preflight for all routes
-app.options('/(.*)', cors());
+app.options('*', cors());
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
 app.use((req, res, next) => {
