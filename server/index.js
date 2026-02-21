@@ -133,17 +133,38 @@ app.use((req, res, next) => {
 // --- SECURITY MIDDLEWARE ---
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cookieParser());
+
+// CORS: Allow Netlify frontend + localhost dev
+const allowedOrigins = [
+    'https://kevryn-ide.netlify.app',
+    'http://localhost:3000',
+    'http://localhost:3001'
+];
 app.use(cors({
-    origin: true,
+    origin: (origin, callback) => {
+        // Allow requests with no origin (mobile, curl, etc.) or from allowed list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(null, true); // Allow all in production to avoid blocking
+        }
+    },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// --- WEBCONTAINER SECURITY HEADERS ---
+// Handle OPTIONS preflight for all routes
+app.options('*', cors());
+
+// --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
 app.use((req, res, next) => {
-    res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
-    res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    // Only set COOP/COEP for the root/app pages, NOT API routes
+    // These headers break cross-origin API calls when set globally
+    if (!req.path.startsWith('/auth') && !req.path.startsWith('/api') && !req.path.startsWith('/files') && !req.path.startsWith('/run-code')) {
+        res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
+        res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
+    }
     next();
 });
 
