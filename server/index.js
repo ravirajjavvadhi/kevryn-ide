@@ -2,6 +2,14 @@ require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
+
+process.on('uncaughtException', (err) => {
+    console.error('FATAL: Uncaught Exception:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('FATAL: Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
@@ -2654,4 +2662,4 @@ process.on('SIGTERM', () => {
     });
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log(`🚀 Backend running on port ${PORT}`));
+server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
