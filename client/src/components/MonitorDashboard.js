@@ -196,7 +196,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded }) =>
                 ...prev,
                 [data.username]: {
                     ...(prev[data.username] || {}),
-                    status: data.status || 'active',
+                    status: data.status, // Honor explicit status (active or offline)
                     lastActive: data.lastActive || new Date().toLocaleTimeString(),
                     code: data.code !== undefined ? data.code : (prev[data.username]?.code || ''),
                     activeFile: data.activeFile || prev[data.username]?.activeFile || null,

@@ -396,9 +396,9 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
 
     // --- Logout Handler ---
     const handleLogout = () => {
-        if (socketRef.current && session?.sessionId && username) {
+        if (socketRef.current && (session?.sessionId || session?._id) && username) {
             socketRef.current.emit('student-leave-lab', {
-                sessionId: session.sessionId,
+                sessionId: session.sessionId || session._id,
                 username,
                 userId
             });

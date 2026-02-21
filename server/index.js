@@ -2427,29 +2427,10 @@ io.on('connection', (socket) => {
             if (terminals[id]) terminals[id].kill();
         });
 
-        // FIXED Bug 3: If this was a faculty socket watching a session, clean up
+        // FIXED: Don't auto-end session on faculty disconnect to support reloads.
+        // Sessions only end via explicit 'End Session' button or timer.
         if (facultySessionId) {
-            console.log(`[LAB] Faculty socket disconnected from session ${facultySessionId}`);
-            try {
-                // Check if session is still supposedly active in DB
-                const sess = await LabSession.findOne({ _id: facultySessionId, isActive: true });
-                if (sess) {
-                    // End the session since faculty left
-                    await LabSession.findByIdAndUpdate(facultySessionId, {
-                        isActive: false,
-                        endTime: new Date()
-                    });
-                    // Clear live state
-                    if (liveLabState[facultySessionId]) {
-                        delete liveLabState[facultySessionId];
-                    }
-                    // Notify all students globally
-                    io.emit('session-ended', { sessionId: facultySessionId });
-                    console.log(`[LAB] Session ${facultySessionId} auto-ended — faculty disconnected`);
-                }
-            } catch (e) {
-                console.error('[LAB] Failed to auto-end session on faculty disconnect:', e.message);
-            }
+            console.log(`[LAB] Faculty socket disconnected from session ${facultySessionId} (Session remains active)`);
             facultySessionId = null;
         }
 
