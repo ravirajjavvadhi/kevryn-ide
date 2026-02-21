@@ -2678,6 +2678,3 @@ io.on('connection', (socket) => {
         } else {
             process.exit(0);
         }
-    });
-
-
