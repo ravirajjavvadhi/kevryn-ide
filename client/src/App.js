@@ -5,7 +5,7 @@ import io from 'socket.io-client';
 import axios from 'axios';
 import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from 'framer-motion';
 import {
-    FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub, FaBell, FaShieldAlt, FaSpinner
+    FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub, FaBell, FaSpinner
 } from 'react-icons/fa';
 import FileTree from './components/FileTree';
 import Terminal from './components/Terminal';
