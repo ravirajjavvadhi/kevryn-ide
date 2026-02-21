@@ -1,4 +1,4 @@
-const initialPort = process.env.PORT;
+﻿const initialPort = process.env.PORT;
 require('dotenv').config();
 const finalPort = process.env.PORT;
 
@@ -23,7 +23,7 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-// node-pty is a native module — load it optionally so server boots on Railway even without native compilation
+// node-pty is a native module â€” load it optionally so server boots on Railway even without native compilation
 let pty;
 try {
     pty = require('node-pty');
@@ -1017,7 +1017,7 @@ app.use('/sites/:userId', (req, res, next) => {
 // --- DB CONNECTION ---
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
-        console.log("🚀 SUCCESS: Connected to MongoDB");
+        console.log("ðŸš€ SUCCESS: Connected to MongoDB");
 
         // CLEANUP: Reset all students to 'offline' on server restart
         // This prevents "ghost" active students if the server crashed/restarted while they were online.
@@ -1031,7 +1031,7 @@ mongoose.connect(process.env.MONGODB_URI)
             console.error("[CLEANUP] Failed to reset student statuses:", e);
         }
     })
-    .catch(err => console.error("❌ FAILURE: MongoDB Connection Error:", err.message));
+    .catch(err => console.error("âŒ FAILURE: MongoDB Connection Error:", err.message));
 
 // activeDeployments and nextPort removed in favor of DeployManager
 
@@ -1073,7 +1073,7 @@ app.get('/lab/report/:sessionId/:username', async (req, res) => {
 
 // --- DEPLOYMENT ROUTES ---
 app.post('/deploy/frontend', authenticate, async (req, res) => {
-    console.log("🚀 Deploy Frontend Request received from:", req.user.username);
+    console.log("ðŸš€ Deploy Frontend Request received from:", req.user.username);
     const username = req.user.username;
     const userId = req.user.userId;
     const { siteName, backendUrl, courseId } = req.body; // NEW: Accept courseId
@@ -1281,7 +1281,7 @@ function findEntryFileHelper(baseDir, entryRelativePath, depth = 0) {
 }
 
 app.post('/deploy/backend', authenticate, async (req, res) => {
-    console.log("🚀 Deploy Backend Request received");
+    console.log("ðŸš€ Deploy Backend Request received");
     const userId = req.user.userId;
     const { entryFile, courseId } = req.body; // NEW: Accept courseId
     const projectId = userId.toString();
@@ -2176,7 +2176,7 @@ io.on('connection', (socket) => {
 
     // --- VAYU LAB MONITOR: Socket Events ---
 
-    // Track faculty socket → sessionId mapping for disconnect handling
+    // Track faculty socket â†’ sessionId mapping for disconnect handling
     let facultySessionId = null;
 
     // Faculty joins a session room to receive student updates
@@ -2241,7 +2241,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Student sends code updates → broadcast to faculty
+    // Student sends code updates â†’ broadcast to faculty
     socket.on('student-code-update', ({ sessionId, username, fileName, code, language }) => {
         // console.log(`[LAB] Code update from ${username} | session: ${sessionId} | len: ${(code || '').length}`);
         if (sessionId && username) {
@@ -2286,7 +2286,7 @@ io.on('connection', (socket) => {
     // FIX: CREATE NODE ERROR - Now supports recursive folder creation and callbacks
     socket.on('create-node', async ({ parentId, newNode, userId, courseId }, callback) => {
         if (!userId) {
-            console.error("❌ create-node failed: No User ID");
+            console.error("âŒ create-node failed: No User ID");
             if (callback) callback({ error: "No User ID" });
             return;
         }
@@ -2329,7 +2329,7 @@ io.on('connection', (socket) => {
 
             if (callback) callback({ success: true, fileId: f._id });
         } catch (err) {
-            console.error("❌ create-node error:", err);
+            console.error("âŒ create-node error:", err);
             if (callback) callback({ error: err.message });
         }
     });
@@ -2514,11 +2514,11 @@ io.on('connection', (socket) => {
             // Notify faculty that student is online
             io.to(`session_${sessionId}_faculty`).emit('student-status-change', { username, status: 'online' });
         }
-        // ─────────────────────────────────────────────
+        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // BEAST FEATURES: Advanced Behavior Tracking
-        // ─────────────────────────────────────────────
+        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-        // Tab Switch Tracking — fires when student leaves the lab tab
+        // Tab Switch Tracking â€” fires when student leaves the lab tab
         socket.on('student-tab-switch', ({ sessionId, username, direction, switchCount }) => {
             if (!sessionId || !username) return;
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
@@ -2556,10 +2556,10 @@ io.on('connection', (socket) => {
                 }
             }).catch(() => { });
 
-            console.log(`[LAB] Tab switch #${switchCount} — ${username} ${direction} (session ${sessionId})`);
+            console.log(`[LAB] Tab switch #${switchCount} â€” ${username} ${direction} (session ${sessionId})`);
         });
 
-        // Paste Detection — fires when student pastes in the editor
+        // Paste Detection â€” fires when student pastes in the editor
         socket.on('student-paste', ({ sessionId, username, charCount, pasteCount }) => {
             if (!sessionId || !username) return;
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
@@ -2592,7 +2592,7 @@ io.on('connection', (socket) => {
                 }
             }).catch(() => { });
 
-            console.log(`[LAB] Paste #${pasteCount} by ${username} — ${charCount} chars`);
+            console.log(`[LAB] Paste #${pasteCount} by ${username} â€” ${charCount} chars`);
         });
 
         // Faculty Announces to all students in session
@@ -2658,27 +2658,3 @@ io.on('connection', (socket) => {
             }).catch(() => { });
         });
 
-    });
-
-
-    // --- GRACEFUL SHUTDOWN ---
-    process.on('SIGTERM', () => {
-        console.log('SIGTERM received. Shutting down gracefully...');
-        if (server) {
-            server.close(async () => {
-                try {
-                    await mongoose.connection.close();
-                    console.log('Mongoose connection closed.');
-                    process.exit(0);
-                } catch (err) {
-                    console.error('Error during Mongoose closure:', err);
-                    process.exit(1);
-                }
-            });
-        } else {
-            process.exit(0);
-        }
-    });
-});
-
-server.listen(PORT, () => console.log(`?? Backend running on port ${PORT}`));
