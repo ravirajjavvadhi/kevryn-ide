@@ -1,4 +1,5 @@
-﻿const initialPort = process.env.PORT;
+﻿console.log('[DEBUG] --- START OF INDEX.JS ---');
+const initialPort = process.env.PORT;
 require('dotenv').config();
 const finalPort = process.env.PORT;
 
@@ -89,6 +90,7 @@ app.use((req, res, next) => {
 // --- HEALTH CHECK ---
 app.get('/', (req, res) => {
     console.log(`[${new Date().toISOString()}] !!! HEALTH CHECK HIT !!!`);
+console.log('[DEBUG] --- IMPORTS COMPLETE ---');
     res.send('Kevryn Server is Running (Health Check OK)');
 });
 
@@ -1015,6 +1017,7 @@ app.use('/sites/:userId', (req, res, next) => {
 });
 
 // --- DB CONNECTION ---
+console.log('[DEBUG] --- DB CONNECT CALLED ---');
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
         console.log("ðŸš€ SUCCESS: Connected to MongoDB");
@@ -2667,4 +2670,5 @@ process.on('SIGTERM', () => {
     else process.exit(0);
 });
 
+console.log('[DEBUG] --- BEFORE SERVER LISTEN ---');
 server.listen(PORT, '0.0.0.0', () => console.log('Backend running on port ' + PORT + ' (Bound to 0.0.0.0)'));
