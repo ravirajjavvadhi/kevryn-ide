@@ -34,10 +34,10 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
     useEffect(() => { codeRef.current = code; }, [code]);
     useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
 
-    const api = axios.create({
+    const api = useMemo(() => axios.create({
         baseURL: SERVER_URL,
         headers: { Authorization: token }
-    });
+    }), [token]);
 
     // --- Timer ---
     useEffect(() => {

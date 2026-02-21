@@ -82,7 +82,10 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded }) =>
     const [sessionTimeline, setSessionTimeline] = useState([]); // For the current session
 
     const socketRef = useRef(null);
-    const api = axios.create({ baseURL: serverUrl || SERVER_URL, headers: { Authorization: token } });
+    const api = useMemo(() => axios.create({
+        baseURL: serverUrl || SERVER_URL,
+        headers: { Authorization: token }
+    }), [serverUrl, token]);
 
     // --- SESSION MANAGEMENT ---
     useEffect(() => {

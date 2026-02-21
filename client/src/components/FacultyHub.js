@@ -13,20 +13,28 @@ import axios from 'axios';
 
 const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
 
+const LiveClock = () => {
+    const [time, setTime] = useState(new Date());
+    useEffect(() => {
+        const timer = setInterval(() => setTime(new Date()), 1000);
+        return () => clearInterval(timer);
+    }, []);
+    return <span>{time.toLocaleTimeString()}</span>;
+};
+
 const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
     const [activeView, setActiveView] = useState(localStorage.getItem('facultyActiveView') || 'dashboard');
     const [stats, setStats] = useState({ courses: 0, students: 0, activeSessions: 0 });
     const [facultyName, setFacultyName] = useState('Faculty');
-    const [time, setTime] = useState(new Date());
+    const [time, setTime] = useState(new Date()); // Keep for logic but remove the frequent setTime
 
     useEffect(() => {
         localStorage.setItem('facultyActiveView', activeView);
     }, [activeView]);
 
-    useEffect(() => {
-        const timer = setInterval(() => setTime(new Date()), 1000);
-        return () => clearInterval(timer);
-    }, []);
+    // The 1s timer for 'time' state is removed from here as per instruction.
+    // The 'time' state will now only update on component mount or other re-renders,
+    // which is sufficient for greeting and dashboard date display.
 
     useEffect(() => {
         if (!token) return;
@@ -116,7 +124,7 @@ const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
                 {/* Bottom */}
                 <div style={{ padding: '16px', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                     <div style={{ fontSize: '11px', color: '#475569', textAlign: 'center', marginBottom: '10px' }}>
-                        {time.toLocaleTimeString()}
+                        <LiveClock />
                     </div>
                     <button onClick={onLogout} style={{
                         width: '100%', padding: '9px', background: 'rgba(239,68,68,0.1)',

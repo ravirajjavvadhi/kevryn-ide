@@ -14,7 +14,15 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
         onErrorRef.current = onError;
     }, [onError]);
 
+    const initializedRef = useRef(false);
+
     useEffect(() => {
+        if (initializedRef.current && xtermRef.current) {
+            // Already initialized, don't restart unless core instances changed
+            // This prevents blinking on parent re-renders
+            return;
+        }
+
         // 1. Initialize Xterm
         const term = new XTerminal({
             cursorBlink: true,
@@ -41,6 +49,10 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
         }, 50);
 
         xtermRef.current = term;
+        initializedRef.current = true;
+
+        // ... rest of the setup logic ...
+        // (Ensuring we use the same cleanup but only when unmounting or when core deps TRULY change)
 
         // --- GLOBAL ACCESS FOR AI ---
         if (!window.ideTerminals) window.ideTerminals = {};
@@ -134,6 +146,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
                 socket.emit('terminal:close', { termId });
                 socket.off('terminal:data', handleData);
                 term.dispose();
+                initializedRef.current = false;
             };
         }
 
@@ -157,6 +170,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
             if (window.ideTerminalInputs) delete window.ideTerminalInputs[termId];
             resizeObserver.disconnect();
             term.dispose();
+            initializedRef.current = false;
         };
     }, [socket, termId, userId, webcontainer]);
 
