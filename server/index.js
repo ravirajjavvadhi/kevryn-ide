@@ -2116,10 +2116,7 @@ app.post('/project/sync', authenticate, async (req, res) => { /* Keep existing *
     const { targetUsername } = req.body; try { const targetUser = await User.findOne({ username: targetUsername }); if (!targetUser) return res.status(404).json({ error: "User not found" }); await User.findByIdAndUpdate(req.user.userId, { $addToSet: { collaborators: targetUsername } }); await File.updateMany({ owner: req.user.userId }, { $addToSet: { sharedWith: targetUsername } }); res.json({ message: "Synced!" }); } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });
 
-const server = app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Backend running on port ${PORT}`);
-    console.log(`🌍 Bound to 0.0.0.0`);
-});
+const server = http.createServer(app);
 
 
 // GLOBAL STATE for Real-Time Lab Monitor
@@ -2517,174 +2514,170 @@ io.on('connection', (socket) => {
             // Notify faculty that student is online
             io.to(`session_${sessionId}_faculty`).emit('student-status-change', { username, status: 'online' });
         }
-    });
+        // ─────────────────────────────────────────────
+        // BEAST FEATURES: Advanced Behavior Tracking
+        // ─────────────────────────────────────────────
 
+        // Tab Switch Tracking — fires when student leaves the lab tab
+        socket.on('student-tab-switch', ({ sessionId, username, direction, switchCount }) => {
+            if (!sessionId || !username) return;
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
 
+            // Update live state
+            liveLabState[sessionId][username].tabSwitchCount = switchCount || 0;
 
-    // ─────────────────────────────────────────────
-    // BEAST FEATURES: Advanced Behavior Tracking
-    // ─────────────────────────────────────────────
-
-    // Tab Switch Tracking — fires when student leaves the lab tab
-    socket.on('student-tab-switch', ({ sessionId, username, direction, switchCount }) => {
-        if (!sessionId || !username) return;
-        if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-        if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-        // Update live state
-        liveLabState[sessionId][username].tabSwitchCount = switchCount || 0;
-
-        // GUARD: If offline, don't let behavioral updates flip back to active
-        if (liveLabState[sessionId][username].status !== 'offline') {
-            liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : (liveLabState[sessionId][username].prevStatus || 'active');
-            if (direction === 'left') liveLabState[sessionId][username].prevStatus = liveLabState[sessionId][username].status;
-        }
-
-        // Recompute attention score
-        const tabPenalty = Math.min(switchCount * 5, 40);
-        const pastePenalty = Math.min((liveLabState[sessionId][username].pasteCount || 0) * 8, 30);
-        liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
-
-        // Notify faculty in the room
-        io.to(`lab-${sessionId}`).emit('student-data-update', {
-            ...liveLabState[sessionId][username],
-            lastActive: new Date().toLocaleTimeString()
-        });
-
-        // Log to DB
-        LabSession.findByIdAndUpdate(sessionId, {
-            $push: {
-                activityLog: {
-                    username,
-                    event: 'tab-switch',
-                    details: `Tab Switched: ${switchCount}`,
-                    timestamp: new Date()
-                }
+            // GUARD: If offline, don't let behavioral updates flip back to active
+            if (liveLabState[sessionId][username].status !== 'offline') {
+                liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : (liveLabState[sessionId][username].prevStatus || 'active');
+                if (direction === 'left') liveLabState[sessionId][username].prevStatus = liveLabState[sessionId][username].status;
             }
-        }).catch(() => { });
 
-        console.log(`[LAB] Tab switch #${switchCount} — ${username} ${direction} (session ${sessionId})`);
-    });
+            // Recompute attention score
+            const tabPenalty = Math.min(switchCount * 5, 40);
+            const pastePenalty = Math.min((liveLabState[sessionId][username].pasteCount || 0) * 8, 30);
+            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
 
-    // Paste Detection — fires when student pastes in the editor
-    socket.on('student-paste', ({ sessionId, username, charCount, pasteCount }) => {
-        if (!sessionId || !username) return;
-        if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-        if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-        liveLabState[sessionId][username].pasteCount = pasteCount || 0;
-
-        // Recompute attention score
-        const tabPenalty = Math.min((liveLabState[sessionId][username].tabSwitchCount || 0) * 5, 40);
-        const pastePenalty = Math.min(pasteCount * 8, 30);
-        liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
-
-        // GUARD: If offline, don't let behavioral updates flip back to active
-        if (liveLabState[sessionId][username].status !== 'offline') {
+            // Notify faculty in the room
             io.to(`lab-${sessionId}`).emit('student-data-update', {
                 ...liveLabState[sessionId][username],
-                suspicious: charCount > 80,
                 lastActive: new Date().toLocaleTimeString()
             });
-        }
 
-        LabSession.findByIdAndUpdate(sessionId, {
-            $push: {
-                activityLog: {
-                    username,
-                    event: 'paste-detected',
-                    details: `${charCount} chars pasted (total: ${pasteCount})`,
-                    timestamp: new Date()
+            // Log to DB
+            LabSession.findByIdAndUpdate(sessionId, {
+                $push: {
+                    activityLog: {
+                        username,
+                        event: 'tab-switch',
+                        details: `Tab Switched: ${switchCount}`,
+                        timestamp: new Date()
+                    }
                 }
-            }
-        }).catch(() => { });
+            }).catch(() => { });
 
-        console.log(`[LAB] Paste #${pasteCount} by ${username} — ${charCount} chars`);
-    });
-
-    // Faculty Announces to all students in session
-    socket.on('faculty-announcement', ({ sessionId, message }) => {
-        if (!sessionId || !message) return;
-        // Broadcast to everyone in the lab room (students are there too)
-        io.to(`lab-${sessionId}`).emit('faculty-announcement', { message, timestamp: new Date().toLocaleTimeString() });
-
-        LabSession.findByIdAndUpdate(sessionId, {
-            $push: {
-                activityLog: {
-                    username: 'faculty',
-                    event: 'announcement',
-                    details: message,
-                    timestamp: new Date()
-                }
-            }
-        }).catch(() => { });
-
-        console.log(`[LAB] Faculty announcement in session ${sessionId}: "${message}"`);
-    });
-
-    // Student raises hand
-    socket.on('student-raise-hand', ({ sessionId, username }) => {
-        if (!sessionId || !username) return;
-        if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-        if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-        liveLabState[sessionId][username].raiseHand = true;
-
-        io.to(`lab-${sessionId}`).emit('student-raise-hand', { username, timestamp: new Date().toLocaleTimeString() });
-
-        LabSession.findByIdAndUpdate(sessionId, {
-            $push: {
-                activityLog: {
-                    username,
-                    event: 'raise-hand',
-                    details: 'Student requested help',
-                    timestamp: new Date()
-                }
-            }
-        }).catch(() => { });
-        console.log(`[LAB] ${username} raised hand in session ${sessionId}`);
-    });
-
-    // Faculty acknowledges raised hand
-    socket.on('faculty-acknowledge', ({ sessionId, username }) => {
-        if (!sessionId || !username) return;
-        if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
-            liveLabState[sessionId][username].raiseHand = false;
-        }
-        io.to(`lab-${sessionId}`).emit('faculty-acknowledge', { username });
-
-        LabSession.findByIdAndUpdate(sessionId, {
-            $push: {
-                activityLog: {
-                    username,
-                    event: 'hand-acknowledged',
-                    details: 'Faculty acknowledged help request',
-                    timestamp: new Date()
-                }
-            }
-        }).catch(() => { });
-    });
-
-});
-
-
-// --- GRACEFUL SHUTDOWN ---
-process.on('SIGTERM', () => {
-    console.log('SIGTERM received. Shutting down gracefully...');
-    if (server) {
-        server.close(async () => {
-            try {
-                await mongoose.connection.close();
-                console.log('Mongoose connection closed.');
-                process.exit(0);
-            } catch (err) {
-                console.error('Error during Mongoose closure:', err);
-                process.exit(1);
-            }
+            console.log(`[LAB] Tab switch #${switchCount} — ${username} ${direction} (session ${sessionId})`);
         });
-    } else {
-        process.exit(0);
-    }
-});
+
+        // Paste Detection — fires when student pastes in the editor
+        socket.on('student-paste', ({ sessionId, username, charCount, pasteCount }) => {
+            if (!sessionId || !username) return;
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
+
+            liveLabState[sessionId][username].pasteCount = pasteCount || 0;
+
+            // Recompute attention score
+            const tabPenalty = Math.min((liveLabState[sessionId][username].tabSwitchCount || 0) * 5, 40);
+            const pastePenalty = Math.min(pasteCount * 8, 30);
+            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
+
+            // GUARD: If offline, don't let behavioral updates flip back to active
+            if (liveLabState[sessionId][username].status !== 'offline') {
+                io.to(`lab-${sessionId}`).emit('student-data-update', {
+                    ...liveLabState[sessionId][username],
+                    suspicious: charCount > 80,
+                    lastActive: new Date().toLocaleTimeString()
+                });
+            }
+
+            LabSession.findByIdAndUpdate(sessionId, {
+                $push: {
+                    activityLog: {
+                        username,
+                        event: 'paste-detected',
+                        details: `${charCount} chars pasted (total: ${pasteCount})`,
+                        timestamp: new Date()
+                    }
+                }
+            }).catch(() => { });
+
+            console.log(`[LAB] Paste #${pasteCount} by ${username} — ${charCount} chars`);
+        });
+
+        // Faculty Announces to all students in session
+        socket.on('faculty-announcement', ({ sessionId, message }) => {
+            if (!sessionId || !message) return;
+            // Broadcast to everyone in the lab room (students are there too)
+            io.to(`lab-${sessionId}`).emit('faculty-announcement', { message, timestamp: new Date().toLocaleTimeString() });
+
+            LabSession.findByIdAndUpdate(sessionId, {
+                $push: {
+                    activityLog: {
+                        username: 'faculty',
+                        event: 'announcement',
+                        details: message,
+                        timestamp: new Date()
+                    }
+                }
+            }).catch(() => { });
+
+            console.log(`[LAB] Faculty announcement in session ${sessionId}: "${message}"`);
+        });
+
+        // Student raises hand
+        socket.on('student-raise-hand', ({ sessionId, username }) => {
+            if (!sessionId || !username) return;
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
+
+            liveLabState[sessionId][username].raiseHand = true;
+
+            io.to(`lab-${sessionId}`).emit('student-raise-hand', { username, timestamp: new Date().toLocaleTimeString() });
+
+            LabSession.findByIdAndUpdate(sessionId, {
+                $push: {
+                    activityLog: {
+                        username,
+                        event: 'raise-hand',
+                        details: 'Student requested help',
+                        timestamp: new Date()
+                    }
+                }
+            }).catch(() => { });
+            console.log(`[LAB] ${username} raised hand in session ${sessionId}`);
+        });
+
+        // Faculty acknowledges raised hand
+        socket.on('faculty-acknowledge', ({ sessionId, username }) => {
+            if (!sessionId || !username) return;
+            if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
+                liveLabState[sessionId][username].raiseHand = false;
+            }
+            io.to(`lab-${sessionId}`).emit('faculty-acknowledge', { username });
+
+            LabSession.findByIdAndUpdate(sessionId, {
+                $push: {
+                    activityLog: {
+                        username,
+                        event: 'hand-acknowledged',
+                        details: 'Faculty acknowledged help request',
+                        timestamp: new Date()
+                    }
+                }
+            }).catch(() => { });
+        });
+
+    });
+
+
+    // --- GRACEFUL SHUTDOWN ---
+    process.on('SIGTERM', () => {
+        console.log('SIGTERM received. Shutting down gracefully...');
+        if (server) {
+            server.close(async () => {
+                try {
+                    await mongoose.connection.close();
+                    console.log('Mongoose connection closed.');
+                    process.exit(0);
+                } catch (err) {
+                    console.error('Error during Mongoose closure:', err);
+                    process.exit(1);
+                }
+            });
+        } else {
+            process.exit(0);
+        }
+    });
 
 
