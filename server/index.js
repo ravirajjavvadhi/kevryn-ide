@@ -55,9 +55,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'my_super_secret_key_123';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
-const PORT = process.env.PORT || 5000;
-
-const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+const PORT = 5000; // FORCED TO 5000 TO MATCH RAILWAY SETTINGS
+console.log(`[PORT] FORCING PORT TO ${PORT} AS REQUESTED`);
 
 const cookieParser = require('cookie-parser');
 
@@ -124,7 +123,7 @@ app.get('/', (req, res) => {
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
     if (req.url !== '/health' && req.url !== '/ready') {
-        console.log(`[TRAFFIC] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+        console.log(`[TRAFFIC] ${req.method} ${req.url} - Origin: ${req.headers.origin || 'NO ORIGIN'}`);
     }
     next();
 });
