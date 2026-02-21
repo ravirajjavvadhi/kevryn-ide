@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="utf-8" />
+
+  <link rel="icon" type="image/jpeg" href="%PUBLIC_URL%/logoide.jpeg" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="description" content="Aivon Cloud IDE - A powerful browser-based development environment." />
+
+  <link rel="apple-touch-icon" href="%PUBLIC_URL%/logoide.jpeg" />
+
+  <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+
+  <title>Kevryn</title>
+  <script>
+    // Suppress harmless ResizeObserver errors (from Monaco Editor / xterm.js)
+    // Must be in index.html to register BEFORE React's dev error overlay
+    const ro = /ResizeObserver loop/;
+    window.addEventListener('error', function (e) {
+      if (ro.test(e.message)) { e.stopImmediatePropagation(); e.stopPropagation(); e.preventDefault(); }
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) {
+      if (e.reason && ro.test(e.reason.message)) { e.preventDefault(); }
+    });
+  </script>
+</head>
+
+<body>
+  <noscript>You need to enable JavaScript to run this app.</noscript>
+  <div id="root"></div>
+</body>
+
+</html>
