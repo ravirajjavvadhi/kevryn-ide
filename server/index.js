@@ -2652,8 +2652,3 @@ io.on('connection', (socket) => {
 
 });
 
-// --- GRACEFUL SHUTDOWN ---
-process.on('SIGTERM', () => {
-
-
-    server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
