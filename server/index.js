@@ -1051,7 +1051,8 @@ app.use('/sites/:userId', (req, res, next) => {
 
 // --- DB CONNECTION ---
 const maskedUri = (process.env.MONGODB_URI || "MISSING").substring(0, 30) + "...";
-console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri}`);
+const dbNameSegment = (process.env.MONGODB_URI || "").split('/').pop().split('?')[0];
+console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri} (Target DB in URI: ${dbNameSegment})`);
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
         console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
