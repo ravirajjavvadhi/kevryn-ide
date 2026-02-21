@@ -37,7 +37,7 @@ loader.config({
     }
 });
 
-const _rawServerUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _rawServerUrl = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
 // Ensure protocol is present so URLs don't become relative paths on deployment
 const SERVER_URL = _rawServerUrl.startsWith('http') ? _rawServerUrl : `https://${_rawServerUrl}`;
 
@@ -1176,12 +1176,11 @@ function App() {
 
     const handleAuth = async (e) => {
         e.preventDefault();
-        const u = isLogin ? `${SERVER_URL}/auth/login` : `${SERVER_URL}/auth/register`;
-        try {
-            // Send role for both login and registration
-            const payload = { ...authData, role: isFacultyLogin ? 'faculty' : 'student' };
+        // Send role for both login and registration
+        const payload = { ...authData, role: isFacultyLogin ? 'faculty' : 'student' };
 
-            const r = await axios.post(u, payload);
+        try {
+            const r = await api.post(isLogin ? '/auth/login' : '/auth/register', payload);
             if (isLogin) {
                 // Determine role from server
                 const role = r.data.role || (isFacultyLogin ? 'faculty' : 'student');
@@ -1216,7 +1215,7 @@ function App() {
     // Google Login Handler
     const handleGoogleLoginSuccess = async (credentialResponse) => {
         try {
-            const res = await axios.post(`${SERVER_URL}/auth/google`, { token: credentialResponse.credential });
+            const res = await api.post('/auth/google', { token: credentialResponse.credential });
             const { token, username, userId, picture, role } = res.data; // Ensure role is returned
 
             const userRole = role || "student";

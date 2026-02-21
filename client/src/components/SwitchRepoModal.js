@@ -18,7 +18,8 @@ const SwitchRepoModal = ({ isOpen, onClose, onSwitch, token }) => {
         setLoading(true);
         setError("");
         try {
-            const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+            const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+            const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
             const api = axios.create({ baseURL: SERVER_URL, headers: { Authorization: token } });
             const res = await api.get('/git/repos');
             setRepos(res.data.repos || []);

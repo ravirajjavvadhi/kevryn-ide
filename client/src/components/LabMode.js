@@ -5,7 +5,8 @@ import Terminal from './Terminal';
 import io from 'socket.io-client';
 import axios from 'axios';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
 const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(null);

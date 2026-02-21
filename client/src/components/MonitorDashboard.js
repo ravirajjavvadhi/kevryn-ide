@@ -6,7 +6,8 @@ import {
     FaExclamationTriangle, FaTimes, FaFile, FaSync, FaHistory, FaGraduationCap, FaChartLine, FaFilePdf
 } from 'react-icons/fa';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
 const GlobalSessionTimer = ({ startTime, duration }) => {
     const [timeLeft, setTimeLeft] = useState("");

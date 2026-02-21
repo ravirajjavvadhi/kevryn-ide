@@ -7,7 +7,8 @@ import {
     FaTrash, FaChevronDown, FaChevronUp, FaEye, FaTerminal
 } from 'react-icons/fa';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _rawServerUrl = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+const SERVER_URL = _rawServerUrl.startsWith('http') ? _rawServerUrl : `https://${_rawServerUrl}`;
 
 const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
     const [messages, setMessages] = useState([]);

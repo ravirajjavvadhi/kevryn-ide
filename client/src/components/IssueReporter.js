@@ -12,10 +12,11 @@ const IssueReporter = ({ isOpen, onClose, token }) => {
 
     const handleSubmit = async (e) => {
         e.preventDefault();
-        setIsSubmitting(true);
         try {
+            const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+            const absoluteBase = _raw.startsWith('http') ? _raw : `https://${_raw}`;
             await axios.post(
-                `${process.env.REACT_APP_SERVER_URL || 'http://localhost:5000'}/api/issues`,
+                `${absoluteBase}/api/issues`,
                 { title, description, severity },
                 { headers: { Authorization: token } }
             );

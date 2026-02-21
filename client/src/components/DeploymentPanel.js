@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { FaStop, FaExternalLinkAlt } from 'react-icons/fa';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
 const DeploymentPanel = ({ token }) => {
     const [status, setStatus] = useState(null);

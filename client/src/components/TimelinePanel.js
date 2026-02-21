@@ -2,7 +2,8 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { FaHistory, FaUndo, FaClock, FaUser, FaChevronDown, FaChevronUp, FaFileSignature } from 'react-icons/fa';
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
+const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
 export default function TimelinePanel({ token, activeFileId, onRestoreComplete }) {
     const [history, setHistory] = useState([]);

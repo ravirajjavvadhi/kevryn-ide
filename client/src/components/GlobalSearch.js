@@ -21,7 +21,9 @@ const GlobalSearch = ({ SERVER_URL, token, onFileClick, onClose }) => {
 
         setIsLoading(true);
         try {
-            const res = await axios.get(`${SERVER_URL}/search?query=${encodeURIComponent(val)}`, {
+            // Ensure we use an absolute URL
+            const absoluteUrl = SERVER_URL.startsWith('http') ? `${SERVER_URL}/search` : `${window.location.protocol}//${SERVER_URL}/search`;
+            const res = await axios.get(`${absoluteUrl}?query=${encodeURIComponent(val)}`, {
                 headers: { Authorization: token }
             });
             setResults(res.data);
