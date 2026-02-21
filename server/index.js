@@ -87,7 +87,11 @@ app.use((req, res, next) => {
 });
 
 // --- HEALTH CHECK ---
-app.get('/', (req, res) => res.send('Kevryn Server is Running (Health Check OK)'));
+app.get('/', (req, res) => {
+    console.log(`[${new Date().toISOString()}] !!! HEALTH CHECK HIT !!!`);
+    res.send('Kevryn Server is Running (Health Check OK)');
+});
+
 
 // --- SECURITY MIDDLEWARE ---
 app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP for IDE (Monaco CDN)
@@ -2112,7 +2116,11 @@ app.post('/project/sync', authenticate, async (req, res) => { /* Keep existing *
     const { targetUsername } = req.body; try { const targetUser = await User.findOne({ username: targetUsername }); if (!targetUser) return res.status(404).json({ error: "User not found" }); await User.findByIdAndUpdate(req.user.userId, { $addToSet: { collaborators: targetUsername } }); await File.updateMany({ owner: req.user.userId }, { $addToSet: { sharedWith: targetUsername } }); res.json({ message: "Synced!" }); } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });
 
-const server = http.createServer(app);
+const server = app.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Backend running on port ${PORT}`);
+    console.log(`🌍 Bound to 0.0.0.0`);
+});
+
 
 // GLOBAL STATE for Real-Time Lab Monitor
 const liveLabState = {}; // { sessionId: { username: { status, lastActive, code, activeFile, language } } }
@@ -2659,6 +2667,7 @@ io.on('connection', (socket) => {
 
 });
 
+
 // --- GRACEFUL SHUTDOWN ---
 process.on('SIGTERM', () => {
     console.log('SIGTERM received. Shutting down gracefully...');
@@ -2678,8 +2687,4 @@ process.on('SIGTERM', () => {
     }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Backend running on port ${PORT}`);
-    console.log(`🌍 Bound to 0.0.0.0`);
-});
 
