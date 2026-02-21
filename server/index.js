@@ -65,37 +65,24 @@ const assignmentManager = require('./routes/assignmentManager');
 const app = express();
 let io; // Declared early so lab routes can reference it; assigned after server creation
 
+// --- REQUEST LOGGING ---
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    next();
+});
+
+// --- HEALTH CHECK ---
+app.get('/', (req, res) => res.send('Kevryn Server is Running (Health Check OK)'));
+
 // --- SECURITY MIDDLEWARE ---
 app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP for IDE (Monaco CDN)
 app.use(cookieParser()); // Use cookie-parser
 app.use(cors({
-    origin: function (origin, callback) {
-        // Log origin for debugging production issues
-        console.log('[CORS] Request from origin:', origin);
-
-        // Allow requests with no origin (mobile apps, curl, Postman)
-        if (!origin) return callback(null, true);
-
-        // Allow localhost for local dev
-        if (origin.includes('localhost')) return callback(null, true);
-
-        // Allow any Vercel deployment (more robust check)
-        if (origin.endsWith('.vercel.app') || origin.includes('vercel.app')) return callback(null, true);
-
-        // Allow Railway origins
-        if (origin.includes('.up.railway.app')) return callback(null, true);
-
-        // Allow explicitly configured origin
-        if (CORS_ORIGIN && origin === CORS_ORIGIN) return callback(null, true);
-
-        // Block everything else gracefully
-        console.warn('[CORS] Blocked origin:', origin);
-        return callback(null, false);
-    },
+    origin: true, // Dynamically allow the origin that sent the request (handles credentials: true)
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
-    optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
+    optionsSuccessStatus: 200
 }));
 
 // --- WEBCONTAINER SECURITY HEADERS ---
