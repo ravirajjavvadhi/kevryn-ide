@@ -1121,9 +1121,30 @@ function App() {
             let targetTerm = terminals.find(t => isLocalLang ? t.type === 'local' : t.type === 'server');
 
             if (!targetTerm && !isLocalLang) {
-                // Add Server terminal on-demand if it doesn't exist
                 targetTerm = { id: 'server-1', name: 'Server Terminal', type: 'server' };
                 setTerminals(prev => [...prev, targetTerm]);
+            }
+
+            // --- SERVER-SIDE REST FALLBACK (works even when PTY is unavailable in Railway) ---
+            if (!isLocalLang) {
+                const langMap = { '.py': 'python', '.c': 'c', '.cpp': 'cpp', '.java': 'java' };
+                const ext = Object.keys(langMap).find(e => currentFileName.endsWith(e));
+                const runLang = langMap[ext];
+                if (runLang) {
+                    setBottomPanelTab('terminal');
+                    setIsBottomPanelOpen(true);
+                    try {
+                        const result = await api.post('/run-code', { code, language: runLang, fileName: fileName });
+                        const output = result.data.output || result.data.error || 'No output';
+                        // Print REST result into terminal panel
+                        safeEmit('terminal:data', { termId: activeTermId || 'server-1', data: `\r\n--- Output ---\r\n${output.replace(/\n/g, '\r\n')}\r\n` });
+                        // Also alert if terminal not visible
+                        if (!isBottomPanelOpen) alert(output);
+                    } catch (e) {
+                        alert('Code execution failed: ' + e.message);
+                    }
+                    return;
+                }
             }
 
             if (targetTerm) {
@@ -1131,15 +1152,12 @@ function App() {
                 setBottomPanelTab('terminal');
                 setIsBottomPanelOpen(true);
 
-                // Delay slightly to ensure terminal is rendered/focused
                 setTimeout(() => {
                     const inputs = window.ideTerminalInputs || {};
                     const inputWriter = inputs[targetTerm.id];
-
                     if (inputWriter && typeof inputWriter.write === 'function') {
                         inputWriter.write(cmd);
                     } else {
-                        // Fallback: Use socket if local writer not available
                         safeEmit('terminal:write', { termId: targetTerm.id, data: cmd });
                     }
                 }, 100);
@@ -1374,7 +1392,7 @@ function App() {
 
             <div style={{ flex: 1, position: 'relative' }}>
                 {!token ? (
-                    <div className="ide-container auth-page" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', background: '#08080c', perspective: '1000px', height: '100%', display: 'flex' }}>
+                    <div className="ide-container auth-page" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', background: 'transparent', perspective: '1000px', height: '100%', display: 'flex' }}>
                         <motion.div
                             initial={{ opacity: 0, scale: 0.8, z: -100 }}
                             animate={{ opacity: 1, scale: 1, z: 0 }}

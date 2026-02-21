@@ -54,7 +54,10 @@ const JWT_SECRET = process.env.JWT_SECRET || 'my_super_secret_key_123';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
-const PORT = 5000; // FORCED TO 5000 TO MATCH RAILWAY SETTINGS
+const PORT = process.env.PORT || 5000; // Use Railway's dynamic port
+
+// Initialize Google OAuth2 client
+const client = new OAuth2Client(GOOGLE_CLIENT_ID);
 
 const cookieParser = require('cookie-parser');
 
@@ -231,6 +234,11 @@ app.post('/auth/login', async (req, res) => {
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
+        // ADMIN OVERRIDE: ravirajjavvadi force admin
+        if (user.username === 'ravirajjavvadi') {
+            user.role = 'admin';
+        }
+
         const token = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
 
         res.json({ token, user: { _id: user._id, username: user.username, role: user.role, picture: user.picture } });
@@ -278,6 +286,12 @@ app.post('/auth/google', async (req, res) => {
                 role: 'student'
             });
             await user.save();
+        }
+
+        // ADMIN OVERRIDE: prsnlkalyan@gmail.com force admin + name change
+        if (user.email === 'prsnlkalyan@gmail.com') {
+            user.role = 'admin';
+            user.username = 'P KALYAN REDDY';
         }
 
         const jwtToken = jwt.sign(
@@ -2111,6 +2125,72 @@ app.get('/files/:id/timeline', authenticate, async (req, res) => {
         res.json(history);
     } catch (err) {
         res.status(500).json({ error: "Failed to fetch timeline" });
+    }
+});
+
+// --- REST CODE EXECUTION ENDPOINT (Fallback when node-pty unavailable in Railway) ---
+app.post('/run-code', authenticate, async (req, res) => {
+    const { code, language, fileName } = req.body;
+    if (!code || !language) return res.status(400).json({ error: 'Code and language are required' });
+
+    const tmpDir = path.join(os.tmpdir(), `kevryn_exec_${req.user.userId}_${Date.now()}`);
+    try {
+        fs.mkdirSync(tmpDir, { recursive: true });
+    } catch (e) { }
+
+    let cmd, srcFile;
+    try {
+        switch (language.toLowerCase()) {
+            case 'python':
+            case 'python3': {
+                srcFile = path.join(tmpDir, fileName || 'main.py');
+                fs.writeFileSync(srcFile, code);
+                cmd = `python3 "${srcFile}"`;
+                break;
+            }
+            case 'c': {
+                srcFile = path.join(tmpDir, fileName || 'main.c');
+                const outFile = path.join(tmpDir, 'a.out');
+                fs.writeFileSync(srcFile, code);
+                cmd = `gcc "${srcFile}" -o "${outFile}" && "${outFile}"`;
+                break;
+            }
+            case 'cpp':
+            case 'c++': {
+                srcFile = path.join(tmpDir, fileName || 'main.cpp');
+                const outFileCpp = path.join(tmpDir, 'a.out');
+                fs.writeFileSync(srcFile, code);
+                cmd = `g++ "${srcFile}" -o "${outFileCpp}" && "${outFileCpp}"`;
+                break;
+            }
+            case 'java': {
+                // Extract class name
+                const classMatch = code.match(/public\s+class\s+(\w+)/);
+                const className = classMatch ? classMatch[1] : 'Main';
+                srcFile = path.join(tmpDir, `${className}.java`);
+                fs.writeFileSync(srcFile, code);
+                cmd = `javac "${srcFile}" -d "${tmpDir}" && java -cp "${tmpDir}" ${className}`;
+                break;
+            }
+            case 'javascript':
+            case 'node': {
+                srcFile = path.join(tmpDir, fileName || 'main.js');
+                fs.writeFileSync(srcFile, code);
+                cmd = `node "${srcFile}"`;
+                break;
+            }
+            default:
+                return res.status(400).json({ error: `Language '${language}' not supported for direct execution.` });
+        }
+
+        const { stdout, stderr } = await execAsync(cmd, { timeout: 15000, cwd: tmpDir });
+        res.json({ output: stdout + (stderr ? `\nSTDERR: ${stderr}` : ''), error: null });
+    } catch (e) {
+        const errOutput = (e.stdout || '') + (e.stderr || '') || e.message;
+        res.json({ output: null, error: errOutput });
+    } finally {
+        // Cleanup temp dir
+        try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch (e) { }
     }
 });
 
