@@ -1065,10 +1065,11 @@ app.use('/sites/:userId', (req, res, next) => {
 });
 
 // --- DB CONNECTION ---
-console.log('[DEBUG] --- DB CONNECT CALLED ---');
+const maskedUri = (process.env.MONGODB_URI || "MISSING").substring(0, 20) + "...";
+console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri}`);
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
-        console.log("ðŸš€ SUCCESS: Connected to MongoDB");
+        console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
 
         // CLEANUP: Reset all students to 'offline' on server restart
         // This prevents "ghost" active students if the server crashed/restarted while they were online.
