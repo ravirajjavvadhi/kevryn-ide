@@ -1053,29 +1053,30 @@ app.use('/sites/:userId', (req, res, next) => {
 const maskedUri = (process.env.MONGODB_URI || "MISSING").substring(0, 30) + "...";
 const dbNameSegment = (process.env.MONGODB_URI || "").split('/').pop().split('?')[0];
 console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri} (Target DB in URI: ${dbNameSegment})`);
+mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
-    console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
+        console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
 
-    // --- DATA DIAGNOSTIC ---
-    try {
-        const count = await User.countDocuments();
-        console.log(`[DATA] Total users in DB: ${count}`);
-        const samples = await User.find().limit(5).select('username');
-        console.log(`[DATA] Sample users: ${samples.map(u => u.username).join(', ')}`);
-    } catch (e) { console.error("[DATA] Diagnostic failed:", e.message); }
+        // --- DATA DIAGNOSTIC ---
+        try {
+            const count = await User.countDocuments();
+            console.log(`[DATA] Total users in DB: ${count}`);
+            const samples = await User.find().limit(5).select('username');
+            console.log(`[DATA] Sample users: ${samples.map(u => u.username).join(', ')}`);
+        } catch (e) { console.error("[DATA] Diagnostic failed:", e.message); }
 
-    // CLEANUP: Reset all students to 'offline' on server restart
-    // This prevents "ghost" active students if the server crashed/restarted while they were online.
-    try {
-        const result = await LabSession.updateMany(
-            { "activeStudents.currentStatus": "active" },
-            { $set: { "activeStudents.$[].currentStatus": "offline" } }
-        );
-        console.log(`[CLEANUP] Reset ${result.modifiedCount} active sessions to offline state.`);
-    } catch (e) {
-        console.error("[CLEANUP] Failed to reset student statuses:", e);
-    }
-})
+        // CLEANUP: Reset all students to 'offline' on server restart
+        // This prevents "ghost" active students if the server crashed/restarted while they were online.
+        try {
+            const result = await LabSession.updateMany(
+                { "activeStudents.currentStatus": "active" },
+                { $set: { "activeStudents.$[].currentStatus": "offline" } }
+            );
+            console.log(`[CLEANUP] Reset ${result.modifiedCount} active sessions to offline state.`);
+        } catch (e) {
+            console.error("[CLEANUP] Failed to reset student statuses:", e);
+        }
+    })
     .catch(err => console.error("âŒ FAILURE: MongoDB Connection Error:", err.message));
 
 // activeDeployments and nextPort removed in favor of DeployManager
