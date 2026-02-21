@@ -1,4 +1,5 @@
 ﻿console.log('[DEBUG] --- START OF INDEX.JS ---');
+console.log('[DEBUG] --- ENV PORT: ' + process.env.PORT + ' ---');
 const initialPort = process.env.PORT;
 require('dotenv').config();
 const finalPort = process.env.PORT;
@@ -98,8 +99,17 @@ io = new Server(server, {
     }
 });
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[BOOT] Server listening on 0.0.0.0:${PORT}`);
+server.on('error', (err) => {
+    console.error('!!! SERVER ERROR !!!', err);
+});
+
+server.on('connection', (socket) => {
+    // Logging connection for diagnostics but avoiding too much noise
+    // console.log(`[TCP] New connection from ${socket.remoteAddress}`);
+});
+
+server.listen(PORT, () => {
+    console.log(`[BOOT] Server listening on port ${PORT} (All interfaces)`);
     console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });
 
