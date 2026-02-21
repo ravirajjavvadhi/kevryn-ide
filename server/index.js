@@ -154,8 +154,7 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
 
-// Handle OPTIONS preflight for all routes
-app.options('*', cors());
+
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
 app.use((req, res, next) => {
