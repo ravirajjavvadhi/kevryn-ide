@@ -55,9 +55,14 @@ function App() {
         return (id && id !== 'undefined') ? id : "";
     });
     const [userRole, setUserRole] = useState(localStorage.getItem('role') || "student");
-    const [isAppLoading, setIsAppLoading] = useState(true); // NEW: Track initial boot
+    const [isAppLoading, setIsAppLoading] = useState(() => !!localStorage.getItem('token')); // Load only if token exists
     const [isFacultyLogin, setIsFacultyLogin] = useState(false); // NEW: Faculty Toggle
     const [isLogin, setIsLogin] = useState(true);
+
+    // Ensure loading screen turns off if no token
+    useEffect(() => {
+        if (!token) setIsAppLoading(false);
+    }, [token]);
     const [showStudentAssignments, setShowStudentAssignments] = useState(false); // NEW: Default to workspace (IDE) first <!-- id: 401 -->
     const [authData, setAuthData] = useState({ username: '', password: '' });
     const [userPicture, setUserPicture] = useState(localStorage.getItem('picture') || null); // Store picture
