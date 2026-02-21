@@ -4,26 +4,21 @@ import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
 const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
-    const terminalRef = useRef(null);
     const xtermRef = useRef(null);
     const fitAddonRef = useRef(null);
     const shellProcessRef = useRef(null);
+    const terminalRef = useRef(null);
     const onErrorRef = useRef(onError);
 
     useEffect(() => {
         onErrorRef.current = onError;
     }, [onError]);
 
-    const initializedRef = useRef(false);
-
+    // 1. UI INITIALIZATION (Run ONLY once on mount)
     useEffect(() => {
-        if (initializedRef.current && xtermRef.current) {
-            // Already initialized, don't restart unless core instances changed
-            // This prevents blinking on parent re-renders
-            return;
-        }
+        if (xtermRef.current) return;
 
-        // 1. Initialize Xterm
+        console.log("[Terminal] Initializing persistent XTerm instance");
         const term = new XTerminal({
             cursorBlink: true,
             theme: {
@@ -40,21 +35,17 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
 
         const fitAddon = new FitAddon();
         fitAddonRef.current = fitAddon;
-
         term.loadAddon(fitAddon);
         term.open(terminalRef.current);
 
+        // First fit
         setTimeout(() => {
             try { fitAddon.fit(); } catch (e) { }
-        }, 50);
+        }, 100);
 
         xtermRef.current = term;
-        initializedRef.current = true;
 
-        // ... rest of the setup logic ...
-        // (Ensuring we use the same cleanup but only when unmounting or when core deps TRULY change)
-
-        // --- GLOBAL ACCESS FOR AI ---
+        // Global access for AI and debugging
         if (!window.ideTerminals) window.ideTerminals = {};
         window.ideTerminals[termId] = term;
 
@@ -70,109 +61,128 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
             return lines.join('\n');
         };
 
-        const startShell = async () => {
-            if (!webcontainer) return;
+        // Resize Handling
+        const resizeObserver = new ResizeObserver(() => {
+            if (fitAddonRef.current) {
+                try { fitAddonRef.current.fit(); } catch (e) { }
+            }
+        });
+        if (terminalRef.current) resizeObserver.observe(terminalRef.current);
 
+        return () => {
+            console.log("[Terminal] Disposing XTerm instance (Unmount)");
+            if (window.ideTerminals) delete window.ideTerminals[termId];
+            resizeObserver.disconnect();
+            term.dispose();
+            xtermRef.current = null;
+        };
+    }, [termId]); // termId is usually stable, but if it changes we reset.
+
+    // 2. SHELL / LOGIC (Run when backend or instances change)
+    useEffect(() => {
+        const term = xtermRef.current;
+        if (!term) return;
+
+        let active = true;
+        let inputWriter = null;
+
+        const startShell = async () => {
+            if (!webcontainer || !active) return;
             try {
-                // Spawn a jsh (bash-like shell)
                 const shellProcess = await webcontainer.spawn('jsh', {
-                    terminal: {
-                        cols: term.cols,
-                        rows: term.rows,
-                    },
+                    terminal: { cols: term.cols, rows: term.rows },
                 });
+                if (!active) { shellProcess.kill(); return; }
                 shellProcessRef.current = shellProcess;
 
-                // Pipe shell output to Xterm and Mirror to Faculty
                 shellProcess.output.pipeTo(
                     new WritableStream({
                         write(data) {
-                            term.write(data);
-                            // MIRRORING: Send output to faculty via socket
-                            if (socket) {
-                                socket.emit('terminal:mirror', { termId, data });
-                            }
+                            if (active) {
+                                term.write(data);
+                                if (socket) socket.emit('terminal:mirror', { termId, data });
 
-                            // Self-Healing Heuristic
-                            const errorPatterns = [/ReferenceError:/i, /TypeError:/i, /SyntaxError:/i, /npm ERR!/i, /Error:/i, /sh: .*: not found/i, /failed to compile/i];
-                            if (errorPatterns.some(pattern => pattern.test(data)) && onErrorRef.current) {
-                                const now = Date.now();
-                                if (!window._lastErrorTime || now - window._lastErrorTime > 2000) {
-                                    window._lastErrorTime = now;
-                                    onErrorRef.current({ termId, output: data, lastCommand: "" });
+                                // Error Heuristics
+                                const errorPatterns = [/ReferenceError:/i, /TypeError:/i, /SyntaxError:/i, /npm ERR!/i, /Error:/i, /sh: .*: not found/i, /failed to compile/i];
+                                if (errorPatterns.some(pattern => pattern.test(data)) && onErrorRef.current) {
+                                    const now = Date.now();
+                                    if (!window._lastErrorTime || now - window._lastErrorTime > 2000) {
+                                        window._lastErrorTime = now;
+                                        onErrorRef.current({ termId, output: data, lastCommand: "" });
+                                    }
                                 }
                             }
                         },
                     })
                 );
 
-                // Handle Input
-                const input = shellProcess.input.getWriter();
+                inputWriter = shellProcess.input.getWriter();
                 if (!window.ideTerminalInputs) window.ideTerminalInputs = {};
-                window.ideTerminalInputs[termId] = input;
+                window.ideTerminalInputs[termId] = inputWriter;
 
-                term.onData((data) => {
-                    input.write(data);
+                const onDataHandler = term.onData((data) => {
+                    if (inputWriter) inputWriter.write(data);
                 });
 
-                // Handle Resizing
-                term.onResize((size) => {
-                    shellProcess.resize(size);
+                const onResizeHandler = term.onResize((size) => {
+                    if (shellProcess) shellProcess.resize(size);
                 });
 
-                console.log("[Terminal] WebContainer Shell Started");
+                console.log("[Terminal] WebContainer Shell Connected");
+
+                return () => {
+                    onDataHandler.dispose();
+                    onResizeHandler.dispose();
+                    if (window.ideTerminalInputs) delete window.ideTerminalInputs[termId];
+                };
             } catch (err) {
-                console.error("[Terminal] Failed to start shell:", err);
-                term.write('\r\n\x1b[31mFailed to boot WebContainer Shell. Check console.\x1b[0m\r\n');
+                console.error("[Terminal] Shell Load Error:", err);
             }
         };
 
-        if (webcontainer) {
-            startShell();
-        } else if (socket) {
-            // FALLBACK: Legacy Socket-based Terminal (Backward Compatibility)
+        const setupSocketFallback = () => {
+            if (!socket || webcontainer || !active) return;
+
             const handleData = ({ termId: id, data }) => {
-                if (id === termId) {
+                if (id === termId && active) {
                     term.write(data);
                     term.scrollToBottom();
                 }
             };
+
             socket.emit('terminal:create', { termId, userId });
             socket.on('terminal:data', handleData);
-            term.onData((data) => {
-                socket.emit('terminal:write', { termId, data });
+
+            const onDataHandler = term.onData((data) => {
+                if (active) socket.emit('terminal:write', { termId, data });
             });
+
+            console.log("[Terminal] Socket-based Terminal Connected");
+
             return () => {
                 socket.emit('terminal:close', { termId });
                 socket.off('terminal:data', handleData);
-                term.dispose();
-                initializedRef.current = false;
+                onDataHandler.dispose();
             };
-        }
+        };
 
-        let resizeTimeout;
-        const resizeObserver = new ResizeObserver(() => {
-            if (resizeTimeout) clearTimeout(resizeTimeout);
-            resizeTimeout = setTimeout(() => {
-                if (fitAddonRef.current) {
-                    try { fitAddonRef.current.fit(); } catch (e) { }
-                }
-            }, 16);
-        });
-
-        if (terminalRef.current) {
-            resizeObserver.observe(terminalRef.current);
+        let cleanupLogic = null;
+        if (webcontainer) {
+            startShell().then(cleanup => cleanupLogic = cleanup);
+        } else if (socket) {
+            cleanupLogic = setupSocketFallback();
         }
 
         return () => {
-            if (shellProcessRef.current) shellProcessRef.current.kill();
-            if (window.ideTerminals) delete window.ideTerminals[termId];
-            if (window.ideTerminalInputs) delete window.ideTerminalInputs[termId];
-            resizeObserver.disconnect();
-            term.dispose();
-            initializedRef.current = false;
+            active = false;
+            console.log("[Terminal] Cleaning up shell/socket logic");
+            if (shellProcessRef.current) {
+                shellProcessRef.current.kill();
+                shellProcessRef.current = null;
+            }
+            if (cleanupLogic) cleanupLogic();
         };
-    }, [socket, termId, userId, webcontainer]);
+    }, [socket, webcontainer, userId, termId]);
 
     return (
         <div
@@ -190,4 +200,4 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
     );
 }; // Fixed closing brace
 
-export default Terminal;
+export default React.memo(Terminal);
