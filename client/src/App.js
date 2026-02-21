@@ -420,28 +420,34 @@ function App() {
 
     const fetchFiles = useCallback(() => {
         if (!token) return;
-        api.get('/files').then(res => {
-            setFiles(res.data); // Store flat list
-            const map = {}, nodeTree = { _id: "root", name: "Project Root", type: "folder", children: [] };
-            res.data.forEach(node => { map[node._id] = { ...node, children: [] }; });
-            res.data.forEach(node => {
-                if (node.parentId !== "root") {
-                    if (map[node.parentId]) map[node.parentId].children.push(map[node._id]);
+
+        // Debounce logic: cancel existing timer
+        if (window.fetchFilesTimer) clearTimeout(window.fetchFilesTimer);
+
+        window.fetchFilesTimer = setTimeout(() => {
+            api.get('/files').then(res => {
+                setFiles(res.data); // Store flat list
+                const map = {}, nodeTree = { _id: "root", name: "Project Root", type: "folder", children: [] };
+                res.data.forEach(node => { map[node._id] = { ...node, children: [] }; });
+                res.data.forEach(node => {
+                    if (node.parentId !== "root") {
+                        if (map[node.parentId]) map[node.parentId].children.push(map[node._id]);
+                    } else {
+                        nodeTree.children.push(map[node._id]);
+                    }
+                });
+                // FIX: Display imported folder as root if it's the only one
+                if (nodeTree.children.length === 1 && nodeTree.children[0].type === 'folder') {
+                    setFileData(nodeTree.children[0]);
                 } else {
-                    nodeTree.children.push(map[node._id]);
+                    setFileData(nodeTree);
                 }
+                setIsAppLoading(false); // Boot sequence complete
+            }).catch(err => {
+                console.log("Fetch Error");
+                setIsAppLoading(false); // Don't hang forever
             });
-            // FIX: Display imported folder as root if it's the only one
-            if (nodeTree.children.length === 1 && nodeTree.children[0].type === 'folder') {
-                setFileData(nodeTree.children[0]);
-            } else {
-                setFileData(nodeTree);
-            }
-            setIsAppLoading(false); // Boot sequence complete
-        }).catch(err => {
-            console.log("Fetch Error");
-            setIsAppLoading(false); // Don't hang forever
-        });
+        }, 300); // 300ms debounce
     }, [token, api]);
 
     // Handle Global Shortcuts (Ctrl+S)

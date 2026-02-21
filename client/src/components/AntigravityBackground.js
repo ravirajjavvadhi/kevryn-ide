@@ -1,12 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 
-const AntigravityBackground = () => {
+const AntigravityBackground = React.memo(() => {
     const canvasRef = useRef(null);
     const mouseRef = useRef({ x: -1000, y: -1000, active: false });
 
     useEffect(() => {
         const canvas = canvasRef.current;
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Performance win: Opaque background
         let animationFrameId;
         let particles = [];
         let blobs = [];
@@ -20,7 +20,7 @@ const AntigravityBackground = () => {
 
         const createElements = () => {
             particles = [];
-            const particleCount = Math.floor((width * height) / 12000);
+            const particleCount = Math.floor((width * height) / 20000); // Reduced density for performance
             for (let i = 0; i < particleCount; i++) {
                 particles.push({
                     x: Math.random() * width,
@@ -123,13 +123,18 @@ const AntigravityBackground = () => {
                 ctx.fill();
             });
 
-            // 4. Connections
+            // 4. Connections (Batch distant checks)
             ctx.lineWidth = 0.5;
+            const connectionDistSq = 100 * 100; // 100px radius
             for (let i = 0; i < particles.length; i++) {
+                const p1 = particles[i];
                 for (let j = i + 1; j < particles.length; j++) {
-                    const p1 = particles[i]; const p2 = particles[j];
-                    const dist = Math.sqrt((p1.x - p2.x) ** 2 + (p1.y - p2.y) ** 2);
-                    if (dist < 100) {
+                    const p2 = particles[j];
+                    const dx = p1.x - p2.x;
+                    const dy = p1.y - p2.y;
+                    const distSq = dx * dx + dy * dy;
+                    if (distSq < connectionDistSq) {
+                        const dist = Math.sqrt(distSq);
                         ctx.strokeStyle = `rgba(139, 92, 246, ${0.12 - dist / 800})`;
                         ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
                     }
@@ -162,6 +167,6 @@ const AntigravityBackground = () => {
     return (
         <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 0, background: '#08080c', pointerEvents: 'none' }} />
     );
-};
+});
 
 export default AntigravityBackground;
