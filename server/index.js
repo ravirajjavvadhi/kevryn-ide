@@ -1,5 +1,4 @@
 ﻿console.log('[DEBUG] --- START OF INDEX.JS ---');
-console.log('[DEBUG] --- ENV PORT: ' + process.env.PORT + ' ---');
 const initialPort = process.env.PORT;
 require('dotenv').config();
 const finalPort = process.env.PORT;
@@ -56,7 +55,6 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const PORT = 5000; // FORCED TO 5000 TO MATCH RAILWAY SETTINGS
-console.log(`[PORT] FORCING PORT TO ${PORT} AS REQUESTED`);
 
 const cookieParser = require('cookie-parser');
 
@@ -102,13 +100,8 @@ server.on('error', (err) => {
     console.error('!!! SERVER ERROR !!!', err);
 });
 
-server.on('connection', (socket) => {
-    // Logging connection for diagnostics but avoiding too much noise
-    // console.log(`[TCP] New connection from ${socket.remoteAddress}`);
-});
-
 server.listen(PORT, () => {
-    console.log(`[BOOT] Server listening on port ${PORT} (All interfaces)`);
+    console.log(`[BOOT] Server listening on port ${PORT}`);
     console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });
 
@@ -123,7 +116,7 @@ app.get('/', (req, res) => {
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
     if (req.url !== '/health' && req.url !== '/ready') {
-        console.log(`[TRAFFIC] ${req.method} ${req.url} - Origin: ${req.headers.origin || 'NO ORIGIN'}`);
+        console.log(`[TRAFFIC] ${req.method} ${req.url}`);
     }
     next();
 });
@@ -232,22 +225,12 @@ app.post('/auth/register', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        console.log(`[AUTH] Login attempt for: "${username}"`);
-
         const user = await User.findOne({ username: username });
 
         if (!user) {
-            console.warn(`[AUTH] User NOT found in DB: "${username}"`);
-            // Check if it's a case sensitivity issue
-            const caseCheck = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
-            if (caseCheck) {
-                console.log(`[AUTH] Found case-insensitive match: "${caseCheck.username}"`);
-                return res.status(400).json({ error: `User not found. Did you mean "${caseCheck.username}"?` });
-            }
             return res.status(400).json({ error: "User not found" });
         }
 
-        console.log(`[AUTH] User found: ${user.username} (${user._id})`);
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
@@ -1065,11 +1048,9 @@ app.use('/sites/:userId', (req, res, next) => {
 });
 
 // --- DB CONNECTION ---
-const maskedUri = (process.env.MONGODB_URI || "MISSING").substring(0, 20) + "...";
-console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri}`);
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
-        console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
+        console.log(`🚀 SUCCESS: Connected to MongoDB`);
 
         // CLEANUP: Reset all students to 'offline' on server restart
         // This prevents "ghost" active students if the server crashed/restarted while they were online.
