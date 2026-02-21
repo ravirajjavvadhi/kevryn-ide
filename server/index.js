@@ -232,9 +232,22 @@ app.post('/auth/register', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        const user = await User.findOne({ username });
-        if (!user) return res.status(400).json({ error: "User not found" });
+        console.log(`[AUTH] Login attempt for: "${username}"`);
 
+        const user = await User.findOne({ username: username });
+
+        if (!user) {
+            console.warn(`[AUTH] User NOT found in DB: "${username}"`);
+            // Check if it's a case sensitivity issue
+            const caseCheck = await User.findOne({ username: { $regex: new RegExp(`^${username}$`, 'i') } });
+            if (caseCheck) {
+                console.log(`[AUTH] Found case-insensitive match: "${caseCheck.username}"`);
+                return res.status(400).json({ error: `User not found. Did you mean "${caseCheck.username}"?` });
+            }
+            return res.status(400).json({ error: "User not found" });
+        }
+
+        console.log(`[AUTH] User found: ${user.username} (${user._id})`);
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
