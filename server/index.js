@@ -79,7 +79,17 @@ const courseManager = require('./routes/courseManager');
 const assignmentManager = require('./routes/assignmentManager');
 
 const app = express();
+app.set('trust proxy', 1); // Trust Railway's HTTPS proxy
+
+// --- DIAGNOSTIC HEALTH CHECK ---
+app.get('/health', (req, res) => {
+    console.log('!!! LOUD HEALTH CHECK HIT !!!');
+    res.status(200).send('OK');
+});
+
 let io; // Declared early so lab routes can reference it; assigned after server creation
+
+console.log('[DEBUG] --- IMPORTS COMPLETE ---');
 
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
@@ -87,10 +97,9 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- HEALTH CHECK ---
+// --- BASE ROUTE ---
 app.get('/', (req, res) => {
-    console.log(`[${new Date().toISOString()}] !!! HEALTH CHECK HIT !!!`);
-console.log('[DEBUG] --- IMPORTS COMPLETE ---');
+    console.log(`[${new Date().toISOString()}] !!! ROOT HIT (HEALTH CHECK) !!!`);
     res.send('Kevryn Server is Running (Health Check OK)');
 });
 
@@ -121,7 +130,10 @@ app.use(session({
     secret: SESSION_SECRET,
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false }
+    cookie: {
+        secure: true, // Required for HTTPS
+        sameSite: 'none' // Required for cross-site (Vercel to Railway)
+    }
 }));
 app.use(passport.initialize());
 app.use(passport.session());
@@ -2126,7 +2138,13 @@ const server = http.createServer(app);
 const liveLabState = {}; // { sessionId: { username: { status, lastActive, code, activeFile, language } } }
 const socketToUser = {}; // { socketId: { sessionId, username } }
 
-io = new Server(server, { cors: { origin: CORS_ORIGIN, methods: ["GET", "POST"], credentials: true } });
+io = new Server(server, {
+    cors: {
+        origin: true, // Accept any origin in production (guarded by JWT)
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+});
 
 io.on('connection', (socket) => {
     socket.on('register-user', (u) => socket.join(u));
