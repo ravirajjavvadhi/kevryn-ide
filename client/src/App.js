@@ -136,6 +136,8 @@ function App() {
         }
     }, [wcReady, files, wcBridgeRef]);
 
+    const api = useMemo(() => axios.create({ baseURL: SERVER_URL, headers: { Authorization: token } }), [token]);
+
     const safeEmit = useCallback((event, data, callback) => {
         if (socketRef.current) {
             socketRef.current.emit(event, data, callback);
@@ -168,6 +170,33 @@ function App() {
         // 3. Force Reload to clear any lingering React state/sockets
         window.location.href = "/";
     }, []);
+
+    const findFileFullPath = useCallback((fileId) => {
+        const buildPath = (id) => {
+            const f = files.find(item => item._id === id);
+            if (!f) return '';
+            if (f.parentId === 'root' || !f.parentId) return f.name;
+            return `${buildPath(f.parentId)}/${f.name}`;
+        };
+        return buildPath(fileId);
+    }, [files]);
+
+    const handleSave = useCallback(async () => {
+        if (!activeFileId) return;
+        const fullPath = findFileFullPath(activeFileId);
+        console.log(`[SAVE] Triggered for ${fullPath} (${activeFileId})`);
+        try {
+            await api.put(`/files/${activeFileId}`, { content: code });
+            safeEmit('save-file-disk', { fileName: fullPath, code: code, userId, fileId: activeFileId });
+            if (wcBridgeRef.current) {
+                await wcBridgeRef.current.writeFile(fullPath, code);
+            }
+            alert("Saved!");
+        } catch (e) {
+            console.error("[SAVE] Failed:", e);
+            alert("Error saving file");
+        }
+    }, [activeFileId, findFileFullPath, api, code, safeEmit, userId, wcBridgeRef]);
 
     // --- THEME STATE ---
     const [currentTheme, setCurrentTheme] = useState(localStorage.getItem('theme') || 'midnight'); // Default to Midnight for best effect
@@ -333,7 +362,6 @@ function App() {
         });
     };
 
-    const api = useMemo(() => axios.create({ baseURL: SERVER_URL, headers: { Authorization: token } }), [token]);
 
     const fetchFiles = useCallback(() => {
         if (!token) return;
@@ -862,35 +890,7 @@ function App() {
         return 'plaintext';
     };
 
-    const findFileFullPath = useCallback((fileId) => {
-        const buildPath = (id) => {
-            const f = files.find(item => item._id === id);
-            if (!f) return '';
-            if (f.parentId === 'root' || !f.parentId) return f.name;
-            return `${buildPath(f.parentId)}/${f.name}`;
-        };
-        return buildPath(fileId);
-    }, [files]);
 
-    const handleSave = async () => {
-        if (!activeFileId) return;
-        const fullPath = findFileFullPath(activeFileId);
-        console.log(`[SAVE] Triggered for ${fullPath} (${activeFileId})`);
-        try {
-            // 1. Save to Database
-            await api.put(`/files/${activeFileId}`, { content: code });
-            // 2. Save to Disk (Legacy Backend Support)
-            safeEmit('save-file-disk', { fileName: fullPath, code: code, userId, fileId: activeFileId });
-            // 3. Save to WebContainer
-            if (wcBridgeRef.current) {
-                await wcBridgeRef.current.writeFile(fullPath, code);
-            }
-            alert("Saved!");
-        } catch (e) {
-            console.error("[SAVE] Failed:", e);
-            alert("Error saving file");
-        }
-    };
     const handleSaveAs = async () => {
         if (!userId) return;
         const newName = prompt("Save As (Enter new filename):", "copy_" + fileName);
