@@ -2678,3 +2678,7 @@ io.on('connection', (socket) => {
         } else {
             process.exit(0);
         }
+    });
+});
+
+server.listen(PORT, () => console.log(`?? Backend running on port ${PORT}`));
