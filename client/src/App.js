@@ -1329,12 +1329,12 @@ function App() {
         return <LoadingScreen />;
     }
 
-    if (token && userRole === 'faculty') {
-        return <FacultyHub token={token} serverUrl={SERVER_URL} userId={userId} onLogout={handleLogout} />;
-    }
-
     if (token && userRole === 'admin') {
         return <AdminDashboard token={token} onLogout={handleLogout} />;
+    }
+
+    if (token && userRole === 'faculty') {
+        return <FacultyHub token={token} SERVER_URL={SERVER_URL} userId={userId} onLogout={handleLogout} />;
     }
 
     // 4. MAIN IDE OR AUTH SCREEN
@@ -1408,26 +1408,32 @@ function App() {
                                             <FaGlobe size={50} color="#fff" />
                                         </div>
                                     ) : (
-                                        <motion.img
-                                            src="/logoide.jpeg"
-                                            alt="Kevryn Logo"
-                                            whileHover={{ rotate: 360, filter: 'drop-shadow(0 0 40px rgba(59, 130, 246, 0.8))' }}
-                                            transition={{ duration: 0.8, ease: "easeInOut" }}
-                                            style={{
-                                                height: '80px',
-                                                width: 'auto',
-                                                filter: 'drop-shadow(0 0 25px rgba(59, 130, 246, 0.5))',
-                                                borderRadius: '20px',
-                                                cursor: 'pointer'
-                                            }}
-                                        />
+                                        <motion.div
+                                            whileHover={{ scale: 1.1, rotate: 5 }}
+                                            transition={{ type: "spring", stiffness: 400, damping: 10 }}
+                                            style={{ cursor: 'pointer', position: 'relative' }}
+                                        >
+                                            <div style={{ position: 'absolute', inset: '-15px', background: 'radial-gradient(circle, rgba(59, 130, 246, 0.4) 0%, transparent 70%)', filter: 'blur(10px)', zIndex: -1 }}></div>
+                                            <img
+                                                src="/logoide.jpeg"
+                                                alt="Kevryn Logo"
+                                                style={{
+                                                    height: '90px',
+                                                    width: 'auto',
+                                                    filter: 'drop-shadow(0 0 20px rgba(59, 130, 246, 0.6))',
+                                                    borderRadius: '24px',
+                                                    border: '2px solid rgba(255, 255, 255, 0.1)',
+                                                    boxShadow: '0 10px 40px rgba(0,0,0,0.5)'
+                                                }}
+                                            />
+                                        </motion.div>
                                     )}
                                 </div>
-                                <h2 style={{ color: '#fff', marginBottom: '10px', textAlign: 'center', fontSize: '28px', fontWeight: '900', letterSpacing: '-0.5px', transform: 'translateZ(70px)' }}>
-                                    {isFacultyLogin ? 'Kevryn Faculty Portal' : 'Kevryn Student Hub'}
+                                <h2 style={{ color: '#fff', marginBottom: '8px', textAlign: 'center', fontSize: '32px', fontWeight: '900', letterSpacing: '-1px', transform: 'translateZ(70px)', textShadow: '0 4px 10px rgba(0,0,0,0.5)' }}>
+                                    {isFacultyLogin ? 'Kevryn Management' : 'Kevryn Studio'}
                                 </h2>
-                                <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: '30px', fontSize: '14px', transform: 'translateZ(40px)' }}>
-                                    {isFacultyLogin ? 'Secure access for academic management.' : 'The next generation Cloud IDE for students.'}
+                                <p style={{ color: 'rgba(255,255,255,0.6)', textAlign: 'center', marginBottom: '35px', fontSize: '15px', transform: 'translateZ(40px)', fontWeight: '500' }}>
+                                    {isFacultyLogin ? 'Secure access for academic management.' : 'The Most Advanced Cloud IDE Ever.'}
                                 </p>
                             </motion.div>
 
@@ -1444,12 +1450,14 @@ function App() {
                                     className="btn"
                                     type="submit"
                                     style={{
-                                        justifyContent: 'center', padding: '14px', borderRadius: '12px', fontSize: '16px', marginTop: '10px',
-                                        background: isFacultyLogin ? 'linear-gradient(135deg, #6d28d9, #4c1d95)' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                                        border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer', boxShadow: isFacultyLogin ? '0 4px 15px rgba(109, 40, 217, 0.3)' : '0 4px 15px rgba(37, 99, 235, 0.3)'
+                                        justifyContent: 'center', padding: '16px', borderRadius: '14px', fontSize: '18px', marginTop: '10px',
+                                        background: isFacultyLogin ? 'linear-gradient(135deg, #6d28d9, #4c1d95)' : 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                                        border: 'none', color: '#fff', fontWeight: '900', cursor: 'pointer',
+                                        boxShadow: isFacultyLogin ? '0 10px 25px rgba(109, 40, 217, 0.4)' : '0 10px 25px rgba(37, 99, 235, 0.4)',
+                                        textTransform: 'uppercase', letterSpacing: '1px', transition: 'all 0.3s ease'
                                     }}
                                 >
-                                    {isLogin ? (isFacultyLogin ? 'Access Dashboard' : 'Enter Studio') : 'Get Started'}
+                                    {isLogin ? (isFacultyLogin ? 'Access Management' : 'Launch Studio') : 'Create Account'}
                                 </button>
                             </motion.form>
 
