@@ -109,8 +109,10 @@ server.on('error', (err) => {
     console.error('!!! SERVER ERROR !!!', err);
 });
 
-server.listen(PORT, () => {
-    console.log(`[BOOT] Server listening on port ${PORT}`);
+const HOST = '0.0.0.0';
+server.listen(PORT, HOST, () => {
+    console.log(`[BOOT] Server listening on ${HOST}:${PORT}`);
+    console.log(`[BOOT] PORT Source: ${process.env.PORT ? 'Environment' : 'Fallback (5000)'}`);
     console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });
 
@@ -130,30 +132,41 @@ app.use((req, res, next) => {
     next();
 });
 
-// --- SECURITY MIDDLEWARE ---
+// --- CORS & SECURITY MIDDLEWARE ---
+// EARLY-STAGE CORS: Setup headers before ANY other middleware to fix Express 5 preflight issues
+app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    // Allow Netlify + localhost, but also echo back origin in production for flexibility
+    if (origin) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
+    res.setHeader('Access-Control-Allow-Credentials', 'true');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+
+    if (req.method === 'OPTIONS') {
+        return res.sendStatus(200);
+    }
+    next();
+});
+
 app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cookieParser());
 
-// CORS: Allow Netlify frontend + localhost dev
+// Keep the standard CORS middleware as a fallback/secondary layer
 const allowedOrigins = [
     'https://kevryn-ide.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001'
 ];
 const corsOptions = {
-    origin: (origin, callback) => {
-        // Echo back the request origin (required for credentials: true)
-        // Allow all origins in production to avoid blocking valid clients
-        callback(null, origin || true);
-    },
+    origin: (origin, callback) => callback(null, origin || true),
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+    optionsSuccessStatus: 200
 };
 app.use(cors(corsOptions));
-// Express 5 compatible preflight handler (path-to-regexp v8 wildcard syntax)
-app.options('/{*path}', cors(corsOptions));
 
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
