@@ -91,8 +91,7 @@ function App() {
     const chatEndRef = useRef(null);
 
     const [terminals, setTerminals] = useState([
-        { id: 1, name: 'Local Terminal', type: 'local' },
-        { id: 'server-1', name: 'Server Terminal', type: 'server' }
+        { id: 1, name: 'Local Terminal', type: 'local' }
     ]);
     const [activeTermId, setActiveTermId] = useState(1);
     const [isAiLoading, setIsAiLoading] = useState(false);
@@ -1034,8 +1033,8 @@ function App() {
         let cmd = "";
         if (currentFileName.endsWith('.js')) cmd = `node "${currentFileName}"\r`;
         else if (currentFileName.endsWith('.py')) cmd = `python -u "${currentFileName}"\r`;
-        else if (currentFileName.endsWith('.c')) cmd = `gcc "${currentFileName}" -o output && .\\output\r`;
-        else if (currentFileName.endsWith('.cpp')) cmd = `g++ "${currentFileName}" -o output && .\\output\r`;
+        else if (currentFileName.endsWith('.c')) cmd = `gcc "${currentFileName}" -o output && ./output\r`;
+        else if (currentFileName.endsWith('.cpp')) cmd = `g++ "${currentFileName}" -o output && ./output\r`;
         else if (currentFileName.endsWith('.java')) {
             // Extract directory and class name
             const filePath = currentFileName.replace(/\\/g, '/');
@@ -1050,7 +1049,13 @@ function App() {
 
         if (cmd) {
             const isLocalLang = currentFileName.endsWith('.js') || currentFileName.endsWith('.mjs') || currentFileName.endsWith('.html') || currentFileName.endsWith('.css');
-            const targetTerm = terminals.find(t => isLocalLang ? t.type === 'local' : t.type === 'server');
+            let targetTerm = terminals.find(t => isLocalLang ? t.type === 'local' : t.type === 'server');
+
+            if (!targetTerm && !isLocalLang) {
+                // Add Server terminal on-demand if it doesn't exist
+                targetTerm = { id: 'server-1', name: 'Server Terminal', type: 'server' };
+                setTerminals(prev => [...prev, targetTerm]);
+            }
 
             if (targetTerm) {
                 setActiveTermId(targetTerm.id);
@@ -1749,13 +1754,15 @@ function App() {
                                                 {bottomPanelTab === 'terminal' && (
                                                     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
                                                         <div className="terminal-sidebar">
-                                                            {terminals.map(t => (
-                                                                <div key={t.id} onClick={() => setActiveTermId(t.id)} className={`terminal-sidebar-item ${activeTermId === t.id ? 'active' : ''}`}>
-                                                                    <FaTerminal size={10} />
-                                                                    <span className="terminal-name">{t.name}</span>
-                                                                    <FaTrash size={10} className="trash-icon" onClick={(e) => { e.stopPropagation(); remTerm(t.id); }} />
-                                                                </div>
-                                                            ))}
+                                                            {terminals
+                                                                .filter(t => t.type !== 'server' || activeTermId === t.id)
+                                                                .map(t => (
+                                                                    <div key={t.id} onClick={() => setActiveTermId(t.id)} className={`terminal-sidebar-item ${activeTermId === t.id ? 'active' : ''}`}>
+                                                                        <FaTerminal size={10} />
+                                                                        <span className="terminal-name">{t.name}</span>
+                                                                        <FaTrash size={10} className="trash-icon" onClick={(e) => { e.stopPropagation(); remTerm(t.id); }} />
+                                                                    </div>
+                                                                ))}
                                                         </div>
                                                         <div style={{ flex: 1, position: 'relative', background: '#1e1e1e' }}>
                                                             {terminals.map(t => (
