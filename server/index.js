@@ -2658,3 +2658,13 @@ io.on('connection', (socket) => {
             }).catch(() => { });
         });
 
+        });
+    });
+});
+
+process.on('SIGTERM', () => {
+    if (server) server.close(() => process.exit(0));
+    else process.exit(0);
+});
+
+server.listen(PORT, '0.0.0.0', () => console.log('🚀 Backend running on port ' + PORT + ' (Bound to 0.0.0.0)'));
