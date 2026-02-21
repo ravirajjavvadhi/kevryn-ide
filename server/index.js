@@ -61,8 +61,21 @@ let io; // Declared early so lab routes can reference it; assigned after server 
 app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP for IDE (Monaco CDN)
 app.use(cookieParser()); // Use cookie-parser
 app.use(cors({
-    origin: CORS_ORIGIN,
-    credentials: true
+    origin: function (origin, callback) {
+        // Allow requests with no origin (mobile apps, curl, Postman)
+        if (!origin) return callback(null, true);
+        // Allow localhost for local dev
+        if (origin.includes('localhost')) return callback(null, true);
+        // Allow any Vercel deployment
+        if (origin.includes('.vercel.app')) return callback(null, true);
+        // Allow explicitly configured origin
+        if (CORS_ORIGIN && origin === CORS_ORIGIN) return callback(null, true);
+        // Block everything else
+        return callback(new Error('Not allowed by CORS'));
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // --- WEBCONTAINER SECURITY HEADERS ---
