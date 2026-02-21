@@ -3,6 +3,7 @@
   publish = "build"
   [build.environment]
     CI = "false"
+    REACT_APP_SERVER_URL = "https://kevryn-ide-production.up.railway.app"
 
 [[headers]]
   for = "/*"
