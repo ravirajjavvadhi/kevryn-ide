@@ -3,7 +3,7 @@ import Editor, { loader } from '@monaco-editor/react';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from 'framer-motion';
-import { FaCodeBranch, FaPlay, FaSignOutAlt, FaEye, FaGlobe, FaPlus, FaTerminal, FaComments, FaPaperPlane, FaFolder, FaTrash, FaShareAlt, FaSync, FaMagic, FaCloudUploadAlt, FaServer, FaSearch, FaRobot, FaTimes, FaChevronUp, FaChevronDown, FaBug, FaExclamationTriangle, FaNetworkWired, FaEllipsisH, FaCog, FaGithub, FaCode, FaHistory, FaClipboardList } from 'react-icons/fa';
+import { FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub } from 'react-icons/fa';
 import FileTree from './components/FileTree';
 import Terminal from './components/Terminal';
 import AIPanel from './components/AIPanel';
@@ -104,7 +104,7 @@ function App() {
     const autoSaveTimeoutRef = useRef(null); // For debounced auto-save
     const codeSyncTimeoutRef = useRef(null); // For debounced socket sync
     const socketRef = useRef(null);
-    const [socketConnected, setSocketConnected] = useState(false);
+    const [socketConnected, setSocketConnected] = useState(false); // Used in listeners
 
     const webcontainerRef = useRef(null);
     const wcBridgeRef = useRef(null);
@@ -367,7 +367,7 @@ function App() {
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeFileId, fileName, code]); // Re-bind when these change so handleSave has fresh state
+    }, [activeFileId, fileName, code, handleSave]);
 
     const [socketInstance, setSocketInstance] = useState(null);
 
@@ -403,7 +403,7 @@ function App() {
             checkSession();
         }
 
-    }, [token, userRole]);
+    }, [token, userRole, api]);
 
     useEffect(() => {
         if (isLabOpen && activeSessionId && socketRef.current) {
@@ -411,7 +411,7 @@ function App() {
             window.currentLabSessionId = activeSessionId;
             socketRef.current.emit('student-join-lab', { sessionId: activeSessionId, username: username, role: 'student' });
         }
-    }, [isLabOpen, activeSessionId]);
+    }, [isLabOpen, activeSessionId, username]);
 
 
 
