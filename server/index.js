@@ -8,7 +8,15 @@ const rateLimit = require('express-rate-limit');
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const pty = require('node-pty');
+// node-pty is a native module — load it optionally so server boots on Railway even without native compilation
+let pty;
+try {
+    pty = require('node-pty');
+    console.log('[PTY] node-pty loaded successfully');
+} catch (e) {
+    console.warn('[PTY] node-pty not available (native compile failed). Terminal features disabled:', e.message);
+    pty = null;
+}
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
