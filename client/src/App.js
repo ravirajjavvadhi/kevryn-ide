@@ -37,7 +37,9 @@ loader.config({
     }
 });
 
-const SERVER_URL = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+const _rawServerUrl = process.env.REACT_APP_SERVER_URL || 'http://localhost:5000';
+// Ensure protocol is present so URLs don't become relative paths on deployment
+const SERVER_URL = _rawServerUrl.startsWith('http') ? _rawServerUrl : `https://${_rawServerUrl}`;
 
 function App() {
     const [token, setToken] = useState(localStorage.getItem('token'));
