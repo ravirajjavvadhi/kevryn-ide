@@ -90,7 +90,10 @@ function App() {
     const [chatInput, setChatInput] = useState("");
     const chatEndRef = useRef(null);
 
-    const [terminals, setTerminals] = useState([{ id: 1, name: 'Terminal 1' }]);
+    const [terminals, setTerminals] = useState([
+        { id: 1, name: 'Local Terminal', type: 'local' },
+        { id: 'server-1', name: 'Server Terminal', type: 'server' }
+    ]);
     const [activeTermId, setActiveTermId] = useState(1);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [deployStatus, setDeployStatus] = useState(null);
@@ -1046,16 +1049,31 @@ function App() {
         }
 
         if (cmd) {
-            // Check if we have a local WebContainer terminal instance
-            if (window.ideTerminalInputs && window.ideTerminalInputs[activeTermId]) {
-                const inputWriter = window.ideTerminalInputs[activeTermId];
-                inputWriter.write(cmd);
-                // The mirrored output will handle faculty visibility automatically
+            const isLocalLang = currentFileName.endsWith('.js') || currentFileName.endsWith('.mjs') || currentFileName.endsWith('.html') || currentFileName.endsWith('.css');
+            const targetTerm = terminals.find(t => isLocalLang ? t.type === 'local' : t.type === 'server');
+
+            if (targetTerm) {
+                setActiveTermId(targetTerm.id);
+                setBottomPanelTab('terminal');
+                setIsBottomPanelOpen(true);
+
+                // Delay slightly to ensure terminal is rendered/focused
+                setTimeout(() => {
+                    const inputs = window.ideTerminalInputs || {};
+                    const inputWriter = inputs[targetTerm.id];
+
+                    if (inputWriter && typeof inputWriter.write === 'function') {
+                        inputWriter.write(cmd);
+                    } else {
+                        // Fallback: Use socket if local writer not available 
+                        safeEmit('terminal:write', { termId: targetTerm.id, data: cmd });
+                    }
+                }, 100);
             } else {
                 safeEmit('terminal:write', { termId: activeTermId, data: cmd });
             }
         } else {
-            alert("No auto-run support.");
+            alert("Auto-run is not configured for this file type. You can manually run it in the terminal.");
         }
     };
 
@@ -1071,8 +1089,17 @@ function App() {
     };
 
     const openPort = () => { const p = prompt("Port:"); if (p) window.open(`http://localhost:${p}`, '_blank'); };
-    const addTerm = () => { const id = terminals.length > 0 ? Math.max(...terminals.map(t => t.id)) + 1 : 1; setTerminals([...terminals, { id, name: `Terminal ${id}` }]); setActiveTermId(id); };
-    const remTerm = (id) => { const n = terminals.filter(t => t.id !== id); setTerminals(n); if (activeTermId === id && n.length > 0) setActiveTermId(n[0].id); };
+    const addTerm = () => {
+        const nextId = terminals.length > 0 ? (Math.max(...terminals.filter(t => typeof t.id === 'number').map(t => t.id), 0) + 1) : 2;
+        setTerminals([...terminals, { id: nextId, name: `Terminal ${nextId}`, type: 'local' }]);
+        setActiveTermId(nextId);
+    };
+    const remTerm = (id) => {
+        if (id === 'server-1') return alert("Cannot close the main Server Terminal.");
+        const n = terminals.filter(t => t.id !== id);
+        setTerminals(n);
+        if (activeTermId === id && n.length > 0) setActiveTermId(n[0].id);
+    };
     const sendChatMessage = (e) => { e.preventDefault(); if (!chatInput.trim()) return; safeEmit('send-message', { sender: username, text: chatInput }); setChatInput(""); };
     const shareSingleFile = async () => {
         if (!activeFileId) return alert("Select a file first!");
@@ -1734,11 +1761,11 @@ function App() {
                                                             {terminals.map(t => (
                                                                 <div key={t.id} style={{ width: '100%', height: '100%', display: activeTermId === t.id ? 'block' : 'none' }}>
                                                                     <Terminal
-                                                                        socket={socketInstance}
+                                                                        socket={socketRef.current}
                                                                         termId={t.id}
                                                                         userId={userId}
                                                                         onError={(err) => setTerminalError(err)}
-                                                                        webcontainer={webcontainerInstance}
+                                                                        webcontainer={t.type === 'local' ? webcontainerInstance : null}
                                                                     />
                                                                 </div>
                                                             ))}
