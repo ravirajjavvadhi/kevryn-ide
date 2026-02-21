@@ -225,14 +225,9 @@ app.post('/auth/register', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
-        console.log(`[AUTH] Login attempt for: "${username}"`);
         const user = await User.findOne({ username: username });
+        if (!user) return res.status(400).json({ error: "User not found" });
 
-        if (!user) {
-            console.warn(`[AUTH] User NOT found in DB: "${username}"`);
-            return res.status(400).json({ error: "User not found" });
-        }
-        console.log(`[AUTH] User found: ${user.username} (${user._id})`);
         const match = await bcrypt.compare(password, user.password);
         if (!match) return res.status(400).json({ error: "Invalid credentials" });
 
@@ -1050,20 +1045,9 @@ app.use('/sites/:userId', (req, res, next) => {
 });
 
 // --- DB CONNECTION ---
-const maskedUri = (process.env.MONGODB_URI || "MISSING").substring(0, 30) + "...";
-const dbNameSegment = (process.env.MONGODB_URI || "").split('/').pop().split('?')[0];
-console.log(`[DEBUG] Connecting to MongoDB: ${maskedUri} (Target DB in URI: ${dbNameSegment})`);
 mongoose.connect(process.env.MONGODB_URI)
     .then(async () => {
-        console.log(`🚀 SUCCESS: Connected to MongoDB (DB: ${mongoose.connection.name})`);
-
-        // --- DATA DIAGNOSTIC ---
-        try {
-            const count = await User.countDocuments();
-            console.log(`[DATA] Total users in DB: ${count}`);
-            const samples = await User.find().limit(5).select('username');
-            console.log(`[DATA] Sample users: ${samples.map(u => u.username).join(', ')}`);
-        } catch (e) { console.error("[DATA] Diagnostic failed:", e.message); }
+        console.log(`🚀 SUCCESS: Connected to MongoDB`);
 
         // CLEANUP: Reset all students to 'offline' on server restart
         // This prevents "ghost" active students if the server crashed/restarted while they were online.
