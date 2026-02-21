@@ -2654,12 +2654,6 @@ io.on('connection', (socket) => {
 
 // --- GRACEFUL SHUTDOWN ---
 process.on('SIGTERM', () => {
-    console.log('SIGTERM received. Shutting down gracefully...');
-    server.close(() => {
-        mongoose.connection.close(false, () => {
-            process.exit(0);
-        });
-    });
-});
 
-server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+
+    server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
