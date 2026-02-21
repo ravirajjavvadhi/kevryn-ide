@@ -56,8 +56,14 @@ const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
 const PORT = process.env.PORT || 5000; // Use Railway's dynamic port
 
-// Initialize Google OAuth2 client
-const client = new OAuth2Client(GOOGLE_CLIENT_ID);
+// Initialize Google OAuth2 client (lazy - created on first auth attempt)
+let _googleClient = null;
+const getGoogleClient = () => {
+    if (!_googleClient && GOOGLE_CLIENT_ID) {
+        _googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+    }
+    return _googleClient;
+};
 
 const cookieParser = require('cookie-parser');
 
@@ -269,7 +275,7 @@ app.use('/api/issues', issuesRouter); // NEW: Issue Reporting
 app.post('/auth/google', async (req, res) => {
     try {
         const { token } = req.body;
-        const ticket = await client.verifyIdToken({
+        const ticket = await getGoogleClient().verifyIdToken({
             idToken: token,
             audience: GOOGLE_CLIENT_ID,
         });
@@ -1462,7 +1468,7 @@ app.post('/register', async (req, res) => {
 app.post('/auth/google', async (req, res) => {
     const { token } = req.body;
     try {
-        const ticket = await client.verifyIdToken({
+        const ticket = await getGoogleClient().verifyIdToken({
             idToken: token,
             audience: GOOGLE_CLIENT_ID,
         });
