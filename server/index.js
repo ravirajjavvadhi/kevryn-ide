@@ -83,6 +83,16 @@ app.set('trust proxy', 1);
 
 // --- LISTEN EARLY (Railway 502 Fix) ---
 const server = http.createServer(app);
+
+// --- SOCKET INITIALIZATION ---
+io = new Server(server, {
+    cors: {
+        origin: true,
+        methods: ["GET", "POST"],
+        credentials: true
+    }
+});
+
 server.listen(PORT, '0.0.0.0', () => {
     console.log(`[BOOT] Server listening on 0.0.0.0:${PORT}`);
     console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
@@ -2132,20 +2142,7 @@ app.post('/project/sync', authenticate, async (req, res) => { /* Keep existing *
     const { targetUsername } = req.body; try { const targetUser = await User.findOne({ username: targetUsername }); if (!targetUser) return res.status(404).json({ error: "User not found" }); await User.findByIdAndUpdate(req.user.userId, { $addToSet: { collaborators: targetUsername } }); await File.updateMany({ owner: req.user.userId }, { $addToSet: { sharedWith: targetUsername } }); res.json({ message: "Synced!" }); } catch (err) { res.status(500).json({ error: "Sync failed" }); }
 });
 
-const server = http.createServer(app);
-
-
-// GLOBAL STATE for Real-Time Lab Monitor
-const liveLabState = {}; // { sessionId: { username: { status, lastActive, code, activeFile, language } } }
-const socketToUser = {}; // { socketId: { sessionId, username } }
-
-io = new Server(server, {
-    cors: {
-        origin: true, // Accept any origin in production (guarded by JWT)
-        methods: ["GET", "POST"],
-        credentials: true
-    }
-});
+// --- SOCKET INITIALIZATION moved to top ---
 
 io.on('connection', (socket) => {
     socket.on('register-user', (u) => socket.join(u));
