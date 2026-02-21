@@ -81,6 +81,11 @@ const assignmentManager = require('./routes/assignmentManager');
 const app = express();
 app.set('trust proxy', 1);
 
+// --- GLOBAL STATE ---
+let io;
+const liveLabState = {};
+const socketToUser = {};
+
 // --- LISTEN EARLY (Railway 502 Fix) ---
 const server = http.createServer(app);
 
@@ -105,8 +110,6 @@ app.get('/', (req, res) => {
     console.log(`[${new Date().toISOString()}] !!! ROOT HIT !!!`);
     res.send('Kevryn Server is Online');
 });
-
-let io;
 
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
