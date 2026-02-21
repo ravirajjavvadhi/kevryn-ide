@@ -1,4 +1,11 @@
+const initialPort = process.env.PORT;
 require('dotenv').config();
+const finalPort = process.env.PORT;
+
+if (initialPort && finalPort && initialPort !== finalPort) {
+    console.warn(`[PORT] WARNING: Environment PORT (${initialPort}) was overridden by .env PORT (${finalPort}). This may break Railway connectivity.`);
+}
+
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -2671,4 +2678,8 @@ process.on('SIGTERM', () => {
     }
 });
 
-server.listen(PORT, () => console.log(`🚀 Backend running on port ${PORT}`));
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 Backend running on port ${PORT}`);
+    console.log(`🌍 Bound to 0.0.0.0`);
+});
+
