@@ -79,40 +79,41 @@ const courseManager = require('./routes/courseManager');
 const assignmentManager = require('./routes/assignmentManager');
 
 const app = express();
-app.set('trust proxy', 1); // Trust Railway's HTTPS proxy
+app.set('trust proxy', 1);
 
-// --- DIAGNOSTIC HEALTH CHECK ---
-app.get('/health', (req, res) => {
-    console.log('!!! LOUD HEALTH CHECK HIT !!!');
-    res.status(200).send('OK');
+// --- LISTEN EARLY (Railway 502 Fix) ---
+const server = http.createServer(app);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[BOOT] Server listening on 0.0.0.0:${PORT}`);
+    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });
 
-let io; // Declared early so lab routes can reference it; assigned after server creation
+// --- LOUD HEALTH CHECKS ---
+app.get('/health', (req, res) => res.status(200).send('OK'));
+app.get('/ready', (req, res) => res.status(200).send('READY'));
+app.get('/', (req, res) => {
+    console.log(`[${new Date().toISOString()}] !!! ROOT HIT !!!`);
+    res.send('Kevryn Server is Online');
+});
 
-console.log('[DEBUG] --- IMPORTS COMPLETE ---');
+let io;
 
 // --- REQUEST LOGGING ---
 app.use((req, res, next) => {
-    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    if (req.url !== '/health' && req.url !== '/ready') {
+        console.log(`[TRAFFIC] ${req.method} ${req.url} - Origin: ${req.headers.origin}`);
+    }
     next();
 });
 
-// --- BASE ROUTE ---
-app.get('/', (req, res) => {
-    console.log(`[${new Date().toISOString()}] !!! ROOT HIT (HEALTH CHECK) !!!`);
-    res.send('Kevryn Server is Running (Health Check OK)');
-});
-
-
 // --- SECURITY MIDDLEWARE ---
-app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP for IDE (Monaco CDN)
-app.use(cookieParser()); // Use cookie-parser
+app.use(helmet({ contentSecurityPolicy: false }));
+app.use(cookieParser());
 app.use(cors({
-    origin: true, // Dynamically allow the origin that sent the request (handles credentials: true)
+    origin: true,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    optionsSuccessStatus: 200
+    allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
 // --- WEBCONTAINER SECURITY HEADERS ---
@@ -2677,16 +2678,13 @@ io.on('connection', (socket) => {
                     }
                 }
             }).catch(() => { });
+            // --- REPAIRED END OF FILE ---
         });
     });
 });
 
-setInterval(() => console.log("[HEARTBEAT] Server is alive: " + new Date().toISOString()), 60000);
-
 process.on('SIGTERM', () => {
+    console.log('[SHUTDOWN] SIGTERM received.');
     if (server) server.close(() => process.exit(0));
     else process.exit(0);
 });
-
-console.log('[DEBUG] --- BEFORE SERVER LISTEN ---');
-server.listen(PORT, '0.0.0.0', () => console.log('Backend running on port ' + PORT + ' (Bound to 0.0.0.0)'));
