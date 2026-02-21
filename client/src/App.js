@@ -3,7 +3,9 @@ import Editor, { loader } from '@monaco-editor/react';
 import io from 'socket.io-client';
 import axios from 'axios';
 import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from 'framer-motion';
-import { FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub } from 'react-icons/fa';
+import {
+    FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub, FaBell, FaShieldAlt, FaSpinner
+} from 'react-icons/fa';
 import FileTree from './components/FileTree';
 import Terminal from './components/Terminal';
 import AIPanel from './components/AIPanel';
@@ -43,9 +45,16 @@ const SERVER_URL = _rawServerUrl.startsWith('http') ? _rawServerUrl : `https://$
 
 function App() {
     const [token, setToken] = useState(localStorage.getItem('token'));
-    const [username, setUsername] = useState(localStorage.getItem('username') || "");
-    const [userId, setUserId] = useState(localStorage.getItem('userId') || "");
-    const [userRole, setUserRole] = useState(localStorage.getItem('role') || "student"); // NEW: Track Role
+    const [username, setUsername] = useState(() => {
+        const u = localStorage.getItem('username');
+        return (u && u !== 'undefined') ? u : "";
+    });
+    const [userId, setUserId] = useState(() => {
+        const id = localStorage.getItem('userId');
+        return (id && id !== 'undefined') ? id : "";
+    });
+    const [userRole, setUserRole] = useState(localStorage.getItem('role') || "student");
+    const [isAppLoading, setIsAppLoading] = useState(true); // NEW: Track initial boot
     const [isFacultyLogin, setIsFacultyLogin] = useState(false); // NEW: Faculty Toggle
     const [isLogin, setIsLogin] = useState(true);
     const [showStudentAssignments, setShowStudentAssignments] = useState(false); // NEW: Default to workspace (IDE) first <!-- id: 401 -->
@@ -98,6 +107,42 @@ function App() {
     const [activeTermId, setActiveTermId] = useState(1);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [deployStatus, setDeployStatus] = useState(null);
+
+    // --- SLEEK LOADING SCREEN ---
+    const LoadingScreen = () => (
+        <div style={{
+            height: '100vh', width: '100vw', display: 'flex', flexDirection: 'column',
+            alignItems: 'center', justifyContent: 'center', background: '#0a0a0f', color: '#fff'
+        }}>
+            <div className="neon-indicator" style={{ width: '40px', height: '40px', marginBottom: '20px' }} />
+            <div style={{ fontSize: '14px', fontWeight: '600', letterSpacing: '2px', color: 'var(--accent-primary)', textTransform: 'uppercase' }}>
+                Initializing Workspace...
+            </div>
+            <div style={{ marginTop: '10px', fontSize: '10px', color: '#555' }}>Preparing Vayu Environment v2.0</div>
+        </div>
+    );
+
+    // --- UTILS: SAFE STORAGE ---
+    const persistAuth = (data) => {
+        const u = data.user?.username || data.username;
+        const id = data.user?._id || data.userId;
+        const r = data.user?.role || data.role;
+        const p = data.user?.picture || data.picture || "";
+
+        if (u && u !== 'undefined') {
+            localStorage.setItem('token', data.token);
+            localStorage.setItem('username', u);
+            localStorage.setItem('userId', id);
+            localStorage.setItem('role', r);
+            localStorage.setItem('picture', p);
+
+            setToken(data.token);
+            setUsername(u);
+            setUserId(id);
+            setUserRole(r);
+            setUserPicture(p);
+        }
+    };
 
     const fileInputRef = useRef(null);
     const folderInputRef = useRef(null);
@@ -386,7 +431,11 @@ function App() {
             } else {
                 setFileData(nodeTree);
             }
-        }).catch(err => console.log("Fetch Error"));
+            setIsAppLoading(false); // Boot sequence complete
+        }).catch(err => {
+            console.log("Fetch Error");
+            setIsAppLoading(false); // Don't hang forever
+        });
     }, [token, api]);
 
     // Handle Global Shortcuts (Ctrl+S)
@@ -408,7 +457,12 @@ function App() {
         if (!token) return;
 
         if (!socketRef.current) {
-            socketRef.current = io(SERVER_URL);
+            console.log("[SOCKET] Initializing...");
+            socketRef.current = io(SERVER_URL, {
+                reconnection: true,
+                reconnectionDelay: 1000,
+                reconnectionAttempts: 10
+            });
             setSocketInstance(socketRef.current);
 
             socketRef.current.on('disconnect', () => {
@@ -503,11 +557,11 @@ function App() {
             s.off('node-created');
             s.off('file-shared');
             s.off('cursor-update');
-            s.off('session-started'); // Added this line as it was missing from cleanup
-            s.off('session-ended'); // Added this line as it was missing from cleanup
+            s.off('session-started');
+            s.off('session-ended');
             window.removeEventListener('click', closeMenu);
         };
-    }, [token, username, userId, fetchFiles, api, userRole, socketInstance]);
+    }, [token, username, userId, fetchFiles, api, userRole]); // Simplified dependencies
 
 
 
@@ -520,18 +574,16 @@ function App() {
         const urlPicture = query.get('picture');
 
         if (urlToken && urlUsername && urlUserId) {
-            localStorage.setItem('token', urlToken);
-            localStorage.setItem('username', urlUsername);
-            localStorage.setItem('userId', urlUserId);
-            if (urlPicture) localStorage.setItem('picture', urlPicture);
-
-            setToken(urlToken);
-            setUsername(urlUsername);
-            setUserId(urlUserId);
-            setUserPicture(urlPicture);
+            persistAuth({
+                token: urlToken,
+                username: urlUsername,
+                userId: urlUserId,
+                picture: urlPicture,
+                role: 'student' // OAuth defaults to student
+            });
             window.history.replaceState({}, document.title, "/");
         }
-    }, []);
+    }, [persistAuth]);
 
     const getRandomColor = (id) => {
         const colors = ['#f87171', '#fbbf24', '#34d399', '#60a5fa', '#a78bfa', '#f472b6'];
@@ -599,7 +651,7 @@ function App() {
                     pendingTime.current[fname] += 1;
                     setCurrentLabTime((prev) => prev + 1);
 
-                    // Sync 
+                    // Sync
                     if (pendingTime.current[fname] >= 30) {
                         saveLabReport(fname, code, 30, 'in-progress'); // Pass 30 as timeDelta
                         pendingTime.current[fname] = 0;
@@ -905,7 +957,7 @@ function App() {
 
         // Wait for creation then save content (simulated by timeout or just rely on backend to create empty file then save)
         // Better: Backend create-node creates empty file. We need to save content to it.
-        // We can listen for node-created and then save, but that's complex async. 
+        // We can listen for node-created and then save, but that's complex async.
         // Simple hack: wait 500ms then save to disk with new name.
         // Even better: The backend 'save-file-disk' saves by FILENAME. So if we create it, we can save to it.
         setTimeout(() => {
@@ -1075,7 +1127,7 @@ function App() {
                     if (inputWriter && typeof inputWriter.write === 'function') {
                         inputWriter.write(cmd);
                     } else {
-                        // Fallback: Use socket if local writer not available 
+                        // Fallback: Use socket if local writer not available
                         safeEmit('terminal:write', { termId: targetTerm.id, data: cmd });
                     }
                 }, 100);
@@ -1196,17 +1248,8 @@ function App() {
                     return;
                 }
 
-                localStorage.setItem('token', r.data.token);
-                localStorage.setItem('username', r.data.username);
-                localStorage.setItem('userId', r.data.userId);
-                localStorage.setItem('picture', r.data.picture || "");
-                localStorage.setItem('role', role);
-
-                setToken(r.data.token);
-                setUsername(r.data.username);
-                setUserId(r.data.userId);
-                setUserPicture(r.data.picture);
-                setUserRole(role);
+                persistAuth(r.data);
+                setIsAppLoading(false);
 
             } else { alert("Registered! Please Log In."); setIsLogin(true); }
         } catch (e) { alert("Auth Failed: " + (e.response?.data?.error || e.message)); }
@@ -1232,17 +1275,8 @@ function App() {
                 return;
             }
 
-            localStorage.setItem('token', token);
-            localStorage.setItem('username', username);
-            localStorage.setItem('userId', userId);
-            localStorage.setItem('picture', picture);
-            localStorage.setItem('role', userRole);
-
-            setToken(token);
-            setUsername(username);
-            setUserId(userId);
-            setUserPicture(picture);
-            setUserRole(userRole);
+            persistAuth(res.data);
+            setIsAppLoading(false);
 
         } catch (err) {
             console.error("Google Login Failed", err);
@@ -1291,7 +1325,10 @@ function App() {
         console.warn("[App] LabMode conditions not met:", { token: !!token, role: userRole, activeSessionId, isLabOpen });
     }
 
-    // --- RENDER LOGIC ---
+    if (isAppLoading) {
+        return <LoadingScreen />;
+    }
+
     if (token && userRole === 'faculty') {
         return <FacultyHub token={token} serverUrl={SERVER_URL} userId={userId} onLogout={handleLogout} />;
     }
@@ -1325,21 +1362,146 @@ function App() {
 
             <div style={{ flex: 1, position: 'relative' }}>
                 {!token ? (
-                    <Login
-                        handleTilt={handleTilt}
-                        resetTilt={resetTilt}
-                        rotateX={rotateX}
-                        rotateY={rotateY}
-                        isFacultyLogin={isFacultyLogin}
-                        setIsFacultyLogin={setIsFacultyLogin}
-                        isLogin={isLogin}
-                        setIsLogin={setIsLogin}
-                        handleAuth={handleAuth}
-                        authData={authData}
-                        setAuthData={setAuthData}
-                        handleGoogleLoginSuccess={handleGoogleLoginSuccess}
-                        SERVER_URL={SERVER_URL}
-                    />
+                    <div className="ide-container auth-page" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', background: '#08080c', perspective: '1000px', height: '100%', display: 'flex' }}>
+                        <motion.div
+                            initial={{ opacity: 0, scale: 0.8, z: -100 }}
+                            animate={{ opacity: 1, scale: 1, z: 0 }}
+                            transition={{ duration: 1.2, ease: "circOut" }}
+                            style={{ rotateX, rotateY, transformStyle: 'preserve-3d', padding: '40px', borderRadius: '32px', width: '420px', position: 'relative' }}
+                            className={`auth-box ${isFacultyLogin ? 'faculty-mode' : ''}`}
+                        >
+                            {/* LOGIN TABS */}
+                            <div style={{ display: 'flex', marginBottom: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '4px', transform: 'translateZ(40px)' }}>
+                                <button
+                                    onClick={() => setIsFacultyLogin(false)}
+                                    style={{
+                                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                        background: !isFacultyLogin ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                        color: !isFacultyLogin ? '#fff' : 'rgba(255,255,255,0.5)',
+                                        fontWeight: !isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
+                                    }}
+                                >
+                                    Student
+                                </button>
+                                <button
+                                    onClick={() => setIsFacultyLogin(true)}
+                                    style={{
+                                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
+                                        background: isFacultyLogin ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
+                                        color: isFacultyLogin ? '#a78bfa' : 'rgba(255,255,255,0.5)',
+                                        fontWeight: isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
+                                    }}
+                                >
+                                    Management
+                                </button>
+                            </div>
+
+                            <motion.div
+                                initial={{ opacity: 0, y: -20 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: 0.2 }}
+                                style={{ transform: 'translateZ(60px)' }}
+                            >
+                                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', transform: 'translateZ(90px)' }}>
+                                    {isFacultyLogin ? (
+                                        <div style={{ padding: '20px', background: 'linear-gradient(135deg, #4c1d95, #6d28d9)', borderRadius: '24px', boxShadow: '0 0 30px rgba(109, 40, 217, 0.4)' }}>
+                                            <FaGlobe size={50} color="#fff" />
+                                        </div>
+                                    ) : (
+                                        <motion.img
+                                            src="/logoide.jpeg"
+                                            alt="Kevryn Logo"
+                                            whileHover={{ rotate: 360, filter: 'drop-shadow(0 0 40px rgba(59, 130, 246, 0.8))' }}
+                                            transition={{ duration: 0.8, ease: "easeInOut" }}
+                                            style={{
+                                                height: '80px',
+                                                width: 'auto',
+                                                filter: 'drop-shadow(0 0 25px rgba(59, 130, 246, 0.5))',
+                                                borderRadius: '20px',
+                                                cursor: 'pointer'
+                                            }}
+                                        />
+                                    )}
+                                </div>
+                                <h2 style={{ color: '#fff', marginBottom: '10px', textAlign: 'center', fontSize: '28px', fontWeight: '900', letterSpacing: '-0.5px', transform: 'translateZ(70px)' }}>
+                                    {isFacultyLogin ? 'Kevryn Faculty Portal' : 'Kevryn Student Hub'}
+                                </h2>
+                                <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: '30px', fontSize: '14px', transform: 'translateZ(40px)' }}>
+                                    {isFacultyLogin ? 'Secure access for academic management.' : 'The next generation Cloud IDE for students.'}
+                                </p>
+                            </motion.div>
+
+                            <motion.form
+                                onSubmit={handleAuth}
+                                style={{ display: 'flex', flexDirection: 'column', gap: '20px', transform: 'translateZ(50px)' }}
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.4 }}
+                            >
+                                <input className="auth-input" type="text" placeholder={isFacultyLogin ? "Faculty ID / Email" : "Username"} value={authData.username} onChange={e => setAuthData({ ...authData, username: e.target.value })} style={{ padding: '12px 16px', borderRadius: '12px', fontSize: '15px' }} required />
+                                <input className="auth-input" type="password" placeholder="Password" value={authData.password} onChange={e => setAuthData({ ...authData, password: e.target.value })} style={{ padding: '12px 16px', borderRadius: '12px', fontSize: '15px' }} required />
+                                <button
+                                    className="btn"
+                                    type="submit"
+                                    style={{
+                                        justifyContent: 'center', padding: '14px', borderRadius: '12px', fontSize: '16px', marginTop: '10px',
+                                        background: isFacultyLogin ? 'linear-gradient(135deg, #6d28d9, #4c1d95)' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
+                                        border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer', boxShadow: isFacultyLogin ? '0 4px 15px rgba(109, 40, 217, 0.3)' : '0 4px 15px rgba(37, 99, 235, 0.3)'
+                                    }}
+                                >
+                                    {isLogin ? (isFacultyLogin ? 'Access Dashboard' : 'Enter Studio') : 'Get Started'}
+                                </button>
+                            </motion.form>
+
+                            {!isFacultyLogin && (
+                                <motion.div
+                                    initial={{ opacity: 0 }}
+                                    animate={{ opacity: 1 }}
+                                    transition={{ delay: 0.6 }}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center', margin: '30px 0', transform: 'translateZ(30px)' }}>
+                                        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                                        <span style={{ padding: '0 15px', color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontWeight: 'bold' }}>OR CONTINUE WITH</span>
+                                        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
+                                    </div>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', transform: 'translateZ(60px)' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'center' }}>
+                                            <GoogleLogin
+                                                onSuccess={handleGoogleLoginSuccess}
+                                                onError={() => console.log('Login Failed')}
+                                                theme="filled_black"
+                                                shape="rectangular"
+                                                width="320"
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={() => window.location.href = `${SERVER_URL}/auth/github`}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '12px',
+                                                background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)',
+                                                padding: '12px 20px', borderRadius: '12px', cursor: 'pointer',
+                                                fontSize: '14px', fontWeight: '600', width: '100%', justifyContent: 'center',
+                                                transition: 'all 0.3s ease'
+                                            }}
+                                        >
+                                            <FaGithub size={20} /> Continue with GitHub
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            )}
+
+                            <motion.p
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                                transition={{ delay: 0.9 }}
+                                onClick={() => setIsLogin(!isLogin)}
+                                style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.4)', textAlign: 'center', fontSize: '14px', marginTop: '25px' }}
+                            >
+                                {isLogin ? "Don't have an account? " : "Already using Kevryn? "}
+                                <span style={{ color: isFacultyLogin ? '#a78bfa' : '#60a5fa', fontWeight: '600' }}>{isLogin ? "Sign Up" : "Log In"}</span>
+                            </motion.p>
+                        </motion.div>
+                    </div>
                 ) : userRole === 'student' && showStudentAssignments ? (
                     <StudentAssignmentView
                         token={token}
@@ -1670,6 +1832,8 @@ function App() {
                                                             });
                                                         }
                                                     });
+                                                    // Sync logic handled by persistAuth
+                                                    setIsAppLoading(false);
                                                 }}
                                                 onChange={(v) => {
                                                     if (!isRemoteUpdate.current && activeFileId) {
@@ -1739,7 +1903,7 @@ function App() {
                                                                 title="Debug with AI"
                                                                 style={{ color: '#8b5cf6', background: 'rgba(139, 92, 246, 0.1)', fontWeight: 'bold' }}
                                                             >
-                                                                <FaMagic size={10} style={{ marginRight: '4px' }} /> Magic Fix
+                                                                <FaMagic /> Magic Fix
                                                             </button>
                                                             <button className="panel-action-btn" onClick={addTerm} title="New Terminal"><FaPlus size={12} /></button>
                                                             <button className="panel-action-btn" title="More" onClick={(e) => e.stopPropagation()}><FaEllipsisH size={12} /></button>

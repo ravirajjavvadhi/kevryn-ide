@@ -11,8 +11,9 @@ import Gradebook from './Gradebook';
 import StudentReports from './StudentReports';
 import axios from 'axios';
 
+// Fallback local constants
 const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
-const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
+const SERVER_FALLBACK = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
 const LiveClock = () => {
     const [time, setTime] = useState(new Date());
@@ -23,7 +24,7 @@ const LiveClock = () => {
     return <span>{time.toLocaleTimeString()}</span>;
 };
 
-const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
+const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
     const [activeView, setActiveView] = useState(localStorage.getItem('facultyActiveView') || 'dashboard');
     const [stats, setStats] = useState({ courses: 0, students: 0, activeSessions: 0 });
     const [facultyName, setFacultyName] = useState('Faculty');
@@ -39,7 +40,7 @@ const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
 
     const refreshStats = () => {
         if (!token) return;
-        const api = axios.create({ baseURL: serverUrl || SERVER_URL, headers: { Authorization: token } });
+        const api = axios.create({ baseURL: serverUrl || SERVER_FALLBACK, headers: { Authorization: token } });
         api.get('/api/courses').then(r => setStats(s => ({ ...s, courses: r.data.length }))).catch(() => { });
         api.get('/lab/active-session').then(r => setStats(s => ({ ...s, activeSessions: r.data.session ? 1 : 0 }))).catch(() => { });
     };
