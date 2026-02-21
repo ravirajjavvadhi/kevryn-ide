@@ -2657,14 +2657,14 @@ io.on('connection', (socket) => {
                 }
             }).catch(() => { });
         });
-
-        });
     });
 });
+
+setInterval(() => console.log("[HEARTBEAT] Server is alive: " + new Date().toISOString()), 60000);
 
 process.on('SIGTERM', () => {
     if (server) server.close(() => process.exit(0));
     else process.exit(0);
 });
 
-server.listen(PORT, '0.0.0.0', () => console.log('🚀 Backend running on port ' + PORT + ' (Bound to 0.0.0.0)'));
+server.listen(PORT, '0.0.0.0', () => console.log('Backend running on port ' + PORT + ' (Bound to 0.0.0.0)'));
