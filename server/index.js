@@ -70,20 +70,32 @@ app.use(helmet({ contentSecurityPolicy: false })); // Disable CSP for IDE (Monac
 app.use(cookieParser()); // Use cookie-parser
 app.use(cors({
     origin: function (origin, callback) {
+        // Log origin for debugging production issues
+        console.log('[CORS] Request from origin:', origin);
+
         // Allow requests with no origin (mobile apps, curl, Postman)
         if (!origin) return callback(null, true);
+
         // Allow localhost for local dev
         if (origin.includes('localhost')) return callback(null, true);
-        // Allow any Vercel deployment
-        if (origin.includes('.vercel.app')) return callback(null, true);
+
+        // Allow any Vercel deployment (more robust check)
+        if (origin.endsWith('.vercel.app') || origin.includes('vercel.app')) return callback(null, true);
+
+        // Allow Railway origins
+        if (origin.includes('.up.railway.app')) return callback(null, true);
+
         // Allow explicitly configured origin
         if (CORS_ORIGIN && origin === CORS_ORIGIN) return callback(null, true);
-        // Block everything else
-        return callback(new Error('Not allowed by CORS'));
+
+        // Block everything else gracefully
+        console.warn('[CORS] Blocked origin:', origin);
+        return callback(null, false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization']
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    optionsSuccessStatus: 200 // Some legacy browsers (IE11, various SmartTVs) choke on 204
 }));
 
 // --- WEBCONTAINER SECURITY HEADERS ---
