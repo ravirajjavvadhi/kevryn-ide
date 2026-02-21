@@ -45,7 +45,7 @@ const GlobalSessionTimer = ({ startTime, duration }) => {
 };
 
 
-const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded }) => { // Added isEmbedded <!-- id: 402 -->
+const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSessionChange }) => { // Added isEmbedded <!-- id: 402 -->
     // Session State
     const [sessionId, setSessionId] = useState(null);
     const [sessionName, setSessionName] = useState("");
@@ -148,6 +148,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded }) =>
                 localStorage.setItem('lastSessionId', res.data.session._id);
 
                 setIsCreatingSession(false);
+                if (onSessionChange) onSessionChange();
             }
         } catch (e) {
             alert("Failed to create session: " + e.message);
@@ -393,6 +394,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded }) =>
             setStudents({});
             setIsCreatingSession(true); // Go back to start screen
             localStorage.removeItem('lastSessionId');
+            if (onSessionChange) onSessionChange();
         } catch (e) {
             alert("Failed to end session: " + e.message);
         }

@@ -301,6 +301,7 @@ app.get('/lab/active-session', authenticate, async (req, res) => {
             isActive: true
         }).sort({ startTime: -1 });
 
+        console.log(`[DIAGNOSTIC] FETCH ACTIVE SESSION for ${req.user.userId}: ${session ? session._id : 'none'}`);
         res.json({ session });
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -327,28 +328,24 @@ app.post('/lab/end-session', authenticate, async (req, res) => {
     try {
         // Find ALL active sessions for this faculty
         const sessions = await LabSession.find({ facultyId: req.user.userId, isActive: true });
+        console.log(`[DIAGNOSTIC] ENDING SESSIONS for faculty ${req.user.userId}. Found: ${sessions.length}`);
 
         if (sessions.length > 0) {
             // Update all to inactive
-            await LabSession.updateMany(
+            const result = await LabSession.updateMany(
                 { facultyId: req.user.userId, isActive: true },
                 { isActive: false, endTime: new Date() }
             );
+            console.log(`[DIAGNOSTIC] UPDATE RESULT: modified ${result.modifiedCount} sessions`);
 
-            // FIXED Bug 2+4: Broadcast session-ended GLOBALLY so ALL students receive it
-            // (not just those already in the lab room)
+            // Broadcast session-ended GLOBALLY...
             sessions.forEach(s => {
-                // Clear live state for this session to prevent stale data on reconnect
-                if (liveLabState[s._id]) {
-                    delete liveLabState[s._id];
-                }
-                // Global broadcast — reaches every connected client including those with the banner
+                // Clear live state...
+                if (liveLabState[s._id]) delete liveLabState[s._id];
                 console.log(`[DIAGNOSTIC] EXPLICIT END-SESSION: Emitting session-ended for ${s._id}`);
                 io.emit('session-ended', { sessionId: s._id });
-                console.log(`[LAB] Session ${s._id} ended by faculty — global broadcast sent`);
             });
         }
-
         res.json({ success: true, message: "All active sessions ended" });
     } catch (e) {
         res.status(500).json({ error: e.message });

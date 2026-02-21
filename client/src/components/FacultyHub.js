@@ -36,11 +36,15 @@ const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
     // The 'time' state will now only update on component mount or other re-renders,
     // which is sufficient for greeting and dashboard date display.
 
-    useEffect(() => {
+    const refreshStats = () => {
         if (!token) return;
         const api = axios.create({ baseURL: serverUrl || SERVER_URL, headers: { Authorization: token } });
         api.get('/api/courses').then(r => setStats(s => ({ ...s, courses: r.data.length }))).catch(() => { });
         api.get('/lab/active-session').then(r => setStats(s => ({ ...s, activeSessions: r.data.session ? 1 : 0 }))).catch(() => { });
+    };
+
+    useEffect(() => {
+        refreshStats();
         // Try to get faculty name from token
         try {
             const payload = JSON.parse(atob(token.replace('Bearer ', '').split('.')[1]));
@@ -154,7 +158,7 @@ const FacultyHub = ({ token, serverUrl, userId, onLogout }) => {
                 )}
                 {activeView === 'courses' && <CourseManager token={token} serverUrl={serverUrl} userId={userId} />}
                 {activeView === 'assignments' && <AssignmentManager token={token} serverUrl={serverUrl} userId={userId} />}
-                {activeView === 'active-labs' && <MonitorDashboard token={token} serverUrl={serverUrl} userId={userId} onLogout={onLogout} isEmbedded={true} />}
+                {activeView === 'active-labs' && <MonitorDashboard token={token} serverUrl={serverUrl} userId={userId} onLogout={onLogout} isEmbedded={true} onSessionChange={refreshStats} />}
                 {activeView === 'analytics' && <Gradebook token={token} serverUrl={serverUrl} />}
                 {activeView === 'reports' && <StudentReports token={token} serverUrl={serverUrl} />}
             </div>

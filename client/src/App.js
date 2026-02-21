@@ -1174,7 +1174,7 @@ function App() {
 
     const handleAuth = async (e) => {
         e.preventDefault();
-        const u = isLogin ? `${SERVER_URL}/login` : `${SERVER_URL}/register`;
+        const u = isLogin ? `${SERVER_URL}/auth/login` : `${SERVER_URL}/auth/register`;
         try {
             // Send role for both login and registration
             const payload = { ...authData, role: isFacultyLogin ? 'faculty' : 'student' };
