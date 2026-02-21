@@ -124,8 +124,9 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
 
         sock.on('session-ended', ({ sessionId } = {}) => {
             const mySessionId = session?.sessionId || session?._id;
+            console.log(`[DIAGNOSTIC] LabMode received session-ended for ${sessionId}. MySession=${mySessionId}`);
             if (!sessionId || sessionId === mySessionId) {
-                // App.js handles the global state cleanup and alert
+                console.log(`[DIAGNOSTIC] Triggering onLogout due to session-ended`);
                 onLogout();
             }
         });

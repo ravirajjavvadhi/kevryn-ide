@@ -343,6 +343,7 @@ app.post('/lab/end-session', authenticate, async (req, res) => {
                     delete liveLabState[s._id];
                 }
                 // Global broadcast — reaches every connected client including those with the banner
+                console.log(`[DIAGNOSTIC] EXPLICIT END-SESSION: Emitting session-ended for ${s._id}`);
                 io.emit('session-ended', { sessionId: s._id });
                 console.log(`[LAB] Session ${s._id} ended by faculty — global broadcast sent`);
             });
@@ -589,18 +590,30 @@ app.post('/lab/heartbeat', async (req, res) => {
         await session.save();
 
         // Update Live State
-        liveLabState[sessionId][username] = {
-            ...(liveLabState[sessionId][username] || {}),
-            username,
-            status: status || 'active',
-            lastActive: new Date().toLocaleTimeString(),
-            code: code || currentLiveState?.code || '',
-            activeFile: activeFile || currentLiveState?.activeFile || null,
-            language: currentLiveState?.language || 'javascript'
-        };
+        // GUARD: If student is explicitly 'offline', don't let a heartbeat flip them back to 'active'.
+        // Only a 'student-join-lab' socket event should resurrected them.
+        if (liveLabState[sessionId][username]?.status === 'offline' && (!status || status === 'active')) {
+            // Still offline, but we update the other fields if needed
+            liveLabState[sessionId][username] = {
+                ...(liveLabState[sessionId][username] || {}),
+                lastHeartbeat: new Date(), // internally track heartbeat
+                code: code || currentLiveState?.code || '',
+                activeFile: activeFile || currentLiveState?.activeFile || null
+            };
+        } else {
+            liveLabState[sessionId][username] = {
+                ...(liveLabState[sessionId][username] || {}),
+                username,
+                status: status || 'active',
+                lastActive: new Date().toLocaleTimeString(),
+                code: code || currentLiveState?.code || '',
+                activeFile: activeFile || currentLiveState?.activeFile || null,
+                language: currentLiveState?.language || 'javascript'
+            };
+        }
 
         if (io) {
-            // console.log(`[HEARTBEAT] Broadcasting update for ${username} to lab-${sessionId}`);
+            console.log(`[DIAGNOSTIC] HEARTBEAT from ${username} (HTTP Request). Status: ${status}. Session: ${sessionId}`);
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
         } else {
             console.warn('[HEARTBEAT] io not initialized yet');
@@ -2134,7 +2147,7 @@ io.on('connection', (socket) => {
         facultySessionId = sessionId; // Track which session this faculty is monitoring
         if (sessionId) {
             socket.join(`lab-${sessionId}`);
-            console.log(`[LAB] Faculty joined room lab-${sessionId}`);
+            console.log(`[LAB] Faculty socket ${socket.id} joined room lab-${sessionId}`);
 
             try {
                 // Fetch session for whitelisted students
@@ -2162,7 +2175,7 @@ io.on('connection', (socket) => {
     socket.on('student-join-lab', ({ sessionId, username, userId, initialData }) => {
         if (sessionId && username) {
             socket.join(`lab-${sessionId}`);
-            console.log(`[LAB] Student ${username} joined room lab-${sessionId}`);
+            console.log(`[DIAGNOSTIC] STUDENT JOIN LAB: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
 
             // Track socket for disconnect handler
             socketToUser[socket.id] = { sessionId, username };
@@ -2197,6 +2210,9 @@ io.on('connection', (socket) => {
         if (sessionId && username) {
             // Update state
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            // GUARD: If offline, don't let code update flip back to active
+            if (liveLabState[sessionId][username]?.status === 'offline') return;
+
             liveLabState[sessionId][username] = {
                 ...(liveLabState[sessionId][username] || {}),
                 username,
@@ -2206,7 +2222,7 @@ io.on('connection', (socket) => {
                 activeFile: fileName || 'untitled',
                 language: language || 'javascript'
             };
-
+            console.log(`[DIAGNOSTIC] STUDENT CODE UPDATE: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
         }
     });
@@ -2220,6 +2236,7 @@ io.on('connection', (socket) => {
                 liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
 
                 // Notify faculty
+                console.log(`[DIAGNOSTIC] STUDENT LEAVE LAB: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
                 io.to(`lab-${sessionId}`).emit('student-data-update', {
                     username,
                     status: 'offline',
@@ -2422,6 +2439,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('disconnect', async () => {
+        console.log(`[DIAGNOSTIC] Socket ${socket.id} disconnected. facultySessionId=${facultySessionId}, isStudent=${!!socketToUser[socket.id]}`);
+
         // Kill all terminals for this socket
         Object.keys(terminals).forEach(id => {
             if (terminals[id]) terminals[id].kill();
@@ -2430,7 +2449,7 @@ io.on('connection', (socket) => {
         // FIXED: Don't auto-end session on faculty disconnect to support reloads.
         // Sessions only end via explicit 'End Session' button or timer.
         if (facultySessionId) {
-            console.log(`[LAB] Faculty socket disconnected from session ${facultySessionId} (Session remains active)`);
+            console.log(`[LAB] Faculty socket ${socket.id} disconnected from session ${facultySessionId} (Session remains active)`);
             facultySessionId = null;
         }
 
@@ -2474,8 +2493,12 @@ io.on('connection', (socket) => {
 
         // Update live state
         liveLabState[sessionId][username].tabSwitchCount = switchCount || 0;
-        liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : (liveLabState[sessionId][username].prevStatus || 'active');
-        if (direction === 'left') liveLabState[sessionId][username].prevStatus = liveLabState[sessionId][username].status;
+
+        // GUARD: If offline, don't let behavioral updates flip back to active
+        if (liveLabState[sessionId][username].status !== 'offline') {
+            liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : (liveLabState[sessionId][username].prevStatus || 'active');
+            if (direction === 'left') liveLabState[sessionId][username].prevStatus = liveLabState[sessionId][username].status;
+        }
 
         // Recompute attention score
         const tabPenalty = Math.min(switchCount * 5, 40);
@@ -2516,11 +2539,14 @@ io.on('connection', (socket) => {
         const pastePenalty = Math.min(pasteCount * 8, 30);
         liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
 
-        io.to(`lab-${sessionId}`).emit('student-data-update', {
-            ...liveLabState[sessionId][username],
-            suspicious: charCount > 80,
-            lastActive: new Date().toLocaleTimeString()
-        });
+        // GUARD: If offline, don't let behavioral updates flip back to active
+        if (liveLabState[sessionId][username].status !== 'offline') {
+            io.to(`lab-${sessionId}`).emit('student-data-update', {
+                ...liveLabState[sessionId][username],
+                suspicious: charCount > 80,
+                lastActive: new Date().toLocaleTimeString()
+            });
+        }
 
         LabSession.findByIdAndUpdate(sessionId, {
             $push: {
