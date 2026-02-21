@@ -140,20 +140,20 @@ const allowedOrigins = [
     'http://localhost:3000',
     'http://localhost:3001'
 ];
-app.use(cors({
+const corsOptions = {
     origin: (origin, callback) => {
-        // Allow requests with no origin (mobile, curl, etc.) or from allowed list
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(null, true); // Allow all in production to avoid blocking
-        }
+        // Echo back the request origin (required for credentials: true)
+        // Allow all origins in production to avoid blocking valid clients
+        callback(null, origin || true);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
-}));
-
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    optionsSuccessStatus: 200 // Some legacy browsers choke on 204
+};
+app.use(cors(corsOptions));
+// Express 5 compatible preflight handler (path-to-regexp v8 wildcard syntax)
+app.options('/{*path}', cors(corsOptions));
 
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
