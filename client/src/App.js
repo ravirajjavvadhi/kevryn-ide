@@ -1031,10 +1031,13 @@ function App() {
         if (currentFileName.endsWith('.html')) { window.open(`${SERVER_URL}/preview/${userId}/${currentFileName}`, '_blank'); return; }
 
         let cmd = "";
+        const isWin = window.navigator.platform.toUpperCase().indexOf('WIN') >= 0;
+        const exePrefix = isWin ? '.\\' : './';
+
         if (currentFileName.endsWith('.js')) cmd = `node "${currentFileName}"\r`;
         else if (currentFileName.endsWith('.py')) cmd = `python -u "${currentFileName}"\r`;
-        else if (currentFileName.endsWith('.c')) cmd = `gcc "${currentFileName}" -o output && ./output\r`;
-        else if (currentFileName.endsWith('.cpp')) cmd = `g++ "${currentFileName}" -o output && ./output\r`;
+        else if (currentFileName.endsWith('.c')) cmd = `gcc "${currentFileName}" -o output && ${exePrefix}output\r`;
+        else if (currentFileName.endsWith('.cpp')) cmd = `g++ "${currentFileName}" -o output && ${exePrefix}output\r`;
         else if (currentFileName.endsWith('.java')) {
             // Extract directory and class name
             const filePath = currentFileName.replace(/\\/g, '/');
@@ -1757,9 +1760,14 @@ function App() {
                                                             {terminals
                                                                 .filter(t => t.type !== 'server' || activeTermId === t.id)
                                                                 .map(t => (
-                                                                    <div key={t.id} onClick={() => setActiveTermId(t.id)} className={`terminal-sidebar-item ${activeTermId === t.id ? 'active' : ''}`}>
-                                                                        <FaTerminal size={10} />
-                                                                        <span className="terminal-name">{t.name}</span>
+                                                                    <div
+                                                                        key={t.id}
+                                                                        onClick={() => setActiveTermId(t.id)}
+                                                                        className={`terminal-sidebar-item ${activeTermId === t.id ? 'active' : ''}`}
+                                                                        style={t.type === 'server' ? { borderLeft: '2px solid #8b5cf6', background: 'rgba(139, 92, 246, 0.05)' } : {}}
+                                                                    >
+                                                                        <FaTerminal size={10} color={t.type === 'server' ? '#a78bfa' : 'inherit'} />
+                                                                        <span className="terminal-name" style={t.type === 'server' ? { color: '#a78bfa', fontWeight: 'bold' } : {}}>{t.name}</span>
                                                                         <FaTrash size={10} className="trash-icon" onClick={(e) => { e.stopPropagation(); remTerm(t.id); }} />
                                                                     </div>
                                                                 ))}
