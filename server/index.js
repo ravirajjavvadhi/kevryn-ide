@@ -2459,6 +2459,7 @@ io.on('connection', (socket) => {
             if (newNode.type === 'file') {
                 const dir = path.dirname(fullPathOnDisk);
                 if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+                console.log(`[FILE] Creating new file on disk: ${fullPathOnDisk}`);
                 fs.writeFileSync(fullPathOnDisk, content);
             } else if (newNode.type === 'folder') {
                 if (!fs.existsSync(fullPathOnDisk)) fs.mkdirSync(fullPathOnDisk, { recursive: true });
@@ -2499,6 +2500,7 @@ io.on('connection', (socket) => {
                 fs.mkdirSync(dir, { recursive: true });
             }
 
+            console.log(`[SAVE] Writing to disk: ${filePathOnDisk} | Content Length: ${code?.length || 0}`);
             fs.writeFileSync(filePathOnDisk, code || "");
             console.log(`[FILE SUCCESS] Saved at ${filePathOnDisk}`);
 

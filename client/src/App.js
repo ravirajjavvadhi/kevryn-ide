@@ -1087,24 +1087,36 @@ function App() {
         }
 
         // Save to disk must happen even if DB save fails to allow terminal execution
-        // FIX: Add courseId to save-file-disk to ensure correct disk path in labs
-        safeEmit('save-file-disk', {
+        const saveData = {
             fileName: fullPath,
             code,
             userId,
             fileId: activeFileId,
             courseId: activeSession?.courseId || undefined
-        });
+        };
 
-        if (activeFileName.endsWith('.html')) {
-            // FIX: Correct preview path for labs
-            let previewUrl = `${SERVER_URL}/preview/${userId}/${activeFileName}`;
-            if (activeSession?.courseId) {
-                previewUrl = `${SERVER_URL}/preview/${userId}/labs/${activeSession.courseId}/${activeFileName}`;
+        const openPreview = () => {
+            if (activeFileName.endsWith('.html')) {
+                let previewUrl = `${SERVER_URL}/preview/${userId}/${activeFileName}`;
+                if (activeSession?.courseId) {
+                    previewUrl = `${SERVER_URL}/preview/${userId}/labs/${activeSession.courseId}/${activeFileName}`;
+                }
+                window.open(previewUrl, '_blank');
+                return true;
             }
-            window.open(previewUrl, '_blank');
-            return;
+            return false;
+        };
+
+        if (!socketRef.current) {
+            if (!openPreview()) alert("Socket not connected - Save might fail.");
+        } else {
+            socketRef.current.emit('save-file-disk', saveData, () => {
+                console.log("[RUN] Disk sync complete");
+                openPreview();
+            });
         }
+
+        if (activeFileName.endsWith('.html')) return;
 
         let cmd = "";
         // --- FIX: LINUX PATH PREFIX for Server Languages ---
