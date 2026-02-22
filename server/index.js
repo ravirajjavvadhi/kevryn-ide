@@ -1007,8 +1007,13 @@ function getUserSitesDir(userId) {
 // Serve static files per user
 app.use('/preview/:userId', (req, res, next) => {
     const dir = path.join(baseUserDir, req.params.userId);
+    if (!req.url.endsWith('/') && !req.url.includes('.')) {
+        console.log(`[PREVIEW] Serving folder or malformed path: ${req.url} from ${dir}`);
+    }
+    // console.log(`[PREVIEW] Request: ${req.url} | Base: ${dir}`);
     express.static(dir)(req, res, next);
 });
+
 app.use('/sites/:userId', (req, res, next) => {
     const dir = path.join(baseSitesDir, req.params.userId);
     express.static(dir)(req, res, next);

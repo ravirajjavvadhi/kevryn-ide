@@ -380,25 +380,63 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         setShowNewFile(false);
     };
 
+    // --- Path Resolution Helper ---
+    const findFileFullPath = useCallback((fileId) => {
+        const file = files.find(f => f._id === fileId);
+        if (!file) return "";
+        if (!file.parentId || file.parentId === 'root') return file.name;
+        const parentPath = findFileFullPath(file.parentId);
+        return parentPath ? `${parentPath}/${file.name}` : file.name;
+    }, [files]);
+
     const handleSave = useCallback(async () => {
         if (!activeFile) return;
         setSaving(true);
+        const fullPath = findFileFullPath(activeFile._id);
         try {
             await api.put(`/files/${activeFile._id}`, { content: code });
             setFiles(prev => prev.map(f => f._id === activeFile._id ? { ...f, content: code } : f));
+
+            // FIX: Enforce disk sync for previews/runs
+            if (socketRef.current) {
+                socketRef.current.emit('save-file-disk', {
+                    fileName: fullPath,
+                    code: code,
+                    userId,
+                    fileId: activeFile._id,
+                    courseId: session?.courseId
+                });
+            }
+
             // Also emit to faculty
             emitCodeUpdate();
         } catch (e) { console.error("Save failed", e); }
         setSaving(false);
-    }, [activeFile, code, emitCodeUpdate, api]); // Added api
+    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath]);
+
 
     // --- Run File ---
     const handleRun = useCallback(() => {
         if (!activeFile || !socketRef.current) return;
-        const cmd = getRunCommand(activeFile.name);
+
+        const fileName = activeFile.name;
+        const fullPath = findFileFullPath(activeFile._id);
+
+        if (fileName.endsWith('.html')) {
+            handleSave().then(() => {
+                let previewUrl = `${SERVER_URL}/preview/${userId}/${fileName}`;
+                if (session?.courseId) {
+                    previewUrl = `${SERVER_URL}/preview/${userId}/labs/${session.courseId}/${fileName}`;
+                }
+                window.open(previewUrl, '_blank');
+            });
+            return;
+        }
+
+        const cmd = getRunCommand(fileName);
         if (!cmd) { alert("No run command for this file type"); return; }
 
-        const ext = activeFile.name.split('.').pop().toLowerCase();
+        const ext = fileName.split('.').pop().toLowerCase();
         const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
 
         handleSave().then(() => {
