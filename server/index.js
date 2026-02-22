@@ -117,14 +117,7 @@ server.on('error', (err) => {
     console.error('!!! SERVER ERROR !!!', err);
 });
 
-// Final Railway Stability Fix: Prefer listening early so the proxy can connect
-// but only after essential security middleware is ready (CORS/BodyParser)
-const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
-server.listen(PORT, () => {
-    console.log(`[BOOT] Server successfully started on port ${PORT}`);
-    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
-    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
-});
+// server.listen moved to bottom to ensure all routes are ready before accepting traffic
 
 
 // --- LOUD HEALTH CHECKS ---
@@ -2730,4 +2723,10 @@ process.on('SIGTERM', () => {
     else process.exit(0);
 });
 
-// server.listen relocated to top section for Railway boot speed
+// Final Railway Stability Fix: Start listening only after all middleware and routes are registered
+const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`[BOOT] Server successfully started on 0.0.0.0:${PORT}`);
+    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
+    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
+});
