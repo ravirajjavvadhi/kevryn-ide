@@ -240,9 +240,20 @@ function App() {
         if (!activeFileId) return;
         const fullPath = findFileFullPath(activeFileId);
         console.log(`[SAVE] Triggered for ${fullPath} (${activeFileId})`);
+
+        // GUARD: Prevent saving if code is null/undefined (rare but possible during transition)
+        if (code === null || code === undefined) return;
+
         try {
             await api.put(`/files/${activeFileId}`, { content: code });
-            safeEmit('save-file-disk', { fileName: fullPath, code: code, userId, fileId: activeFileId });
+            // FIX: Pass courseId from activeSession if available to ensure correct disk path
+            safeEmit('save-file-disk', {
+                fileName: fullPath,
+                code: code,
+                userId,
+                fileId: activeFileId,
+                courseId: activeSession?.courseId || undefined
+            });
             if (wcBridgeRef.current) {
                 await wcBridgeRef.current.writeFile(fullPath, code);
             }
@@ -251,7 +262,7 @@ function App() {
             console.error("[SAVE] Failed:", e);
             alert("Error saving file");
         }
-    }, [activeFileId, findFileFullPath, api, code, safeEmit, userId, wcBridgeRef]);
+    }, [activeFileId, findFileFullPath, api, code, safeEmit, userId, wcBridgeRef, activeSession]);
 
     // --- THEME STATE ---
     const [currentTheme, setCurrentTheme] = useState(localStorage.getItem('theme') || 'midnight'); // Default to Midnight for best effect
@@ -425,7 +436,9 @@ function App() {
         if (window.fetchFilesTimer) clearTimeout(window.fetchFilesTimer);
 
         window.fetchFilesTimer = setTimeout(() => {
-            api.get('/files').then(res => {
+            // FIX: Pass courseId to /files to ensure we get lab files when in a session
+            const fetchUrl = activeSession?.courseId ? `/files?courseId=${activeSession.courseId}` : '/files';
+            api.get(fetchUrl).then(res => {
                 setFiles(res.data); // Store flat list
                 const map = {}, nodeTree = { _id: "root", name: "Project Root", type: "folder", children: [] };
                 res.data.forEach(node => { map[node._id] = { ...node, children: [] }; });
@@ -448,7 +461,7 @@ function App() {
                 setIsAppLoading(false); // Don't hang forever
             });
         }, 300); // 300ms debounce
-    }, [token, api]);
+    }, [token, api, activeSession]);
 
     // Handle Global Shortcuts (Ctrl+S)
     useEffect(() => {
@@ -1097,16 +1110,30 @@ function App() {
         }
 
         // Save to disk must happen even if DB save fails to allow terminal execution
-        safeEmit('save-file-disk', { fileName: fullPath, code, userId, fileId: activeFileId });
+        // FIX: Add courseId to save-file-disk to ensure correct disk path in labs
+        safeEmit('save-file-disk', {
+            fileName: fullPath,
+            code,
+            userId,
+            fileId: activeFileId,
+            courseId: activeSession?.courseId || undefined
+        });
 
         if (activeFileName.endsWith('.html')) {
-            window.open(`${SERVER_URL}/preview/${userId}/${activeFileName}`, '_blank');
+            // FIX: Correct preview path for labs
+            let previewUrl = `${SERVER_URL}/preview/${userId}/${activeFileName}`;
+            if (activeSession?.courseId) {
+                previewUrl = `${SERVER_URL}/preview/${userId}/labs/${activeSession.courseId}/${activeFileName}`;
+            }
+            window.open(previewUrl, '_blank');
             return;
         }
 
         let cmd = "";
-        const isWin = window.navigator.platform.toUpperCase().indexOf('WIN') >= 0;
-        const exePrefix = isWin ? '.\\' : './';
+        // --- FIX: LINUX PATH PREFIX for Server Languages ---
+        // Cloud servers are Linux. Hardcode ./ for server languages (py, c, cpp, java).
+        const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
+        const exePrefix = isServerLanguage ? './' : (window.navigator.platform.toUpperCase().indexOf('WIN') >= 0 ? '.\\' : './');
 
         // Same command set as LabMode for consistency
         const commands = {
@@ -1124,7 +1151,7 @@ function App() {
         cmd = commands[ext];
 
         if (cmd) {
-            const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
+            // isServerLanguage is already defined above
 
             setBottomPanelTab('terminal');
             setIsBottomPanelOpen(true);
@@ -1136,15 +1163,15 @@ function App() {
 
                 if (!isServerLanguage && inputWriter && typeof inputWriter.write === 'function') {
                     // Local WebContainer execution
-                    // Step 5: Execution Cleanup - Send Ctrl+C twice to reset prompt, then run command
-                    inputWriter.write('\x03\x03' + cmd + '\r');
+                    // FIX: Remove character-swallowing \x03\x03. Use \r (Enter) to clear prompt safely.
+                    inputWriter.write('\r' + cmd + '\r');
                 } else {
                     // Server PTY execution
-                    // Step 5: Execution Cleanup - Send Ctrl+C twice to reset prompt, then run command
+                    // FIX: Remove character-swallowing \x03\x03. Use \r (Enter) to clear prompt safely.
                     safeEmit('terminal:write', {
                         termId: termIdToUse,
-                        data: '\x03\x03' + cmd + '\r',
-                        courseId: activeSession?.courseId
+                        data: '\r' + cmd + '\r',
+                        courseId: activeSession?.courseId || undefined
                     });
                 }
             }, 100);
