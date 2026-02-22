@@ -352,7 +352,27 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
     };
 
     // --- File Operations ---
-    const handleFileClick = (file) => {
+    const handleFileClick = async (file) => {
+        // STEP 1: SAVE PREVIOUS FILE
+        if (activeFile && activeFile._id !== file._id) {
+            console.log(`[LAB-SWITCH] Saving ${activeFile.name}...`);
+            try {
+                const fullPath = findFileFullPath(activeFile._id);
+                await api.put(`/files/${activeFile._id}`, { content: code });
+                if (socketRef.current) {
+                    socketRef.current.emit('save-file-disk', {
+                        fileName: fullPath,
+                        code: code,
+                        userId,
+                        fileId: activeFile._id,
+                        courseId: session?.courseId
+                    });
+                }
+            } catch (e) {
+                console.error("[LAB-SWITCH] Auto-save failed:", e);
+            }
+        }
+
         setActiveFile(file);
         setCode(file.content || '');
         setLanguage(detectLanguage(file.name));

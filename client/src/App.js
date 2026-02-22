@@ -1016,6 +1016,18 @@ function App() {
 
     const handleFileClick = async (file, lineToJump = null) => {
         try {
+            // STEP 1: FORCE SAVE CURRENT FILE BEFORE SWITCHING
+            if (activeFileId) {
+                console.log(`[SWITCH] Saving current file ${activeFileId} before switching...`);
+                // Use a direct API call or handleSave without the 'Saved!' alert for smoothness
+                try {
+                    await api.put(`/files/${activeFileId}`, { content: code });
+                    safeEmit('save-file-disk', { fileName: fileName, code, userId, fileId: activeFileId });
+                } catch (saveErr) {
+                    console.error("[SWITCH] Pre-switch save failed:", saveErr);
+                }
+            }
+
             let targetFile = file;
             if (typeof file === 'string') {
                 const res = await api.get('/files');
@@ -1026,6 +1038,9 @@ function App() {
 
             const res = await api.get(`/files/${targetFile._id}`);
             const content = res.data.content || "";
+
+            // Reset dirty sync state
+            isRemoteUpdate.current = false;
 
             setActiveFileId(targetFile._id);
             setFileName(targetFile.name);
@@ -1742,13 +1757,16 @@ function App() {
                                                 }}
                                                 onChange={(v) => {
                                                     if (!isRemoteUpdate.current && activeFileId) {
-                                                        setCode(v);
-                                                        setOpenFiles(prev => prev.map(f => f._id === activeFileId ? { ...f, content: v } : f));
+                                                        const targetId = activeFileId; // CAPTURE ID FOR CLOSURE
+                                                        const targetName = fileName;
 
-                                                        // Debounce Socket Sync (Reduced traffic, low latency)
+                                                        setCode(v);
+                                                        setOpenFiles(prev => prev.map(f => f._id === targetId ? { ...f, content: v } : f));
+
+                                                        // Debounce Socket Sync
                                                         if (codeSyncTimeoutRef.current) clearTimeout(codeSyncTimeoutRef.current);
                                                         codeSyncTimeoutRef.current = setTimeout(() => {
-                                                            safeEmit('code-change', { fileId: activeFileId, newCode: v, userId });
+                                                            safeEmit('code-change', { fileId: targetId, newCode: v, userId });
                                                         }, 400);
 
                                                         // Debounce Auto-Save to DB
@@ -1757,14 +1775,12 @@ function App() {
                                                         }
                                                         autoSaveTimeoutRef.current = setTimeout(async () => {
                                                             try {
-                                                                await api.put(`/files/${activeFileId}`, { content: v });
-                                                                const activeFile = openFiles.find(f => f._id === activeFileId);
-                                                                if (activeFile) {
-                                                                    safeEmit('save-file-disk', { fileName: activeFile.name, code: v, userId, fileId: activeFileId });
-                                                                }
-                                                                console.log('Auto-saved:', activeFile?.name || activeFileId);
+                                                                console.log(`[AUTO-SAVE] Saving ${targetName} (${targetId})...`);
+                                                                await api.put(`/files/${targetId}`, { content: v });
+                                                                safeEmit('save-file-disk', { fileName: targetName, code: v, userId, fileId: targetId });
+                                                                console.log('[AUTO-SAVE] Success:', targetName);
                                                             } catch (err) {
-                                                                console.error('Auto-save failed:', err);
+                                                                console.error('[AUTO-SAVE] Failed:', err);
                                                             }
                                                         }, 1500);
                                                     }
