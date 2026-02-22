@@ -186,6 +186,15 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
     }, [api, session]); // Added api, session
 
     // --- Heartbeat & Status ---
+    const updateStatus = useCallback((newStatus) => {
+        if (!socketRef.current || !session) return;
+        socketRef.current.emit('student-status-update', {
+            sessionId: session.sessionId || session._id,
+            username: username,
+            status: newStatus
+        });
+    }, [session, username]);
+
     useEffect(() => {
         if ((!session?.sessionId && !session?._id) || !username) return;
 
@@ -207,38 +216,47 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
             } catch (e) { console.error("Heartbeat failed", e); }
         };
 
-        const interval = setInterval(() => sendHeartbeat(), 5000); // 5s for better responsiveness
+        const interval = setInterval(() => sendHeartbeat(), 15000); // 15s backup
         sendHeartbeat(); // Immediate
 
-        const onFocus = () => sendHeartbeat('active');
-        const onBlur = () => sendHeartbeat('idle');
+        const onFocus = () => { sendHeartbeat('active'); updateStatus('active'); };
+        const onBlur = () => { sendHeartbeat('idle'); updateStatus('idle'); };
+
         window.addEventListener('focus', onFocus);
         window.addEventListener('blur', onBlur);
 
+        // NEW: Cursor Idle Tracking
+        const handleMouseEnter = () => updateStatus('active');
+        const handleMouseLeave = () => updateStatus('idle');
+        window.addEventListener('mouseenter', handleMouseEnter);
+        window.addEventListener('mouseleave', handleMouseLeave);
+
         // NEW: Tab Switch Tracking
         const handleVisibilityChange = () => {
-            if (document.visibilityState === 'hidden') {
+            const isHidden = document.visibilityState === 'hidden';
+            const sId = session.sessionId || session._id;
+            if (isHidden) {
                 tabCountRef.current += 1;
                 setTabSwitches(tabCountRef.current);
-                const sId = session.sessionId || session._id;
                 if (socketRef.current) {
                     socketRef.current.emit('student-tab-switch', {
                         sessionId: sId,
                         username,
                         direction: 'left',
-                        switchCount: tabCountRef.current
+                        count: tabCountRef.current
                     });
                 }
+                updateStatus('idle');
             } else {
-                const sId = session.sessionId || session._id;
                 if (socketRef.current) {
                     socketRef.current.emit('student-tab-switch', {
                         sessionId: sId,
                         username,
                         direction: 'returned',
-                        switchCount: tabCountRef.current
+                        count: tabCountRef.current
                     });
                 }
+                updateStatus('active');
             }
         };
         document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -254,7 +272,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                     sessionId: sId,
                     username,
                     charCount: text.length,
-                    pasteCount: pasteCountRef.current
+                    count: pasteCountRef.current
                 });
             }
         };
@@ -264,10 +282,12 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
             clearInterval(interval);
             window.removeEventListener('focus', onFocus);
             window.removeEventListener('blur', onBlur);
+            window.removeEventListener('mouseenter', handleMouseEnter);
+            window.removeEventListener('mouseleave', handleMouseLeave);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             document.removeEventListener('paste', handlePaste);
         };
-    }, [session, username]);
+    }, [session, username, updateStatus]);
 
     // --- Emit code updates to server (for faculty real-time view) ---
     const emitCodeUpdate = useCallback(() => {

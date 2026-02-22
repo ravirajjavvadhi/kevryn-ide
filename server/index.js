@@ -732,10 +732,12 @@ app.post('/lab/heartbeat', async (req, res) => {
         // GUARD: If student is explicitly 'offline', don't let a heartbeat flip them back to 'active'.
         // Only a 'student-join-lab' socket event should resurrected them.
         if (liveLabState[sessionId][username]?.status === 'offline' && (!status || status === 'active')) {
-            // Still offline, but we update the other fields if needed
+            // Re-activate if a heartbeat is received (indicates they are back)
             liveLabState[sessionId][username] = {
                 ...(liveLabState[sessionId][username] || {}),
-                lastHeartbeat: new Date(), // internally track heartbeat
+                status: status || 'active',
+                lastActive: new Date().toLocaleTimeString(),
+                lastHeartbeat: new Date(),
                 code: code || currentLiveState?.code || '',
                 activeFile: activeFile || currentLiveState?.activeFile || null
             };
@@ -2311,19 +2313,70 @@ io.on('connection', (socket) => {
         if (sessionId && username) {
             // Update state
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-            // GUARD: If offline, don't let code update flip back to active
-            if (liveLabState[sessionId][username]?.status === 'offline') return;
+
+            // Allow code update to revive if offline (user clearly typing)
+            const currentStatus = liveLabState[sessionId][username]?.status;
+            const newStatus = (currentStatus === 'offline') ? 'active' : (currentStatus || 'active');
 
             liveLabState[sessionId][username] = {
                 ...(liveLabState[sessionId][username] || {}),
                 username,
-                status: 'active',
+                status: newStatus,
                 lastActive: new Date().toLocaleTimeString(),
                 code: code || '',
                 activeFile: fileName || 'untitled',
                 language: language || 'javascript'
             };
             console.log(`[DIAGNOSTIC] STUDENT CODE UPDATE: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
+            io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+        }
+    });
+
+    // NEW: Real-time status update (Immediate feedback for Active/Idle)
+    socket.on('student-status-update', ({ sessionId, username, status }) => {
+        if (sessionId && username && status) {
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+
+            liveLabState[sessionId][username] = {
+                ...(liveLabState[sessionId][username] || {}),
+                username,
+                status: status,
+                lastActive: new Date().toLocaleTimeString()
+            };
+
+            console.log(`[LAB] Status Update: ${username} is now ${status}`);
+            io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+        }
+    });
+
+    // NEW: Tab Switch Event
+    socket.on('student-tab-switch', ({ sessionId, username, type, count }) => {
+        if (sessionId && username) {
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+
+            liveLabState[sessionId][username] = {
+                ...(liveLabState[sessionId][username] || {}),
+                tabSwitchCount: count || (liveLabState[sessionId][username]?.tabSwitchCount || 0) + 1,
+                lastActive: new Date().toLocaleTimeString()
+            };
+
+            console.log(`[LAB] Tab Switch: ${username} | Total: ${liveLabState[sessionId][username].tabSwitchCount}`);
+            io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+        }
+    });
+
+    // NEW: Paste Event
+    socket.on('student-paste', ({ sessionId, username, count, contentSnippet }) => {
+        if (sessionId && username) {
+            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+
+            liveLabState[sessionId][username] = {
+                ...(liveLabState[sessionId][username] || {}),
+                pasteCount: count || (liveLabState[sessionId][username]?.pasteCount || 0) + 1,
+                lastActive: new Date().toLocaleTimeString()
+            };
+
+            console.log(`[LAB] Paste Activity: ${username} | Total: ${liveLabState[sessionId][username].pasteCount}`);
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
         }
     });
