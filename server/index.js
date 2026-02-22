@@ -2150,6 +2150,27 @@ app.post('/run-code', authenticate, async (req, res) => {
     }
 });
 
+app.get('/api/debug-env', authenticate, async (req, res) => {
+    const results = {};
+    const checks = [
+        { name: 'python3', cmd: 'python3 --version' },
+        { name: 'python', cmd: 'python --version' },
+        { name: 'gcc', cmd: 'gcc --version' },
+        { name: 'g++', cmd: 'g++ --version' },
+        { name: 'node', cmd: 'node --version' }
+    ];
+
+    for (const check of checks) {
+        try {
+            const { stdout } = await execAsync(check.cmd);
+            results[check.name] = stdout.trim().split('\n')[0];
+        } catch (e) {
+            results[check.name] = 'Not Found';
+        }
+    }
+    res.json({ environment: results, platform: os.platform(), path: process.env.PATH });
+});
+
 app.post('/files/history/:historyId/restore', authenticate, async (req, res) => {
     try {
         const historyRecord = await FileHistory.findById(req.params.historyId);
@@ -2555,7 +2576,12 @@ io.on('connection', (socket) => {
                 cols: 80,
                 rows: 30,
                 cwd: termCwd,
-                env: { ...process.env, TERM: 'xterm-256color' },
+                env: {
+                    ...process.env,
+                    TERM: 'xterm-256color',
+                    // Step 3: Explicitly inject system paths to ensure tools are found
+                    PATH: (process.env.PATH || '') + (os.platform() === 'win32' ? ';' : ':') + '/usr/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin'
+                },
                 handleFlowControl: true
             });
 

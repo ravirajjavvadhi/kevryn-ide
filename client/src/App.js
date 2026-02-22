@@ -522,6 +522,10 @@ function App() {
         fetchFiles();
         safeEmit('join-chat', { username });
         api.get('/deploy/status').then(res => setDeployStatus(res.data)).catch(() => { });
+        // Step 4: IDE Health Monitoring - Check compiler availability on backend
+        api.get('/api/debug-env')
+            .then(res => console.log("[IDE HEALTH] Server Environment:", res.data.environment))
+            .catch(err => console.error("[IDE HEALTH] Failed to check server env"));
 
         const handleReceiveMessage = (msg) => { setChatMessages(prev => [...prev, msg]); };
         s.on('receive-message', handleReceiveMessage);
@@ -1132,13 +1136,15 @@ function App() {
 
                 if (!isServerLanguage && inputWriter && typeof inputWriter.write === 'function') {
                     // Local WebContainer execution
-                    inputWriter.write(cmd + '\r');
+                    // Step 5: Execution Cleanup - Send Ctrl+C twice to reset prompt, then run command
+                    inputWriter.write('\x03\x03' + cmd + '\r');
                 } else {
-                    // Server PTY execution (or fallback if local not ready)
+                    // Server PTY execution
+                    // Step 5: Execution Cleanup - Send Ctrl+C twice to reset prompt, then run command
                     safeEmit('terminal:write', {
                         termId: termIdToUse,
-                        data: cmd + '\r',
-                        courseId: activeSession?.courseId // Respect lab context if active
+                        data: '\x03\x03' + cmd + '\r',
+                        courseId: activeSession?.courseId
                     });
                 }
             }, 100);
