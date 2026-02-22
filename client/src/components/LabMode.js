@@ -337,7 +337,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         const ext = filename.split('.').pop().toLowerCase();
         const commands = {
             'js': `node ${filename}`,
-            'py': `python ${filename}`,
+            'py': `python3 ${filename}`,
             'java': `javac ${filename} && java ${filename.replace('.java', '')}`,
             'c': `gcc ${filename} -o output && ./output`,
             'cpp': `g++ ${filename} -o output && ./output`,
@@ -596,7 +596,12 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                         </div>
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                             {socketRef.current && userId ? (
-                                <Terminal socket={socketRef.current} termId={1} userId={userId} />
+                                <Terminal
+                                    socket={socketRef.current}
+                                    termId={1}
+                                    userId={userId}
+                                    webcontainer={['py', 'c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase()) ? null : session?.webcontainer}
+                                />
                             ) : (
                                 <div style={{ padding: '15px', color: '#64748b', fontSize: '13px' }}>Connecting terminal...</div>
                             )}
