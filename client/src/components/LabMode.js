@@ -337,7 +337,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         const ext = filename.split('.').pop().toLowerCase();
         const commands = {
             'js': `node ${filename}`,
-            'py': `python3 ${filename}`,
+            'py': `python3 ${filename} || python ${filename}`,
             'java': `javac ${filename} && java ${filename.replace('.java', '')}`,
             'c': `gcc ${filename} -o output && ./output`,
             'cpp': `g++ ${filename} -o output && ./output`,
@@ -397,15 +397,34 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         if (!activeFile || !socketRef.current) return;
         const cmd = getRunCommand(activeFile.name);
         if (!cmd) { alert("No run command for this file type"); return; }
-        // Save first, then send the run command to the terminal
+
+        const ext = activeFile.name.split('.').pop().toLowerCase();
+        const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
+
         handleSave().then(() => {
-            socketRef.current.emit('terminal:write', {
-                termId: 1,
-                data: cmd + '\r',
-                courseId: session?.courseId // Ensure terminal respects lab cwd if possible
-            });
+            if (isServerLanguage) {
+                // Send to Server PTY
+                socketRef.current.emit('terminal:write', {
+                    termId: 1,
+                    data: cmd + '\r',
+                    courseId: session?.courseId
+                });
+            } else {
+                // Send to Local WebContainer (if available)
+                const inputWriter = window.ideTerminalInputs && window.ideTerminalInputs[1];
+                if (inputWriter) {
+                    inputWriter.write(cmd + '\r');
+                } else {
+                    // Fallback to server if local not ready
+                    socketRef.current.emit('terminal:write', {
+                        termId: 1,
+                        data: cmd + '\r',
+                        courseId: session?.courseId
+                    });
+                }
+            }
         });
-    }, [activeFile, handleSave, session]); // Added session
+    }, [activeFile, handleSave, session]);
 
     // --- Keyboard Shortcut: Ctrl+S ---
     useEffect(() => {
