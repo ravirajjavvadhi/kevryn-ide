@@ -72,8 +72,6 @@ function App() {
     const [activeSession, setActiveSession] = useState(null); // NEW: Store full session data (including courseId)
     const [isLabOpen, setIsLabOpen] = useState(false); // NEW: Explicitly control lab opening
     const [currentLabTime, setCurrentLabTime] = useState(0); // For display
-    const timeTracker = useRef({}); // { [fileName]: seconds }
-    const lastReportSync = useRef(Date.now());
 
     // --- ANIMATION HOOKS (Moved to top) ---
     const x = useMotionValue(0);
@@ -631,27 +629,6 @@ function App() {
     // We need a state for this. using 'activeSessionId' if set.
     // (State moved to top)
 
-    // --- LAB TIMER & REPORT SYNC ---
-    useEffect(() => {
-        let interval;
-        if (isLabOpen && activeFileId) {
-            interval = setInterval(() => {
-                const fname = openFiles.find(f => f._id === activeFileId)?.name;
-                if (fname) {
-                    if (!timeTracker.current[fname]) timeTracker.current[fname] = 0;
-                    timeTracker.current[fname] += 1;
-                    setCurrentLabTime(timeTracker.current[fname]);
-
-                    // Auto-sync every 30 seconds
-                    if (Date.now() - lastReportSync.current > 30000) {
-                        saveLabReport(fname, code); // Sync current file
-                        lastReportSync.current = Date.now();
-                    }
-                }
-            }, 1000);
-        }
-        return () => clearInterval(interval);
-    }, [isLabOpen, activeFileId, openFiles, code]);
 
     const saveLabReport = async (fname, fcode, timeDelta, status = 'in-progress') => {
         if (!activeSessionId) return;
