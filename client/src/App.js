@@ -1822,14 +1822,22 @@ function App() {
                                                         </div>
                                                         <div style={{ flex: 1, position: 'relative', background: '#1e1e1e' }}>
                                                             {terminals.map(t => {
-                                                                const activeExt = fileName?.split('.').pop()?.toLowerCase();
+                                                                const activeFile = openFiles.find(f => f._id === activeFileId);
+                                                                const activeExt = activeFile?.name?.split('.').pop()?.toLowerCase() || '';
                                                                 const isServerLang = ['py', 'c', 'cpp', 'java'].includes(activeExt);
-                                                                // If it's a server lang, disable webcontainer for the terminal to force PTY mode
+
+                                                                // --- FORCE REMOUNT FIX ---
+                                                                // We use a combined key of termId + mode. 
+                                                                // When isServerLang changes, the key changes, forcing Terminal to remount.
+                                                                const terminalMode = isServerLang ? 'server' : 'local';
+                                                                const terminalKey = `${t.id}-${terminalMode}`;
+
                                                                 const shouldBeLocal = t.type === 'local' && !isServerLang;
 
                                                                 return (
                                                                     <div key={t.id} style={{ width: '100%', height: '100%', display: activeTermId === t.id ? 'block' : 'none' }}>
                                                                         <Terminal
+                                                                            key={terminalKey}
                                                                             socket={socketRef.current}
                                                                             termId={t.id}
                                                                             userId={userId}

@@ -168,10 +168,12 @@ const Terminal = ({ socket, termId, userId, webcontainer, onError }) => {
 
         let cleanupLogic = null;
         if (webcontainer) {
+            console.log(`[Terminal] ${termId} Re-initializing in LOCAL (WebContainer) mode`);
             term.reset();
             term.write('\x1b[36m[Local Terminal: WebContainer Connected]\x1b[0m\r\n');
             startShell().then(cleanup => cleanupLogic = cleanup);
         } else if (socket) {
+            console.log(`[Terminal] ${termId} Re-initializing in SERVER (PTY) mode`);
             term.reset();
             term.write('\x1b[35m[Server Terminal: PTY Connected]\x1b[0m\r\n');
             cleanupLogic = setupSocketFallback();
