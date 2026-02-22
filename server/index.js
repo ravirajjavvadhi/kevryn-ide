@@ -93,6 +93,7 @@ app.set('trust proxy', true);
 let io;
 const liveLabState = {};
 const socketToUser = {};
+const offlineTimeouts = {}; // { username: timeoutId } - Grace period for refreshes
 
 // --- LISTEN EARLY (Railway 502 Fix) ---
 const server = http.createServer(app);
@@ -2289,6 +2290,13 @@ io.on('connection', (socket) => {
             // But we prefer fresh data if provided
             liveLabState[sessionId][username] = { ...liveLabState[sessionId][username], ...state };
 
+            // CLEAR OFFLINE TIMEOUT: If they reconnected during grace
+            if (offlineTimeouts[username]) {
+                console.log(`[LAB] ${username} reconnected. Cancelling offline timeout.`);
+                clearTimeout(offlineTimeouts[username]);
+                delete offlineTimeouts[username];
+            }
+
             // Notify faculty
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
 
@@ -2449,6 +2457,16 @@ io.on('connection', (socket) => {
             delete terminals[termId];
         }
 
+        // GUARD: Ensure PTY is available
+        if (!pty) {
+            console.error(`[TERMINAL] Cannot create terminal: node-pty not loaded.`);
+            socket.emit('terminal:data', {
+                termId,
+                data: '\r\n\x1b[31mError: Terminal engine (node-pty) could not be loaded on this environment.\x1b[0m\r\n\x1b[33mDirect execution (Run Code) may still work.\x1b[0m\r\n'
+            });
+            return;
+        }
+
         // FIX: Use cmd.exe for better stability on this environment
         const shell = os.platform() === 'win32' ? 'cmd.exe' : 'bash';
 
@@ -2549,16 +2567,28 @@ io.on('connection', (socket) => {
         // Clean up student tracking
         if (socketToUser[socket.id]) {
             const { sessionId, username } = socketToUser[socket.id];
-            if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
-                liveLabState[sessionId][username].status = 'offline';
-                liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
-                // Notify faculty
-                io.to(`lab-${sessionId}`).emit('student-data-update', {
-                    username,
-                    status: 'offline',
-                    lastActive: new Date().toLocaleTimeString()
-                });
-            }
+
+            // GRACE PERIOD: Don't set offline immediately (Railway 502/Refreshes)
+            console.log(`[LAB] Student ${username} disconnected. Starting 15s offline grace period...`);
+
+            // Clear any existing timeout for this user (they might have had multiple sockets)
+            if (offlineTimeouts[username]) clearTimeout(offlineTimeouts[username]);
+
+            offlineTimeouts[username] = setTimeout(() => {
+                if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
+                    liveLabState[sessionId][username].status = 'offline';
+                    liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
+                    // Notify faculty
+                    io.to(`lab-${sessionId}`).emit('student-data-update', {
+                        username,
+                        status: 'offline',
+                        lastActive: new Date().toLocaleTimeString()
+                    });
+                    console.log(`[LAB] Grace period ended. ${username} is now OFFLINE.`);
+                }
+                delete offlineTimeouts[username];
+            }, 15000); // 15 seconds grace
+
             delete socketToUser[socket.id];
         }
     });

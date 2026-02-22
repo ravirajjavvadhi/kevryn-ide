@@ -2144,12 +2144,13 @@ const Login = ({
     handleAuth, authData, setAuthData,
     handleGoogleLoginSuccess, SERVER_URL
 }) => (
-    <div className="ide-container" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', background: '#08080c', perspective: '1000px', height: '100%', display: 'flex' }}>
+    <div className="ide-container login-container" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', perspective: '1000px', height: '100%', display: 'flex', position: 'relative' }}>
+        <AntigravityBackground />
         <motion.div
             initial={{ opacity: 0, scale: 0.8, z: -100 }}
             animate={{ opacity: 1, scale: 1, z: 0 }}
             transition={{ duration: 1.2, ease: "circOut" }}
-            style={{ rotateX, rotateY, transformStyle: 'preserve-3d', padding: '40px', borderRadius: '32px', width: '420px', position: 'relative' }}
+            style={{ rotateX, rotateY, transformStyle: 'preserve-3d', padding: '40px', borderRadius: '32px', width: '420px', position: 'relative', zIndex: 10 }}
             className={`auth-box ${isFacultyLogin ? 'faculty-mode' : ''}`}
         >
             {/* LOGIN TABS */}
