@@ -87,7 +87,7 @@ const courseManager = require('./routes/courseManager');
 const assignmentManager = require('./routes/assignmentManager');
 
 const app = express();
-app.set('trust proxy', 1);
+app.set('trust proxy', true);
 
 // --- GLOBAL STATE ---
 let io;
@@ -96,6 +96,13 @@ const socketToUser = {};
 
 // --- LISTEN EARLY (Railway 502 Fix) ---
 const server = http.createServer(app);
+
+// RAW HTTP LOGGER (Diagnostic): Log every request that hits the socket, bypassing Express
+server.on('request', (req, res) => {
+    if (req.url !== '/health' && req.url !== '/ready') {
+        console.log(`[RAW REQUEST] ${new Date().toISOString()} | ${req.method} ${req.url} | Origin: ${req.headers.origin || 'none'}`);
+    }
+});
 
 // --- SOCKET INITIALIZATION ---
 io = new Server(server, {
@@ -110,8 +117,14 @@ server.on('error', (err) => {
     console.error('!!! SERVER ERROR !!!', err);
 });
 
-const HOST = '0.0.0.0';
-// We will call server.listen at the very end of the file to ensure all middleware is registered first.
+// Final Railway Stability Fix: Prefer listening early so the proxy can connect
+// but only after essential security middleware is ready (CORS/BodyParser)
+const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
+server.listen(PORT, () => {
+    console.log(`[BOOT] Server successfully started on port ${PORT}`);
+    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
+    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
+});
 
 
 // --- LOUD HEALTH CHECKS ---
@@ -2717,10 +2730,4 @@ process.on('SIGTERM', () => {
     else process.exit(0);
 });
 
-// Final Railway Stability Fix: Start listening only after all middleware and routes are registered
-const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
-server.listen(PORT, HOST, () => {
-    console.log(`[BOOT] Server successfully started on ${HOST}:${PORT}`);
-    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
-    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
-});
+// server.listen relocated to top section for Railway boot speed
