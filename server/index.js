@@ -130,6 +130,18 @@ app.use((req, res, next) => {
     next();
 });
 
+// --- RATE LIMITING ---
+const authLimiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 50, // 50 attempts per window
+    message: { error: 'Too many attempts, please try again later.' }
+});
+const aiLimiter = rateLimit({
+    windowMs: 60 * 1000, // 1 minute
+    max: 20, // 20 AI requests per minute
+    message: { error: 'AI rate limit exceeded. Please wait a moment.' }
+});
+
 // --- CORS & SECURITY MIDDLEWARE ---
 // EARLY-STAGE CORS: Setup headers before ANY other middleware to fix Express 5 preflight issues
 app.use((req, res, next) => {
@@ -301,6 +313,7 @@ app.use('/api', courseManager);
 app.use('/api/assignments', assignmentManager);
 app.use('/api/admin', adminRouter); // NEW: Admin API
 app.use('/api/issues', issuesRouter); // NEW: Issue Reporting
+app.use('/ai', aiRouter); // Mount AI routes
 
 // --- OAUTH ROUTES ---
 
@@ -836,7 +849,6 @@ app.get('/api/users/students', authenticate, async (req, res) => {
 });
 
 // --- UNIFIED VAYU LAB SYSTEM ROUTES ---
-app.use('/api', courseManager);
 
 // 5. Get Student's Files (for faculty monitoring)
 app.get('/lab/student-files/:username', async (req, res) => {
@@ -903,109 +915,6 @@ app.get('/lab/student-portfolio/:username', async (req, res) => {
     }
 });
 
-// --- RATE LIMITING ---
-const authLimiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 50, // 50 attempts per window
-    message: { error: 'Too many attempts, please try again later.' }
-});
-const aiLimiter = rateLimit({
-    windowMs: 60 * 1000, // 1 minute
-    max: 20, // 20 AI requests per minute
-    message: { error: 'AI rate limit exceeded. Please wait a moment.' }
-});
-app.use('/login', authLimiter);
-app.use('/register', authLimiter);
-app.use('/auth', authLimiter);
-app.use('/ai', aiLimiter);
-
-// --- SESSION SETUP FOR PASSPORT ---
-app.use(session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: process.env.NODE_ENV === 'production',
-        httpOnly: true,
-        maxAge: 24 * 60 * 60 * 1000 // 24 hours
-    }
-}));
-app.use(passport.initialize());
-app.use(passport.session());
-
-// --- PASSPORT GITHUB STRATEGY ---
-
-passport.serializeUser(function (user, done) {
-    done(null, user);
-});
-
-passport.deserializeUser(function (obj, done) {
-    done(null, obj);
-});
-
-passport.use(new GitHubStrategy({
-    clientID: GITHUB_CLIENT_ID,
-    clientSecret: GITHUB_CLIENT_SECRET,
-    callbackURL: GITHUB_CALLBACK_URL
-},
-    async function (accessToken, refreshToken, profile, done) {
-        try {
-            // 1. Try to find by GitHub ID
-            let user = await User.findOne({ githubId: profile.id });
-
-            // 2. If not found, try to find by Email (to link accounts)
-            if (!user && profile.emails && profile.emails.length > 0) {
-                const email = profile.emails[0].value;
-                user = await User.findOne({ email: email });
-                if (user) {
-                    // Link GitHub to existing account
-                    user.githubId = profile.id;
-                    user.githubToken = accessToken;
-                    user.githubUsername = profile.username;
-                    // Optional: Update picture if missing
-                    if (!user.picture && profile.photos && profile.photos[0]) {
-                        user.picture = profile.photos[0].value;
-                    }
-                    await user.save();
-                }
-            }
-
-            // 3. If still not found, create new user
-            if (!user) {
-                // Determine unique username
-                let uniqueUsername = profile.username;
-                let counter = 1;
-                while (await User.findOne({ username: uniqueUsername })) {
-                    uniqueUsername = `${profile.username}${counter}`;
-                    counter++;
-                }
-
-                user = new User({
-                    username: uniqueUsername,
-                    githubId: profile.id,
-                    githubToken: accessToken,
-                    githubUsername: profile.username,
-                    email: profile.emails && profile.emails[0] ? profile.emails[0].value : null,
-                    picture: profile.photos && profile.photos[0] ? profile.photos[0].value : null
-                });
-                await user.save();
-            } else {
-                // 4. Update existing user (GitHub ID found or just linked)
-                user.githubToken = accessToken;
-                user.githubUsername = profile.username;
-                if (!user.picture && profile.photos && profile.photos[0]) {
-                    user.picture = profile.photos[0].value;
-                }
-                await user.save();
-            }
-            return done(null, user);
-        } catch (err) {
-            return done(err, null);
-        }
-    }
-));
-
-
 // --- PROXY MIDDLEWARE FOR DEPLOYMENTS ---
 // Dynamic proxy matching /deployed/:projectId/*
 app.use('/deployed/:projectId', (req, res, next) => {
@@ -1030,12 +939,11 @@ app.use('/deployed/:projectId', (req, res, next) => {
     })(req, res, next);
 });
 
-// (Body parsing middleware moved to top, before lab routes)
-
-// Mount AI routes
-app.use('/ai', aiRouter);
-app.use('/api', courseManager); // Handles /courses and /batches
-app.use('/api/assignments', assignmentManager); // Handles /assignments
+// (Apply rate limiters to specific routes)
+app.use('/login', authLimiter);
+app.use('/register', authLimiter);
+app.use('/auth', authLimiter);
+app.use('/ai', aiLimiter);
 
 const baseUserDir = path.join(__dirname, 'user_projects');
 const baseSitesDir = path.join(__dirname, 'public_sites');
