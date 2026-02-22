@@ -1079,7 +1079,8 @@ function App() {
     const runCode = async () => {
         if (!activeFileId) return alert("Select file!");
         const fullPath = findFileFullPath(activeFileId);
-        const currentFileName = fullPath;
+        const activeFileName = fullPath;
+        const ext = activeFileName.split('.').pop().toLowerCase();
 
         // FORCE SAVE BEFORE RUN
         try {
@@ -1094,76 +1095,53 @@ function App() {
         // Save to disk must happen even if DB save fails to allow terminal execution
         safeEmit('save-file-disk', { fileName: fullPath, code, userId, fileId: activeFileId });
 
-        if (currentFileName.endsWith('.html')) { window.open(`${SERVER_URL}/preview/${userId}/${currentFileName}`, '_blank'); return; }
+        if (activeFileName.endsWith('.html')) {
+            window.open(`${SERVER_URL}/preview/${userId}/${activeFileName}`, '_blank');
+            return;
+        }
 
         let cmd = "";
         const isWin = window.navigator.platform.toUpperCase().indexOf('WIN') >= 0;
         const exePrefix = isWin ? '.\\' : './';
 
-        if (currentFileName.endsWith('.js')) cmd = `node "${currentFileName}"\r`;
-        else if (currentFileName.endsWith('.py')) cmd = `python -u "${currentFileName}"\r`;
-        else if (currentFileName.endsWith('.c')) cmd = `gcc "${currentFileName}" -o output && ${exePrefix}output\r`;
-        else if (currentFileName.endsWith('.cpp')) cmd = `g++ "${currentFileName}" -o output && ${exePrefix}output\r`;
-        else if (currentFileName.endsWith('.java')) {
-            // Extract directory and class name
-            const filePath = currentFileName.replace(/\\/g, '/');
-            const parts = filePath.split('/');
-            const fileNameOnly = parts.pop();
-            const className = fileNameOnly.replace('.java', '');
-            const directory = parts.length > 0 ? parts.join('/') : '.';
+        // Same command set as LabMode for consistency
+        const commands = {
+            'js': `node "${activeFileName}"`,
+            'py': `python3 "${activeFileName}" || python "${activeFileName}"`,
+            'java': `javac "${activeFileName}" && java "${activeFileName.replace('.java', '')}"`,
+            'c': `gcc "${activeFileName}" -o output && ${exePrefix}output`,
+            'cpp': `g++ "${activeFileName}" -o output && ${exePrefix}output`,
+            'rb': `ruby "${activeFileName}"`,
+            'go': `go run "${activeFileName}"`,
+            'php': `php "${activeFileName}"`,
+            'ts': `npx ts-node "${activeFileName}"`,
+        };
 
-            // Change to directory, compile, and run
-            cmd = `cd "${directory}" ; javac "${fileNameOnly}" ; if ($?) { java ${className} }\r`;
-        }
+        cmd = commands[ext];
 
         if (cmd) {
-            const isLocalLang = currentFileName.endsWith('.js') || currentFileName.endsWith('.mjs') || currentFileName.endsWith('.html') || currentFileName.endsWith('.css');
-            let targetTerm = terminals.find(t => isLocalLang ? t.type === 'local' : t.type === 'server');
+            const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
 
-            if (!targetTerm && !isLocalLang) {
-                targetTerm = { id: 'server-1', name: 'Server Terminal', type: 'server' };
-                setTerminals(prev => [...prev, targetTerm]);
-            }
+            setBottomPanelTab('terminal');
+            setIsBottomPanelOpen(true);
 
-            // --- SERVER-SIDE REST FALLBACK (works even when PTY is unavailable in Railway) ---
-            if (!isLocalLang) {
-                const langMap = { '.py': 'python', '.c': 'c', '.cpp': 'cpp', '.java': 'java' };
-                const ext = Object.keys(langMap).find(e => currentFileName.endsWith(e));
-                const runLang = langMap[ext];
-                if (runLang) {
-                    setBottomPanelTab('terminal');
-                    setIsBottomPanelOpen(true);
-                    try {
-                        const result = await api.post('/run-code', { code, language: runLang, fileName: fileName });
-                        const output = result.data.output || result.data.error || 'No output';
-                        // Print REST result into terminal panel
-                        safeEmit('terminal:data', { termId: activeTermId || 'server-1', data: `\r\n--- Output ---\r\n${output.replace(/\n/g, '\r\n')}\r\n` });
-                        // Also alert if terminal not visible
-                        if (!isBottomPanelOpen) alert(output);
-                    } catch (e) {
-                        alert('Code execution failed: ' + e.message);
-                    }
-                    return;
+            setTimeout(() => {
+                const inputs = window.ideTerminalInputs || {};
+                const termIdToUse = activeTermId || 1;
+                const inputWriter = inputs[termIdToUse];
+
+                if (!isServerLanguage && inputWriter && typeof inputWriter.write === 'function') {
+                    // Local WebContainer execution
+                    inputWriter.write(cmd + '\r');
+                } else {
+                    // Server PTY execution (or fallback if local not ready)
+                    safeEmit('terminal:write', {
+                        termId: termIdToUse,
+                        data: cmd + '\r',
+                        courseId: activeSession?.courseId // Respect lab context if active
+                    });
                 }
-            }
-
-            if (targetTerm) {
-                setActiveTermId(targetTerm.id);
-                setBottomPanelTab('terminal');
-                setIsBottomPanelOpen(true);
-
-                setTimeout(() => {
-                    const inputs = window.ideTerminalInputs || {};
-                    const inputWriter = inputs[targetTerm.id];
-                    if (inputWriter && typeof inputWriter.write === 'function') {
-                        inputWriter.write(cmd);
-                    } else {
-                        safeEmit('terminal:write', { termId: targetTerm.id, data: cmd });
-                    }
-                }, 100);
-            } else {
-                safeEmit('terminal:write', { termId: activeTermId, data: cmd });
-            }
+            }, 100);
         } else {
             alert("Auto-run is not configured for this file type. You can manually run it in the terminal.");
         }
@@ -1843,17 +1821,24 @@ function App() {
                                                                 ))}
                                                         </div>
                                                         <div style={{ flex: 1, position: 'relative', background: '#1e1e1e' }}>
-                                                            {terminals.map(t => (
-                                                                <div key={t.id} style={{ width: '100%', height: '100%', display: activeTermId === t.id ? 'block' : 'none' }}>
-                                                                    <Terminal
-                                                                        socket={socketRef.current}
-                                                                        termId={t.id}
-                                                                        userId={userId}
-                                                                        onError={(err) => setTerminalError(err)}
-                                                                        webcontainer={t.type === 'local' ? webcontainerInstance : null}
-                                                                    />
-                                                                </div>
-                                                            ))}
+                                                            {terminals.map(t => {
+                                                                const activeExt = fileName?.split('.').pop()?.toLowerCase();
+                                                                const isServerLang = ['py', 'c', 'cpp', 'java'].includes(activeExt);
+                                                                // If it's a server lang, disable webcontainer for the terminal to force PTY mode
+                                                                const shouldBeLocal = t.type === 'local' && !isServerLang;
+
+                                                                return (
+                                                                    <div key={t.id} style={{ width: '100%', height: '100%', display: activeTermId === t.id ? 'block' : 'none' }}>
+                                                                        <Terminal
+                                                                            socket={socketRef.current}
+                                                                            termId={t.id}
+                                                                            userId={userId}
+                                                                            onError={(err) => setTerminalError(err)}
+                                                                            webcontainer={shouldBeLocal ? webcontainerInstance : null}
+                                                                        />
+                                                                    </div>
+                                                                );
+                                                            })}
                                                             {terminals.length === 0 && (<div style={{ color: '#555', padding: '20px', fontSize: '13px' }}>No terminals open. Click + to create one.</div>)}
 
                                                             {/* --- SELF-HEALING ACTION OVERLAY --- */}
