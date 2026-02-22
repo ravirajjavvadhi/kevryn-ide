@@ -54,7 +54,8 @@ const JWT_SECRET = process.env.JWT_SECRET || 'my_super_secret_key_123';
 const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
-const PORT = process.env.PORT || 5000; // Use Railway's dynamic port
+// Railway Fix: Prefer initialPort (from environment) over potential .env overrides
+const PORT = initialPort || process.env.PORT || 5000;
 
 // Initialize Google OAuth2 client (lazy - created on first auth attempt)
 let _googleClient = null;
@@ -110,11 +111,8 @@ server.on('error', (err) => {
 });
 
 const HOST = '0.0.0.0';
-server.listen(PORT, HOST, () => {
-    console.log(`[BOOT] Server listening on ${HOST}:${PORT}`);
-    console.log(`[BOOT] PORT Source: ${process.env.PORT ? 'Environment' : 'Fallback (5000)'}`);
-    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
-});
+// We will call server.listen at the very end of the file to ensure all middleware is registered first.
+
 
 // --- LOUD HEALTH CHECKS ---
 app.get('/health', (req, res) => res.status(200).send('OK'));
@@ -136,16 +134,18 @@ app.use((req, res, next) => {
 // EARLY-STAGE CORS: Setup headers before ANY other middleware to fix Express 5 preflight issues
 app.use((req, res, next) => {
     const origin = req.headers.origin;
-    // Allow Netlify + localhost, but also echo back origin in production for flexibility
+    // Echo back the request origin if it's on our allowed list or if we're in production mode
     if (origin) {
         res.setHeader('Access-Control-Allow-Origin', origin);
     }
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight for 24h
 
     if (req.method === 'OPTIONS') {
-        return res.sendStatus(200);
+        res.setHeader('Content-Length', '0');
+        return res.status(204).end();
     }
     next();
 });
@@ -2807,4 +2807,12 @@ process.on('SIGTERM', () => {
     console.log('[SHUTDOWN] SIGTERM received.');
     if (server) server.close(() => process.exit(0));
     else process.exit(0);
+});
+
+// Final Railway Stability Fix: Start listening only after all middleware and routes are registered
+const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
+server.listen(PORT, HOST, () => {
+    console.log(`[BOOT] Server successfully started on ${HOST}:${PORT}`);
+    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
+    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });
