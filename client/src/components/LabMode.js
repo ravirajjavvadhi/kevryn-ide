@@ -114,6 +114,9 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                         language: language || 'javascript'
                     }
                 });
+
+                // NEW: Initialize server-side terminal for the student
+                sock.emit('terminal:create', { termId: 1, userId });
             } else {
                 console.error('[LabMode] Missing session ID or username', { session, username });
             }
@@ -593,7 +596,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                         </div>
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                             {socketRef.current && userId ? (
-                                <Terminal socket={socketRef.current} termId={1} userId={userId} webcontainer={session?.webcontainer} />
+                                <Terminal socket={socketRef.current} termId={1} userId={userId} />
                             ) : (
                                 <div style={{ padding: '15px', color: '#64748b', fontSize: '13px' }}>Connecting terminal...</div>
                             )}

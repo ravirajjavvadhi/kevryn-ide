@@ -213,7 +213,7 @@ const AntigravityBackground = React.memo(() => {
     }, []);
 
     return (
-        <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 0, background: '#08080c', pointerEvents: 'none' }} />
+        <canvas ref={canvasRef} style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -1, background: '#08080c', pointerEvents: 'none' }} />
     );
 });
 

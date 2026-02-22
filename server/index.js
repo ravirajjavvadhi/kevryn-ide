@@ -2621,10 +2621,21 @@ io.on('connection', (socket) => {
         if (socketToUser[socket.id]) {
             const { sessionId, username } = socketToUser[socket.id];
 
-            // GRACE PERIOD: Don't set offline immediately (Railway 502/Refreshes)
-            console.log(`[LAB] Student ${username} disconnected. Starting 15s offline grace period...`);
+            // CHECK: Is there any other socket still connected for this user?
+            const otherSocket = Object.entries(socketToUser).find(([sid, u]) =>
+                sid !== socket.id && u.username === username && u.sessionId === sessionId
+            );
 
-            // Clear any existing timeout for this user (they might have had multiple sockets)
+            if (otherSocket) {
+                console.log(`[LAB] Student ${username} still has other active sockets. Skipping offline grace period.`);
+                delete socketToUser[socket.id];
+                return;
+            }
+
+            // GRACE PERIOD: Don't set offline immediately (Railway 502/Refreshes)
+            console.log(`[LAB] Student ${username} last socket disconnected. Starting 15s offline grace period...`);
+
+            // Clear any existing timeout for this user
             if (offlineTimeouts[username]) clearTimeout(offlineTimeouts[username]);
 
             offlineTimeouts[username] = setTimeout(() => {
