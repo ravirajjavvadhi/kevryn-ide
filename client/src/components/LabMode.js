@@ -405,7 +405,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                 content: '',
                 courseId: session?.courseId // Tag file with course context
             });
-            setFiles(prev => [...prev, res.data]);
+            await loadFiles(); // Explicit refresh from server
             setActiveFile(res.data);
             setCode('');
             setLanguage(detectLanguage(name));
@@ -571,19 +571,19 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         <div style={{
             width: '100vw', height: '100vh',
             background: '#020617',
-            backgroundImage: 'radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.15) 0, transparent 50%), radial-gradient(at 100% 0%, rgba(88, 28, 135, 0.15) 0, transparent 50%)',
+            backgroundImage: 'radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.1) 0, transparent 40%), radial-gradient(at 100% 0%, rgba(88, 28, 135, 0.1) 0, transparent 40%)',
             display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'
         }}>
 
             {/* --- TOP BAR --- */}
             <div style={{
                 height: '56px',
-                background: 'rgba(15, 23, 42, 0.8)',
-                backdropFilter: 'blur(12px)',
+                background: 'rgba(15, 23, 42, 0.9)',
+                backdropFilter: 'blur(8px)',
                 borderBottom: '1px solid rgba(255,255,255,0.1)',
                 display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                 padding: '0 24px', color: '#f8fafc', zIndex: 100,
-                boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+                boxShadow: '0 2px 10px rgba(0,0,0,0.2)'
             }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
                     <div style={{
@@ -706,8 +706,8 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                 {/* File Tree (Sidebar) */}
                 <div style={{
                     width: '260px',
-                    background: 'rgba(2, 6, 23, 0.6)',
-                    backdropFilter: 'blur(20px)',
+                    background: 'rgba(2, 6, 23, 0.8)',
+                    backdropFilter: 'blur(10px)',
                     borderRight: '1px solid rgba(255,255,255,0.05)',
                     display: 'flex', flexDirection: 'column'
                 }}>

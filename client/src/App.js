@@ -427,13 +427,13 @@ function App() {
     };
 
 
-    const fetchFiles = useCallback(() => {
+    const fetchFiles = useCallback((immediate = false) => {
         if (!token) return;
 
         // Debounce logic: cancel existing timer
         if (window.fetchFilesTimer) clearTimeout(window.fetchFilesTimer);
 
-        window.fetchFilesTimer = setTimeout(() => {
+        const executeAction = () => {
             // FIX: Pass courseId to /files to ensure we get lab files when in a session
             const fetchUrl = activeSession?.courseId ? `/files?courseId=${activeSession.courseId}` : '/files';
             api.get(fetchUrl).then(res => {
@@ -458,7 +458,13 @@ function App() {
                 console.log("Fetch Error");
                 setIsAppLoading(false); // Don't hang forever
             });
-        }, 300); // 300ms debounce
+        };
+
+        if (immediate) {
+            executeAction();
+        } else {
+            window.fetchFilesTimer = setTimeout(executeAction, 300); // 300ms debounce
+        }
     }, [token, api, activeSession]);
 
     // Handle Global Shortcuts (Ctrl+S)
@@ -901,7 +907,11 @@ function App() {
     const createNode = (type, parentId = 'root') => {
         if (!userId) return alert("Please login again (User ID missing).");
         const name = prompt(`Enter ${type} name:`);
-        if (name) safeEmit('create-node', { parentId, newNode: { name, type }, userId });
+        if (name) {
+            safeEmit('create-node', { parentId, newNode: { name, type }, userId });
+            // FORCE IMMEDIATE REFRESH (User Request: Show immediately after creation)
+            fetchFiles(true);
+        }
     };
 
     const handleFileUpload = (e) => {
@@ -1647,34 +1657,39 @@ function App() {
                                         </div>
                                         <button className="icon-btn" title="New Template" onClick={() => setIsTemplateModalOpen(true)} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '0 10px', cursor: 'pointer' }}><FaMagic size={11} /></button>
                                     </div>
-                                    {sidebarTab === 'files' && (<div style={{ flex: 1, overflowY: 'auto', marginTop: '10px' }}><FileTree data={fileData} activeId={activeFileId} onFileClick={handleFileClick} onCreate={(parentId) => createNode('file', parentId)} onDelete={handleDelete} onRename={handleRename} onDownload={handleDownload} /></div>)}
-                                    {sidebarTab === 'git' && (<GitPanel token={token} startRepo={activeRepo} />)}
-                                    {sidebarTab === 'snippets' && (<SnippetsPanel token={token} editorRef={editorRef} getLanguage={getLanguage} fileName={fileName} />)}
-                                    {sidebarTab === 'timeline' && (
-                                        <TimelinePanel
-                                            token={token}
-                                            activeFileId={activeFileId}
-                                            onRestoreComplete={(newContent) => {
-                                                setCode(newContent);
-                                                if (editorRef.current) {
-                                                    editorRef.current.setValue(newContent);
-                                                }
-                                            }}
-                                        />
-                                    )}
-                                    {sidebarTab === 'chat' && (<div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}><div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>{chatMessages.map((msg, i) => (<div key={i} style={{ alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', maxWidth: '85%' }}><div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px', textAlign: msg.sender === username ? 'right' : 'left' }}>{msg.sender}</div><div style={{ padding: '8px', borderRadius: '6px', background: msg.sender === username ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: 'white', fontSize: '12px', wordWrap: 'break-word' }}>{msg.text}</div></div>))}<div ref={chatEndRef} /></div><form onSubmit={sendChatMessage} style={{ padding: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '5px', background: 'var(--bg-secondary)' }}><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '12px', outline: 'none' }} /><button type="submit" style={{ background: 'var(--accent-primary)', border: 'none', borderRadius: '4px', color: 'white', padding: '0 10px', cursor: 'pointer' }}><FaPaperPlane size={12} /></button></form></div>)}
-                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '10px', textAlign: 'center', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                                    {/* Sidebar Tab Content Area (Ensure it takes space to push logout down) */}
+                                    <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+                                        {sidebarTab === 'files' && (<FileTree data={fileData} activeId={activeFileId} onFileClick={handleFileClick} onCreate={(parentId) => createNode('file', parentId)} onDelete={handleDelete} onRename={handleRename} onDownload={handleDownload} />)}
+                                        {sidebarTab === 'git' && (<GitPanel token={token} startRepo={activeRepo} />)}
+                                        {sidebarTab === 'snippets' && (<SnippetsPanel token={token} editorRef={editorRef} getLanguage={getLanguage} fileName={fileName} />)}
+                                        {sidebarTab === 'timeline' && (
+                                            <TimelinePanel
+                                                token={token}
+                                                activeFileId={activeFileId}
+                                                onRestoreComplete={(newContent) => {
+                                                    setCode(newContent);
+                                                    if (editorRef.current) {
+                                                        editorRef.current.setValue(newContent);
+                                                    }
+                                                }}
+                                            />
+                                        )}
+                                        {sidebarTab === 'chat' && (<div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}><div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>{chatMessages.map((msg, i) => (<div key={i} style={{ alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', maxWidth: '85%' }}><div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px', textAlign: msg.sender === username ? 'right' : 'left' }}>{msg.sender}</div><div style={{ padding: '8px', borderRadius: '6px', background: msg.sender === username ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: 'white', fontSize: '12px', wordWrap: 'break-word' }}>{msg.text}</div></div>))}<div ref={chatEndRef} /></div><form onSubmit={sendChatMessage} style={{ padding: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', gap: '5px', background: 'var(--bg-secondary)' }}><input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '12px', outline: 'none' }} /><button type="submit" style={{ background: 'var(--accent-primary)', border: 'none', borderRadius: '4px', color: 'white', padding: '0 10px', cursor: 'pointer' }}><FaPaperPlane size={12} /></button></form></div>)}
+                                    </div>
+
+                                    {/* Sidebar Bottom Row (User Info & Logout) */}
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '10px', textAlign: 'center', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.1)' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                             {userPicture ? (
                                                 <img src={userPicture} alt="Profile" style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
                                             ) : (
-                                                <div style={{ width: '24px', height: '24px', borderRadius: '50%', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold' }}>
-                                                    {username.charAt(0).toUpperCase()}
+                                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
+                                                    {username?.charAt(0).toUpperCase() || '?'}
                                                 </div>
                                             )}
-                                            <span>{username}</span>
+                                            <span style={{ fontWeight: '600', color: '#fff' }}>{username}</span>
                                         </div>
-                                        <button onClick={logout} className="btn-icon" style={{ border: 'none', cursor: 'pointer', padding: '4px' }} title="Logout"><FaSignOutAlt /></button>
+                                        <button onClick={handleLogout} className="btn-icon" style={{ border: 'none', cursor: 'pointer', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }} title="Logout"><FaSignOutAlt color="#ef4444" size={16} /></button>
                                     </div>
                                 </div>
 
@@ -1976,6 +1991,54 @@ function App() {
                                     )}
                                 </AnimatePresence>
                             </div> {/* End main-content-horizontal */}
+
+                            {/* --- BOTTOM STATUS BAR (Personal Workspace) --- */}
+                            <div style={{
+                                height: '32px',
+                                background: 'rgba(15,23,42,0.98)',
+                                borderTop: '1px solid rgba(255,255,255,0.1)',
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'space-between',
+                                padding: '0 12px',
+                                fontSize: '11px',
+                                color: '#94a3b8',
+                                zIndex: 100,
+                                position: 'relative'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></div>
+                                        <span style={{ fontWeight: '600', color: '#e2e8f0' }}>{username}</span>
+                                    </div>
+                                    <span style={{ opacity: 0.3 }}>|</span>
+                                    <span style={{ fontSize: '10px', opacity: 0.8 }}>Personal Workspace</span>
+                                    {activeSessionId && (
+                                        <>
+                                            <span style={{ opacity: 0.3 }}>|</span>
+                                            <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>Active Lab Detected</span>
+                                        </>
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <span>Ln {editorRef.current?.getPosition()?.lineNumber || 1}, Col {editorRef.current?.getPosition()?.column || 1}</span>
+                                        <span>UTF-8</span>
+                                    </div>
+                                    <button
+                                        onClick={() => { if (window.confirm("Are you sure you want to sign out?")) handleLogout(); }}
+                                        style={{
+                                            background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)',
+                                            padding: '1px 8px', borderRadius: '4px', cursor: 'pointer',
+                                            fontSize: '10px', fontWeight: 'bold', transition: 'all 0.2s'
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.3)'}
+                                        onMouseLeave={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.15)'}
+                                    >
+                                        EXIT IDE
+                                    </button>
+                                </div>
+                            </div>
                         </div>
 
                         {/* --- GLOBAL RESIZE OVERLAY --- */}
