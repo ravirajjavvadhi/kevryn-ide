@@ -101,6 +101,7 @@ function App() {
     const [files, setFiles] = useState([]); // Flat list of files for path resolution
 
     const [sidebarTab, setSidebarTab] = useState('files');
+    const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
     const [chatMessages, setChatMessages] = useState([]);
     const [chatInput, setChatInput] = useState("");
     const chatEndRef = useRef(null);
@@ -336,16 +337,27 @@ function App() {
         };
     }, [isResizingAi]);
 
-    // Keyboard Listeners (Ctrl+Shift+F for Search)
+    // Keyboard Listeners (Ctrl+Shift+F for Search, Ctrl+B for Sidebar, Ctrl+` for Terminal)
     useEffect(() => {
         const handleKeyDown = (e) => {
             if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'f') {
                 e.preventDefault();
                 setIsSearchOpen(prev => !prev);
             }
+            // Ctrl+B: Toggle sidebar
+            if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === 'b') {
+                e.preventDefault();
+                setIsSidebarCollapsed(prev => !prev);
+            }
+            // Ctrl+`: Toggle terminal panel
+            if (e.ctrlKey && e.key === '`') {
+                e.preventDefault();
+                setIsBottomPanelOpen(prev => !prev);
+            }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const handleDebugTerminal = () => {
@@ -482,17 +494,82 @@ function App() {
         }
     }, [token, api, activeSession]);
 
-    // Handle Global Shortcuts (Ctrl+S)
+    // Handle Global Shortcuts (Ctrl+S, F2, Ctrl+N, Ctrl+Shift+N, Ctrl+W, Ctrl+Tab)
     useEffect(() => {
         const handleKeyDown = (e) => {
-            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            const ctrl = e.ctrlKey || e.metaKey;
+
+            // Ctrl+S: Save
+            if (ctrl && e.key === 's') {
                 e.preventDefault();
                 handleSave();
+            }
+
+            // F2: Rename active file
+            if (e.key === 'F2' && activeFileId) {
+                e.preventDefault();
+                const f = files.find(f => f._id === activeFileId);
+                if (f) handleRename(f);
+            }
+
+            // Ctrl+N: New File
+            if (ctrl && !e.shiftKey && e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                createNode('file', 'root');
+            }
+
+            // Ctrl+Shift+N: New Folder
+            if (ctrl && e.shiftKey && e.key.toLowerCase() === 'n') {
+                e.preventDefault();
+                createNode('folder', 'root');
+            }
+
+            // Ctrl+W: Close active tab
+            if (ctrl && e.key.toLowerCase() === 'w') {
+                e.preventDefault();
+                if (activeFileId) {
+                    setOpenFiles(prev => {
+                        const idx = prev.findIndex(f => f._id === activeFileId);
+                        const next = prev.filter(f => f._id !== activeFileId);
+                        if (next.length === 0) {
+                            setActiveFileId(null); setFileName(''); setCode('');
+                        } else {
+                            const nextFile = next[Math.max(0, idx - 1)];
+                            handleFileClick(nextFile);
+                        }
+                        return next;
+                    });
+                }
+            }
+
+            // Ctrl+Tab: Next tab
+            if (ctrl && !e.shiftKey && e.key === 'Tab') {
+                e.preventDefault();
+                setOpenFiles(prev => {
+                    if (prev.length < 2) return prev;
+                    const idx = prev.findIndex(f => f._id === activeFileId);
+                    const next = prev[(idx + 1) % prev.length];
+                    handleFileClick(next);
+                    return prev;
+                });
+            }
+
+            // Ctrl+Shift+Tab: Prev tab
+            if (ctrl && e.shiftKey && e.key === 'Tab') {
+                e.preventDefault();
+                setOpenFiles(prev => {
+                    if (prev.length < 2) return prev;
+                    const idx = prev.findIndex(f => f._id === activeFileId);
+                    const next = prev[(idx - 1 + prev.length) % prev.length];
+                    handleFileClick(next);
+                    return prev;
+                });
             }
         };
         window.addEventListener('keydown', handleKeyDown);
         return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [activeFileId, fileName, code, handleSave]);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeFileId, fileName, code, handleSave, files, openFiles]);
 
     const [socketInstance, setSocketInstance] = useState(null);
 
@@ -1032,13 +1109,14 @@ function App() {
         } catch (e) { }
     };
     const handleRename = async (f) => {
-        const n = prompt("New name:", f.name);
-        if (n) {
+        // Support both inline rename (f._newName) and prompt-based rename
+        const n = f._newName || prompt("New name:", f.name);
+        if (n && n !== f.name) {
             try {
                 await api.put(`/files/${f._id}`, { newName: n });
                 if (activeFileId === f._id) setFileName(n);
                 fetchFiles();
-            } catch (e) { }
+            } catch (e) { console.error('[Rename] Failed:', e); }
         }
     };
     const handleDownload = (file) => {
@@ -1053,6 +1131,26 @@ function App() {
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
+    };
+    const createFolder = (parentId = 'root') => createNode('folder', parentId);
+    const handleCopyPath = (file) => {
+        const path = findFileFullPath(file._id) || file.name;
+        navigator.clipboard.writeText(path).then(() => {
+            // Subtle toast instead of alert
+            const toast = document.createElement('div');
+            toast.textContent = `📋 Copied: ${path}`;
+            Object.assign(toast.style, {
+                position: 'fixed', bottom: '24px', left: '50%',
+                transform: 'translateX(-50%)',
+                background: '#007acc', color: '#fff',
+                padding: '8px 18px', borderRadius: '6px',
+                fontSize: '13px', zIndex: '99999',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+                transition: 'opacity 0.3s',
+            });
+            document.body.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 400); }, 2000);
+        }).catch(() => prompt('Copy this path:', path));
     };
 
     const handleFileClick = async (file, lineToJump = null) => {
@@ -1676,7 +1774,7 @@ function App() {
                             <div className="main-content-horizontal">
 
                                 {/* --- LEFT SIDEBAR --- */}
-                                <div className="sidebar" style={{ flexShrink: 0 }}>
+                                <div className="sidebar" style={{ flexShrink: 0, display: isSidebarCollapsed ? 'none' : 'flex', flexDirection: 'column' }}>
                                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', alignItems: 'center' }}>
                                         <div onClick={() => setSidebarTab('files')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'files' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'files' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'files' ? '1px solid var(--accent-primary)' : 'none' }}><FaFolder title="Files" /></div>
                                         <div onClick={() => setSidebarTab('chat')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'chat' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'chat' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'chat' ? '1px solid var(--accent-primary)' : 'none' }}><FaComments title="Team Chat" /></div>
@@ -1690,7 +1788,7 @@ function App() {
                                     </div>
                                     {/* Sidebar Tab Content Area (Ensure it takes space to push logout down) */}
                                     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
-                                        {sidebarTab === 'files' && (<FileTree data={fileData} activeId={activeFileId} onFileClick={handleFileClick} onCreate={(parentId) => createNode('file', parentId)} onDelete={handleDelete} onRename={handleRename} onDownload={handleDownload} />)}
+                                        {sidebarTab === 'files' && (<FileTree data={fileData} activeId={activeFileId} onFileClick={handleFileClick} onCreate={(parentId) => createNode('file', parentId)} onCreateFolder={createFolder} onDelete={handleDelete} onRename={handleRename} onDownload={handleDownload} onCopyPath={handleCopyPath} />)}
                                         {sidebarTab === 'git' && (<GitPanel token={token} startRepo={activeRepo} />)}
                                         {sidebarTab === 'snippets' && (<SnippetsPanel token={token} editorRef={editorRef} getLanguage={getLanguage} fileName={fileName} />)}
                                         {sidebarTab === 'timeline' && (
