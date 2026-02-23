@@ -190,9 +190,15 @@ app.use(cors(corsOptions));
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
 app.use((req, res, next) => {
-    // Only set COOP/COEP for the root/app pages, NOT API routes
-    // These headers break cross-origin API calls when set globally
-    if (!req.path.startsWith('/auth') && !req.path.startsWith('/api') && !req.path.startsWith('/files') && !req.path.startsWith('/run-code')) {
+    // Only set COOP/COEP for the root/app pages, NOT API routes or Previews
+    // These headers break cross-origin API calls and external asset loading in previews
+    if (
+        !req.path.startsWith('/auth') &&
+        !req.path.startsWith('/api') &&
+        !req.path.startsWith('/files') &&
+        !req.path.startsWith('/run-code') &&
+        !req.path.startsWith('/preview')
+    ) {
         res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
         res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
     }

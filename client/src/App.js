@@ -111,6 +111,7 @@ function App() {
     const [activeTermId, setActiveTermId] = useState(1);
     const [isAiLoading, setIsAiLoading] = useState(false);
     const [deployStatus, setDeployStatus] = useState(null);
+    const [activePorts, setActivePorts] = useState([]); // NEW: For full-stack framework detection
 
     // --- SLEEK LOADING SCREEN ---
     const LoadingScreen = () => (
@@ -174,6 +175,20 @@ function App() {
                 setWebcontainerInstance(instance);
                 wcBridgeRef.current = new WebContainerBridge(instance, socketRef.current, userId);
                 setWcReady(true);
+
+                // LISTEN FOR PORT EVENTS (Full-stack Frameworks)
+                instance.on('server-ready', (port, url) => {
+                    console.log(`[WebContainer] Port detected: ${port} @ ${url}`);
+                    setActivePorts(prev => {
+                        if (prev.some(p => p.port === port)) return prev;
+                        return [...prev, { port, url }];
+                    });
+
+                    // Auto-open Ports tab to notify the user
+                    setBottomPanelTab('ports');
+                    setIsBottomPanelOpen(true);
+                });
+
                 console.log("[WebContainer] Booted Successfully");
             } catch (e) {
                 console.error("[WebContainer] Boot Failed:", e);
@@ -1827,6 +1842,11 @@ function App() {
                                                         >
                                                             {tab.icon && <span className="bottom-tab-icon">{tab.icon}</span>}
                                                             {tab.label}
+                                                            {tab.id === 'ports' && activePorts.length > 0 && (
+                                                                <span style={{ marginLeft: '6px', background: 'var(--accent-primary)', color: 'white', borderRadius: '10px', padding: '0 6px', fontSize: '10px' }}>
+                                                                    {activePorts.length}
+                                                                </span>
+                                                            )}
                                                         </div>
                                                     ))}
                                                 </div>
@@ -1926,7 +1946,34 @@ function App() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                {bottomPanelTab === 'ports' && (<div className="panel-placeholder"><FaNetworkWired size={20} style={{ opacity: 0.3, marginBottom: '8px' }} /><div>No forwarded ports. Use the <span style={{ color: 'var(--accent-primary)', cursor: 'pointer' }} onClick={openPort}>Open Port</span> button to forward a port.</div></div>)}
+                                                {bottomPanelTab === 'ports' && (
+                                                    <div style={{ padding: '15px', color: 'var(--text-primary)' }}>
+                                                        {activePorts.length === 0 ? (
+                                                            <div className="panel-placeholder">
+                                                                <FaNetworkWired size={20} style={{ opacity: 0.3, marginBottom: '8px' }} />
+                                                                <div>No active ports detected. Run a server (e.g. `npm run dev`) to see results here.</div>
+                                                            </div>
+                                                        ) : (
+                                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                                                <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '5px' }}>Detected WebContainer Services:</div>
+                                                                {activePorts.map((p, i) => (
+                                                                    <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(255,255,255,0.05)', padding: '10px', borderRadius: '8px', border: '1px solid rgba(255,255,255,0.1)' }}>
+                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                                                                            <div style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>Port {p.port}</div>
+                                                                            <div style={{ fontSize: '11px', opacity: 0.7 }}>{p.url}</div>
+                                                                        </div>
+                                                                        <button
+                                                                            onClick={() => window.open(p.url, '_blank')}
+                                                                            style={{ background: 'var(--accent-primary)', color: 'white', border: 'none', padding: '5px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold' }}
+                                                                        >
+                                                                            Open Preview
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                )}
                                                 {bottomPanelTab === 'deployment' && (
                                                     <div style={{ height: '100%', overflow: 'hidden' }}>
                                                         <DeploymentPanel token={token} />
