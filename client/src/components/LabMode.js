@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { FaTerminal, FaClock, FaLock, FaExclamationTriangle, FaFile, FaPlus, FaSave, FaPlay, FaSignOutAlt, FaTimes } from 'react-icons/fa';
+import { FaTerminal, FaClock, FaLock, FaExclamationTriangle, FaFile, FaPlus, FaSave, FaPlay, FaSignOutAlt, FaTimes, FaEdit, FaTrash, FaCheck } from 'react-icons/fa';
 import Editor from '@monaco-editor/react';
 import Terminal from './Terminal';
 import io from 'socket.io-client';
@@ -17,6 +17,8 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
     const [newFileName, setNewFileName] = useState('');
     const [showNewFile, setShowNewFile] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [editingFileId, setEditingFileId] = useState(null);
+    const [tempFileName, setTempFileName] = useState('');
     const socketRef = useRef(null);
     const codeRef = useRef(code);
     const activeFileRef = useRef(activeFile);
@@ -281,6 +283,18 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         };
         document.addEventListener('paste', handlePaste);
 
+        // Security: Block Copy/Paste
+        const blockShortcuts = (e) => {
+            if ((e.ctrlKey || e.metaKey) && ['c', 'v', 'x'].includes(e.key.toLowerCase())) {
+                e.preventDefault();
+                // console.warn("Action blocked in Lab Mode");
+            }
+        };
+        window.addEventListener('keydown', blockShortcuts);
+
+        const blockContextMenu = (e) => e.preventDefault();
+        document.addEventListener('contextmenu', blockContextMenu);
+
         return () => {
             clearInterval(interval);
             window.removeEventListener('focus', onFocus);
@@ -289,6 +303,8 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
             window.removeEventListener('mouseleave', handleMouseLeave);
             document.removeEventListener('visibilitychange', handleVisibilityChange);
             document.removeEventListener('paste', handlePaste);
+            window.removeEventListener('keydown', blockShortcuts);
+            document.removeEventListener('contextmenu', blockContextMenu);
         };
     }, [session, username, updateStatus]);
 
@@ -398,6 +414,44 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         }
         setNewFileName('');
         setShowNewFile(false);
+    };
+
+    const handleDeleteFile = async (fileId, e) => {
+        e.stopPropagation();
+        if (!window.confirm("Are you sure you want to delete this file?")) return;
+        try {
+            await api.delete(`/files/${fileId}`);
+            setFiles(prev => prev.filter(f => f._id !== fileId));
+            if (activeFile?._id === fileId) {
+                setActiveFile(null);
+                setCode('// Select or create a file to start coding...');
+            }
+        } catch (e) {
+            alert("Failed to delete file");
+        }
+    };
+
+    const handleRenameFile = async (fileId, e) => {
+        e.stopPropagation();
+        const file = files.find(f => f._id === fileId);
+        setEditingFileId(fileId);
+        setTempFileName(file.name);
+    };
+
+    const submitRename = async (fileId) => {
+        const newName = tempFileName.trim();
+        if (!newName) { setEditingFileId(null); return; }
+        try {
+            await api.put(`/files/${fileId}`, { newName });
+            setFiles(prev => prev.map(f => f._id === fileId ? { ...f, name: newName } : f));
+            if (activeFile?._id === fileId) {
+                setActiveFile({ ...activeFile, name: newName });
+                setLanguage(detectLanguage(newName));
+            }
+        } catch (e) {
+            alert("Failed to rename file");
+        }
+        setEditingFileId(null);
     };
 
     // --- Path Resolution Helper ---
@@ -511,165 +565,296 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         }, 100);
     };
 
+    const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase());
+
     return (
-        <div style={{ width: '100vw', height: '100vh', background: '#0f172a', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div style={{
+            width: '100vw', height: '100vh',
+            background: '#020617',
+            backgroundImage: 'radial-gradient(at 0% 0%, rgba(30, 58, 138, 0.15) 0, transparent 50%), radial-gradient(at 100% 0%, rgba(88, 28, 135, 0.15) 0, transparent 50%)',
+            display: 'flex', flexDirection: 'column', overflow: 'hidden', fontFamily: 'Inter, sans-serif'
+        }}>
 
             {/* --- TOP BAR --- */}
-            <div style={{ height: '50px', background: '#1e0000', borderBottom: '2px solid #ef4444', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 20px', color: '#fecaca' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    <FaLock />
-                    <span style={{ fontWeight: 'bold' }}>LAB MODE: {session?.sessionName || "Active Exam"}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                    {/* Run Button */}
-                    <button
-                        onClick={handleRun}
-                        disabled={!activeFile}
-                        style={{
-                            background: activeFile ? 'rgba(74, 222, 128, 0.2)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid rgba(74, 222, 128, 0.3)',
-                            color: activeFile ? '#4ade80' : '#64748b',
-                            padding: '6px 14px', borderRadius: '6px', cursor: activeFile ? 'pointer' : 'default',
-                            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px', fontWeight: 'bold'
-                        }}
-                    >
-                        <FaPlay size={10} /> Run
-                    </button>
-                    {/* Save Button */}
-                    <button
-                        onClick={handleSave}
-                        disabled={!activeFile || saving}
-                        style={{
-                            background: activeFile ? 'rgba(59, 130, 246, 0.2)' : 'rgba(255,255,255,0.05)',
-                            border: '1px solid rgba(59, 130, 246, 0.3)',
-                            color: activeFile ? '#60a5fa' : '#64748b',
-                            padding: '6px 14px', borderRadius: '6px', cursor: activeFile ? 'pointer' : 'default',
-                            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px'
-                        }}
-                    >
-                        <FaSave /> {saving ? 'Saving...' : 'Save'}
-                    </button>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: 'rgba(0,0,0,0.3)', padding: '5px 10px', borderRadius: '4px' }}>
-                            <FaClock />
-                            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '16px' }}>{timeLeft || (session?.startTime ? "Connecting..." : "--:--:--")}</span>
+            <div style={{
+                height: '56px',
+                background: 'rgba(15, 23, 42, 0.8)',
+                backdropFilter: 'blur(12px)',
+                borderBottom: '1px solid rgba(255,255,255,0.1)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '0 24px', color: '#f8fafc', zIndex: 100,
+                boxShadow: '0 4px 20px rgba(0,0,0,0.3)'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                    <div style={{
+                        padding: '8px',
+                        background: 'linear-gradient(135deg, #ef4444, #991b1b)',
+                        borderRadius: '10px',
+                        boxShadow: '0 0 15px rgba(239, 68, 68, 0.3)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                    }}>
+                        <FaLock size={14} color="#fff" />
+                    </div>
+                    <div>
+                        <div style={{ fontSize: '14px', fontWeight: '800', letterSpacing: '-0.3px', color: '#fff' }}>
+                            LAB MODE: {session?.sessionName || "Active Session"}
                         </div>
-                        {lastSynced && <div style={{ fontSize: '9px', color: '#4ade80', marginTop: '2px', opacity: 0.8 }}>Last Sync: {lastSynced}</div>}
+                        <div style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                            {session?.subject} • {username}
+                        </div>
+                    </div>
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+                    {/* Behavioral Stats Indicator (Neat & Informative) */}
+                    <div style={{
+                        display: 'flex', gap: '12px', padding: '6px 14px',
+                        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.05)',
+                        borderRadius: '20px', fontSize: '11px', color: '#94a3b8', fontWeight: '600'
+                    }}>
+                        <span style={{ color: tabSwitches > 3 ? '#fbbf24' : '#64748b' }}>📑 {tabSwitches}</span>
+                        <span style={{ color: pastes > 5 ? '#f87171' : '#64748b' }}>📋 {pastes}</span>
                     </div>
 
+                    <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)' }}></div>
 
-                    {/* NEW: Raise Hand Button */}
-                    <button
-                        onClick={() => {
-                            if (!handRaised) {
-                                socketRef.current.emit('student-raise-hand', { sessionId: session.sessionId || session._id, username });
-                                setHandRaised(true);
-                            }
-                        }}
-                        style={{
-                            background: handRaised ? '#ef4444' : 'rgba(255,255,255,0.1)',
-                            border: `1px solid ${handRaised ? '#ef4444' : '#475569'}`,
-                            color: '#fff', padding: '6px 12px', borderRadius: '6px', cursor: 'pointer',
-                            fontSize: '12px', fontWeight: 'bold'
-                        }}
-                    >
-                        ✋ {handRaised ? 'Hand Raised' : 'Raise Hand'}
-                    </button>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        {/* Run Button */}
+                        <button
+                            onClick={handleRun}
+                            disabled={!activeFile}
+                            style={{
+                                background: activeFile ? 'linear-gradient(135deg, #22c55e, #15803d)' : 'rgba(255,255,255,0.03)',
+                                border: 'none',
+                                color: activeFile ? '#fff' : '#475569',
+                                padding: '8px 16px', borderRadius: '8px', cursor: activeFile ? 'pointer' : 'default',
+                                display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '700',
+                                boxShadow: activeFile ? '0 4px 12px rgba(34, 197, 94, 0.2)' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <FaPlay size={10} /> RUN
+                        </button>
+                        {/* Save Button */}
+                        <button
+                            onClick={handleSave}
+                            disabled={!activeFile || saving}
+                            style={{
+                                background: 'rgba(59, 130, 246, 0.1)',
+                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                color: '#60a5fa',
+                                padding: '8px 16px', borderRadius: '8px', cursor: activeFile ? 'pointer' : 'default',
+                                display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '600',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <FaSave /> {saving ? 'SAVING...' : 'SAVE'}
+                        </button>
 
-                    {/* Logout Button */}
-                    <button
-                        onClick={() => { if (window.confirm("Are you sure you want to exit the lab session?")) handleLogout(); }}
-                        style={{
-                            background: 'rgba(239, 68, 68, 0.2)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#f87171',
-                            padding: '6px 14px', borderRadius: '6px', cursor: 'pointer',
-                            display: 'flex', alignItems: 'center', gap: '6px', fontSize: '12px'
-                        }}
-                    >
-                        <FaSignOutAlt /> Exit
-                    </button>
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: '10px',
+                            background: 'rgba(0,0,0,0.4)', padding: '6px 14px', borderRadius: '10px',
+                            border: '1px solid rgba(255,255,255,0.05)'
+                        }}>
+                            <FaClock color="#6366f1" size={14} />
+                            <span style={{ fontFamily: 'monospace', fontWeight: 'bold', fontSize: '15px', color: '#e2e8f0' }}>
+                                {timeLeft || "00:00"}
+                            </span>
+                        </div>
+
+                        {/* Raise Hand Button */}
+                        <button
+                            onClick={() => {
+                                if (!handRaised) {
+                                    socketRef.current.emit('student-raise-hand', { sessionId: session.sessionId || session._id, username });
+                                    setHandRaised(true);
+                                }
+                            }}
+                            style={{
+                                background: handRaised ? '#ef4444' : 'rgba(255,255,255,0.05)',
+                                border: `1px solid ${handRaised ? '#ef4444' : 'rgba(255,255,255,0.1)'}`,
+                                color: '#fff', padding: '8px 16px', borderRadius: '8px', cursor: 'pointer',
+                                fontSize: '13px', fontWeight: '800', display: 'flex', alignItems: 'center', gap: '8px',
+                                boxShadow: handRaised ? '0 0 20px rgba(239, 68, 68, 0.4)' : 'none',
+                                animation: handRaised ? 'pulse-red 2s infinite' : 'none',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <span>✋</span> {handRaised ? 'REQUEST SENT' : 'RAISE HAND'}
+                        </button>
+
+                        <button
+                            onClick={() => { if (window.confirm("Are you sure you want to exit the lab session?")) handleLogout(); }}
+                            style={{
+                                background: 'transparent',
+                                border: '1px solid rgba(239, 68, 68, 0.4)',
+                                color: '#f87171',
+                                padding: '8px 14px', borderRadius: '8px', cursor: 'pointer',
+                                display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '600',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            <FaSignOutAlt /> EXIT
+                        </button>
+                    </div>
                 </div>
             </div>
-
-            {/* NEW: Faculty Announcement Overlay */}
-            {announcement && (
-                <div style={{
-                    position: 'absolute', top: '70px', left: '50%', transform: 'translateX(-50%)',
-                    zIndex: 2000, background: 'linear-gradient(135deg, #1e0000, #450a0a)',
-                    border: '2px solid #ef4444', padding: '15px 30px', borderRadius: '12px',
-                    boxShadow: '0 10px 40px rgba(0,0,0,0.8)', color: '#fff',
-                    display: 'flex', alignItems: 'center', gap: '20px', minWidth: '400px'
-                }}>
-                    <div style={{ fontSize: '24px' }}>📢</div>
-                    <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#fca5a5', textTransform: 'uppercase', marginBottom: '4px' }}>Faculty Announcement</div>
-                        <div style={{ fontSize: '16px', fontWeight: '600' }}>{announcement}</div>
-                    </div>
-                    <button onClick={() => setAnnouncement(null)} style={{ background: 'transparent', border: 'none', color: '#64748b', cursor: 'pointer' }}>
-                        <FaTimes />
-                    </button>
-                </div>
-            )}
 
             {/* --- MAIN CONTENT --- */}
             <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
 
-                {/* File Tree */}
-                <div style={{ width: '220px', background: '#020617', borderRight: '1px solid #334155', display: 'flex', flexDirection: 'column' }}>
-                    <div style={{ padding: '10px', fontSize: '12px', fontWeight: 'bold', color: '#64748b', textTransform: 'uppercase', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                        <span>Project Files</span>
-                        <button onClick={() => setShowNewFile(!showNewFile)} style={{ background: 'transparent', border: 'none', color: '#4ade80', cursor: 'pointer', padding: '2px' }} title="New File">
-                            <FaPlus size={11} />
+                {/* File Tree (Sidebar) */}
+                <div style={{
+                    width: '260px',
+                    background: 'rgba(2, 6, 23, 0.6)',
+                    backdropFilter: 'blur(20px)',
+                    borderRight: '1px solid rgba(255,255,255,0.05)',
+                    display: 'flex', flexDirection: 'column'
+                }}>
+                    <div style={{
+                        padding: '20px 16px 12px', fontSize: '11px', fontWeight: '800',
+                        color: '#64748b', textTransform: 'uppercase', letterSpacing: '1px',
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                    }}>
+                        <span>Explorer</span>
+                        <button onClick={() => setShowNewFile(!showNewFile)} style={{
+                            background: 'rgba(34, 197, 94, 0.1)', border: 'none', color: '#4ade80',
+                            cursor: 'pointer', padding: '4px', borderRadius: '4px'
+                        }} title="New File">
+                            <FaPlus size={10} />
                         </button>
                     </div>
+
                     {showNewFile && (
-                        <div style={{ padding: '5px 10px' }}>
+                        <div style={{ padding: '0 16px 12px' }}>
                             <input type="text" placeholder="filename.js" value={newFileName}
                                 onChange={e => setNewFileName(e.target.value)}
                                 onKeyDown={e => { if (e.key === 'Enter') handleCreateFile(); if (e.key === 'Escape') setShowNewFile(false); }}
                                 autoFocus
-                                style={{ width: '100%', padding: '5px 8px', background: '#1e293b', border: '1px solid #334155', borderRadius: '4px', color: 'white', fontSize: '12px', outline: 'none' }}
+                                style={{
+                                    width: '100%', padding: '8px 12px', background: 'rgba(255,255,255,0.03)',
+                                    border: '1px solid rgba(255,255,255,0.1)', borderRadius: '6px',
+                                    color: 'white', fontSize: '12px', outline: 'none'
+                                }}
                             />
                         </div>
                     )}
-                    <div style={{ flex: 1, overflowY: 'auto' }}>
+
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '0 8px' }}>
                         {files.length === 0 ? (
-                            <div style={{ padding: '15px 10px', color: '#475569', fontSize: '12px', textAlign: 'center' }}>No files yet. Click + to create.</div>
+                            <div style={{ padding: '40px 10px', color: '#475569', fontSize: '12px', textAlign: 'center', opacity: 0.6 }}>
+                                No files yet.<br />Click + to start coding.
+                            </div>
                         ) : files.map(f => (
-                            <div key={f._id} onClick={() => handleFileClick(f)}
+                            <div
+                                key={f._id}
+                                onClick={() => handleFileClick(f)}
+                                className="lab-file-item"
                                 style={{
-                                    padding: '7px 12px', cursor: 'pointer',
-                                    background: activeFile?._id === f._id ? 'rgba(59,130,246,0.15)' : 'transparent',
-                                    borderLeft: activeFile?._id === f._id ? '3px solid #3b82f6' : '3px solid transparent',
-                                    display: 'flex', alignItems: 'center', gap: '8px',
-                                    fontSize: '13px', color: activeFile?._id === f._id ? '#e2e8f0' : '#94a3b8'
-                                }}>
-                                <FaFile size={10} color={activeFile?._id === f._id ? '#60a5fa' : '#475569'} />
-                                {f.name}
+                                    padding: '10px 12px', cursor: 'pointer', borderRadius: '8px',
+                                    background: activeFile?._id === f._id ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                    marginBottom: '2px', display: 'flex', alignItems: 'center', gap: '10px',
+                                    fontSize: '13px', color: activeFile?._id === f._id ? '#fff' : '#94a3b8',
+                                    transition: 'all 0.2s', position: 'relative', overflow: 'hidden'
+                                }}
+                            >
+                                <FaFile size={12} color={activeFile?._id === f._id ? '#60a5fa' : '#475569'} />
+
+                                {editingFileId === f._id ? (
+                                    <input
+                                        autoFocus
+                                        value={tempFileName}
+                                        onChange={e => setTempFileName(e.target.value)}
+                                        onBlur={() => submitRename(f._id)}
+                                        onKeyDown={e => { if (e.key === 'Enter') submitRename(f._id); if (e.key === 'Escape') setEditingFileId(null); }}
+                                        onClick={e => e.stopPropagation()}
+                                        style={{
+                                            background: '#0f172a', border: '1px solid #3b82f6', color: '#fff',
+                                            fontSize: '12px', padding: '2px 4px', borderRadius: '4px', width: '100%', outline: 'none'
+                                        }}
+                                    />
+                                ) : (
+                                    <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{f.name}</span>
+                                )}
+
+                                {editingFileId !== f._id && (
+                                    <div className="file-actions" style={{ display: 'flex', gap: '8px', opacity: 0.8 }}>
+                                        <FaEdit
+                                            className="action-icon"
+                                            onClick={(e) => handleRenameFile(f._id, e)}
+                                            style={{ cursor: 'pointer', color: '#64748b' }}
+                                            size={12}
+                                            title="Rename"
+                                        />
+                                        <FaTrash
+                                            className="action-icon"
+                                            onClick={(e) => handleDeleteFile(f._id, e)}
+                                            style={{ cursor: 'pointer', color: '#64748b' }}
+                                            size={11}
+                                            title="Delete"
+                                        />
+                                    </div>
+                                )}
                             </div>
                         ))}
                     </div>
+
+                    <style>{`
+                        .lab-file-item:hover { background: rgba(255,255,255,0.03) !important; color: #fff !important; }
+                        .lab-file-item .file-actions { display: none !important; }
+                        .lab-file-item:hover .file-actions { display: flex !important; }
+                        .action-icon:hover { color: #fff !important; }
+                        @keyframes pulse-red {
+                            0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+                            70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                            100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+                        }
+                    `}</style>
                 </div>
 
                 {/* Editor + Terminal */}
                 <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                     {activeFile && (
-                        <div style={{ height: '32px', background: '#1e293b', borderBottom: '1px solid #334155', display: 'flex', alignItems: 'center', padding: '0 15px', gap: '8px' }}>
-                            <FaFile size={10} color="#60a5fa" />
-                            <span style={{ fontSize: '12px', color: '#e2e8f0' }}>{activeFile.name}</span>
+                        <div style={{
+                            height: '40px', background: 'rgba(15, 23, 42, 0.4)',
+                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            display: 'flex', alignItems: 'center', padding: '0 20px', gap: '10px'
+                        }}>
+                            <FaFile size={12} color="#60a5fa" />
+                            <span style={{ fontSize: '13px', color: '#fff', fontWeight: '500' }}>{activeFile.name}</span>
+                            {lastSynced && <span style={{ fontSize: '10px', color: '#4ade80', marginLeft: 'auto', opacity: 0.7 }}>Synced at {lastSynced}</span>}
                         </div>
                     )}
                     <div style={{ flex: 1, position: 'relative', minHeight: 0 }}>
-                        <Editor height="100%" language={language} value={code}
+                        <Editor
+                            height="100%" language={language} value={code}
                             theme={theme === 'light' ? 'light' : 'vs-dark'}
                             onChange={handleCodeChange}
-                            options={{ minimap: { enabled: false }, fontSize: 14, scrollBeyondLastLine: false, automaticLayout: true, wordWrap: 'on' }}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 15,
+                                fontFamily: "'JetBrains Mono', monospace",
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                wordWrap: 'on',
+                                padding: { top: 20 },
+                                smoothScrolling: true,
+                                cursorBlinking: 'expand',
+                                cursorSmoothCaretAnimation: 'on'
+                            }}
                         />
                     </div>
-                    <div style={{ height: '250px', borderTop: '1px solid #334155', background: '#0f172a', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
-                        <div style={{ padding: '5px 10px', background: '#1e293b', fontSize: '12px', color: '#cbd5e1', display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
-                            <FaTerminal size={10} /> Terminal
+                    <div style={{
+                        height: '280px', borderTop: '1px solid rgba(255,255,255,0.05)',
+                        background: '#020617', display: 'flex', flexDirection: 'column', flexShrink: 0
+                    }}>
+                        <div style={{
+                            padding: '10px 20px', background: 'rgba(15, 23, 42, 0.6)',
+                            fontSize: '11px', color: '#94a3b8', fontWeight: '800', textTransform: 'uppercase',
+                            letterSpacing: '0.5px', borderBottom: '1px solid rgba(255,255,255,0.05)',
+                            display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0
+                        }}>
+                            <FaTerminal size={12} /> TERMINAL
                         </div>
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                             {socketRef.current && userId ? (
@@ -677,20 +862,27 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                                     socket={socketRef.current}
                                     termId={1}
                                     userId={userId}
-                                    webcontainer={['py', 'c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase()) ? null : session?.webcontainer}
+                                    webcontainer={isServerLanguage ? null : session?.webcontainer}
                                 />
                             ) : (
-                                <div style={{ padding: '15px', color: '#64748b', fontSize: '13px' }}>Connecting terminal...</div>
+                                <div style={{ padding: '20px', color: '#475569', fontSize: '13px' }}>Connecting to secure terminal shell...</div>
                             )}
                         </div>
                     </div>
                 </div>
             </div>
 
-            {/* Warning Footer */}
-            <div style={{ padding: '5px', background: '#450a0a', color: '#fca5a5', textAlign: 'center', fontSize: '11px' }}>
-                <FaExclamationTriangle style={{ marginRight: '5px' }} />
-                Your activity, code, and screen are being monitored by the faculty. Do not leave this window.
+            {/* Warning Footer (Floating) */}
+            <div style={{
+                position: 'fixed', bottom: '20px', left: '50%', transform: 'translateX(-50%)',
+                padding: '10px 24px', background: 'rgba(69, 10, 10, 0.8)',
+                backdropFilter: 'blur(10px)', border: '1px solid #ef4444',
+                color: '#fca5a5', borderRadius: '30px', fontSize: '12px', fontWeight: '600',
+                display: 'flex', alignItems: 'center', gap: '10px', boxShadow: '0 10px 40px rgba(0,0,0,0.5)',
+                zIndex: 1000
+            }}>
+                <FaExclamationTriangle color="#ef4444" size={14} />
+                <span>EXAM PROTOCOL ACTIVE: ALL ACTIVITY IS BEING LOGGED</span>
             </div>
         </div>
     );

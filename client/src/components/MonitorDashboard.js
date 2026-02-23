@@ -191,6 +191,10 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                 });
                 return next;
             });
+
+            // FIX: Initialize raisedHands based on raiseHand flag in activeStudents
+            const currentlyRaised = activeStudents.filter(s => s.raiseHand).map(s => s.username);
+            setRaisedHands(currentlyRaised);
         });
 
         socket.on('student-data-update', (data) => {
@@ -579,297 +583,325 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                                 {Object.values(students).filter(s => s.status === 'active').length} LIVE
                             </span>
                         </div>
-                        {Object.entries(students).map(([username, s]) => (
-                            <div key={username} onClick={() => handleSelectStudent(username)}
-                                style={{
-                                    padding: '12px', marginBottom: '8px', borderRadius: '12px', cursor: 'pointer',
-                                    background: selectedStudent === username ? 'rgba(99,102,241,0.1)' : 'rgba(30,41,59,0.4)',
-                                    border: selectedStudent === username ? '1px solid #6366f1' : '1px solid #1e293b',
-                                    display: 'flex', alignItems: 'center', gap: '12px', transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                    position: 'relative', overflow: 'hidden'
-                                }}>
+                        {Object.entries(students).map(([username, s]) => {
+                            const isRaised = raisedHands.includes(username);
+                            const isActive = s.status === 'active';
+                            const isSelected = selectedStudent === username;
 
-                                {/* Status Ripple Background for Help */}
-                                {raisedHands.includes(username) && (
-                                    <div style={{ position: 'absolute', inset: 0, background: 'rgba(239,68,68,0.1)', animation: 'pulse-soft 2s infinite' }}></div>
-                                )}
-
-                                <div style={{ position: 'relative', zIndex: 1 }}>
-                                    <div style={{
-                                        width: '36px', height: '36px', borderRadius: '10px',
-                                        background: selectedStudent === username ? '#6366f1' : '#334155',
-                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                        fontSize: '14px', fontWeight: '800', color: '#fff',
-                                        boxShadow: selectedStudent === username ? '0 4px 12px rgba(99,102,241,0.3)' : 'none'
+                            return (
+                                <div key={username} onClick={() => handleSelectStudent(username)}
+                                    style={{
+                                        padding: '14px', marginBottom: '10px', borderRadius: '14px', cursor: 'pointer',
+                                        background: isSelected ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255, 255, 255, 0.02)',
+                                        backdropFilter: 'blur(10px)',
+                                        border: isRaised ? '2px solid #ef4444' : (isSelected ? '1px solid rgba(99, 102, 241, 0.4)' : '1px solid rgba(255, 255, 255, 0.05)'),
+                                        display: 'flex', alignItems: 'center', gap: '14px',
+                                        transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                                        position: 'relative', overflow: 'hidden',
+                                        boxShadow: isRaised ? '0 0 15px rgba(239, 68, 68, 0.2)' : 'none',
+                                        animation: isRaised ? 'card-pulse-red 2.5s infinite' : 'none'
                                     }}>
-                                        {username[0].toUpperCase()}
-                                    </div>
+
+                                    {/* Status Indicator Bar */}
                                     <div style={{
-                                        position: 'absolute', bottom: '-2px', right: '-2px', width: '12px', height: '12px',
-                                        borderRadius: '50%', background: statusColor(s.status),
-                                        border: '2px solid #0f172a',
-                                        boxShadow: s.status === 'active' ? `0 0 10px ${statusColor(s.status)}` : 'none'
+                                        position: 'absolute', left: 0, top: 0, bottom: 0, width: '4px',
+                                        background: statusColor(s.status),
+                                        opacity: isActive ? 1 : 0.4
                                     }}></div>
-                                </div>
 
-                                <div style={{ flex: 1, minWidth: 0, zIndex: 1 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        <div style={{ fontSize: '13px', color: selectedStudent === username ? '#fff' : '#e2e8f0', fontWeight: '700', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-                                            {username}
+                                    <div style={{ position: 'relative' }}>
+                                        <div style={{
+                                            width: '40px', height: '40px', borderRadius: '12px',
+                                            background: isSelected ? 'linear-gradient(135deg, #6366f1, #4f46e5)' : '#1e293b',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '15px', fontWeight: '800', color: '#fff',
+                                            border: '1px solid rgba(255,255,255,0.1)'
+                                        }}>
+                                            {username[0].toUpperCase()}
                                         </div>
-                                        {raisedHands.includes(username) && (
-                                            <span style={{ fontSize: '12px', animation: 'bounce 0.5s infinite alternate' }}>✋</span>
-                                        )}
+                                        <div style={{
+                                            position: 'absolute', bottom: '-4px', right: '-4px', width: '12px', height: '12px',
+                                            borderRadius: '50%', background: statusColor(s.status),
+                                            border: '2px solid #0f172a',
+                                            boxShadow: isActive ? `0 0 10px ${statusColor(s.status)}` : 'none',
+                                            animation: isActive ? 'neonPulse StudentHighlight 2s infinite' : 'none'
+                                        }}></div>
                                     </div>
-                                    <div style={{ fontSize: '10px', color: '#94a3b8', display: 'flex', flexDirection: 'column', gap: '2px', marginTop: '6px', fontWeight: '500' }}>
-                                        <div style={{ display: 'flex', gap: '10px' }}>
-                                            <span style={{ color: (s.tabSwitchCount > 0) ? '#f87171' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                                📑 Tab Switched: {s.tabSwitchCount || 0}
-                                            </span>
-                                            <span style={{ color: (s.pasteCount > 5) ? '#fbbf24' : '#94a3b8', display: 'flex', alignItems: 'center', gap: '3px' }}>
-                                                📋 {s.pasteCount || 0}
-                                            </span>
-                                        </div>
-                                        <span style={{ color: s.attentionScore < 60 ? '#ef4444' : '#10b981' }}>🎯 Attention: {s.attentionScore}%</span>
-                                    </div>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
 
-                {/* MAIN AREA */}
-                {!selectedStudent ? (
-                    <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617' }}>
-                        <div style={{ textAlign: 'center', opacity: 0.5 }}>
-                            <FaDesktop size={64} color="#334155" style={{ marginBottom: '20px' }} />
-                            <h3 style={{ color: '#94a3b8' }}>Select a student to monitor</h3>
-                        </div>
-                    </div>
-                ) : (
-                    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0f172a' }}>
-                        {/* Student Header & Tabs */}
-                        <div style={{ padding: '0 20px', borderBottom: '1px solid #334155', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '54px', flexShrink: 0, overflowX: 'auto' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 'fit-content' }}>
-                                <h3 style={{ margin: 0, color: '#fff', fontSize: '15px' }}>{selectedStudent}</h3>
-                                <div style={{ display: 'flex', gap: '6px' }}>
-                                    <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: `${statusColor(students[selectedStudent]?.status)}20`, color: statusColor(students[selectedStudent]?.status), border: `1px solid ${statusColor(students[selectedStudent]?.status)}40`, fontWeight: 'bold' }}>
-                                        {students[selectedStudent]?.status?.toUpperCase()}
-                                    </span>
-                                    <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.2)', fontWeight: 'bold' }}>
-                                        {students[selectedStudent]?.attentionScore}% FOCUS
-                                    </span>
-                                    {raisedHands.includes(selectedStudent) && (
-                                        <button onClick={() => handleAcknowledge(selectedStudent)} style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: '#ef4444', color: '#fff', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
-                                            ✋ ACKNOWLEDGE
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                            <div style={{ display: 'flex', gap: '20px', height: '100%' }}>
-                                <button onClick={() => setActiveTab('live')} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'live' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'live' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                    LIVE FEED
-                                </button>
-                                <button onClick={() => setActiveTab('reports')} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'reports' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'reports' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                    PERFORMANCE
-                                </button>
-                                <button onClick={() => { setActiveTab('history'); fetchSessionEvents(); }} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'history' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'history' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                    TIMELINE
-                                </button>
-                                <button onClick={() => { setActiveTab('portfolio'); fetchPortfolio(selectedStudent); }} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'portfolio' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'portfolio' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
-                                    ACADEMIC RECORD
-                                </button>
-                                <button onClick={downloadReport} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'center' }}>
-                                    <FaFilePdf size={12} /> DOWNLOAD TXT
-                                </button>
-                            </div>
-                        </div>
-
-                        {/* TAB CONTENT */}
-                        {activeTab === 'live' ? (
-                            <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}>
-                                {/* Code View */}
-                                <div style={{ flex: 1, background: '#020617', padding: '20px', overflowY: 'auto' }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
-                                        <span style={{ color: '#64748b', fontSize: '12px' }}>
-                                            {selectedFileContent ? `Viewing: ${selectedFileContent.name}` : (students[selectedStudent]?.activeFile ? `Live Edit: ${students[selectedStudent].activeFile}` : 'No file open')}
-                                        </span>
-                                        <button onClick={() => setSelectedFileContent(null)} style={{ fontSize: '11px', background: 'transparent', border: '1px solid #334155', color: '#94a3b8', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', visibility: selectedFileContent ? 'visible' : 'hidden' }}>Return to Live</button>
-                                    </div>
-                                    <pre style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '13px', color: '#d4d4d4', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
-                                        {selectedFileContent ? selectedFileContent.content : (students[selectedStudent]?.code || '// Waiting for code...')}
-                                    </pre>
-                                </div>
-                                {/* File List */}
-                                <div style={{ width: '250px', borderLeft: '1px solid #334155', background: '#0f172a', padding: '15px' }}>
-                                    <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                        FILES ({studentFiles.length})
-                                        <FaSync style={{ cursor: 'pointer' }} onClick={() => fetchStudentFiles(selectedStudent)} />
-                                    </div>
-                                    {studentFiles.map(f => (
-                                        <div key={f._id} onClick={() => handleViewFile(f)} style={{ padding: '8px', marginBottom: '4px', borderRadius: '6px', background: selectedFileContent?._id === f._id ? '#1e293b' : 'transparent', color: '#cbd5e1', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <FaFile size={10} color="#64748b" /> {f.name}
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        ) : (
-                            /* PORTFOLIO VIEW */
-                            <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
-                                {!studentPortfolio ? (
-                                    <div style={{ color: '#64748b', textAlign: 'center', marginTop: '50px' }}>Loading academic record...</div>
-                                ) : (
-                                    <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                                        {/* Global Stats */}
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '30px' }}>
-                                            <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-                                                <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Total Labs Attended</div>
-                                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#fff' }}>
-                                                    {Object.values(studentPortfolio.tracks || {}).reduce((acc, t) => acc + t.attended, 0)}
-                                                </div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px' }}>
+                                            <div style={{ fontSize: '13.5px', color: isSelected ? '#fff' : '#f1f5f9', fontWeight: '700', textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                                                {username}
                                             </div>
-                                            <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-                                                <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Total Active Hours</div>
-                                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#4ade80' }}>
-                                                    {(Object.values(studentPortfolio.tracks || {}).reduce((acc, t) => acc + t.totalTime, 0) / 60).toFixed(1)}h
-                                                </div>
-                                            </div>
-                                            <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
-                                                <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Subjects Tracked</div>
-                                                <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#a855f7' }}>
-                                                    {Object.keys(studentPortfolio.tracks || {}).length}
-                                                </div>
-                                            </div>
-                                        </div>
-
-                                        {/* Subject Tracks */}
-                                        <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                            <FaChartLine /> Subject Progress
-                                        </h3>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                                            {Object.values(studentPortfolio.tracks || {}).map(track => (
-                                                <div key={track.subject} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden' }}>
-                                                    {/* Track Header */}
-                                                    <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b' }}>
-                                                        <div>
-                                                            <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fff' }}>{track.subject}</div>
-                                                            <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>{track.totalLabs} Lab Sessions</div>
-                                                        </div>
-                                                        <div style={{ textAlign: 'right' }}>
-                                                            <div style={{ fontSize: '20px', fontWeight: 'bold', color: track.attended / track.totalLabs > 0.75 ? '#4ade80' : '#fbbf24' }}>
-                                                                {Math.round((track.attended / track.totalLabs) * 100)}%
-                                                            </div>
-                                                            <div style={{ fontSize: '11px', color: '#64748b' }}>Attendance</div>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Session Timeline */}
-                                                    <div style={{ padding: '20px' }}>
-                                                        <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px', textTransform: 'uppercase' }}>Recent Activity</div>
-                                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                                            {track.sessions.slice(0, 10).map((s, i) => (
-                                                                <div key={i} style={{
-                                                                    padding: '8px 12px', borderRadius: '6px',
-                                                                    background: s.attended ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                                                                    border: s.attended ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(248, 113, 113, 0.2)',
-                                                                    display: 'flex', flexDirection: 'column', gap: '4px',
-                                                                    minWidth: '100px'
-                                                                }}>
-                                                                    <div style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: '500' }}>{new Date(s.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
-                                                                    <div style={{ fontSize: '10px', color: s.attended ? '#4ade80' : '#f87171' }}>
-                                                                        {s.attended ? `${s.duration} min` : 'Absent'}
-                                                                    </div>
-                                                                </div>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-
-                        {activeTab === 'history' && (
-                            <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
-                                <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '20px' }}>Session Activity Timeline</h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                                    {sessionTimeline.length === 0 ? (
-                                        <div style={{ color: '#64748b' }}>No activity logged yet for this student.</div>
-                                    ) : (
-                                        sessionTimeline.map((log, i) => (
-                                            <div key={i} style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
-                                                <div style={{ minWidth: '80px', fontSize: '11px', color: '#475569', paddingTop: '4px' }}>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
-                                                <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#334155', marginTop: '6px', flexShrink: 0, position: 'relative' }}>
-                                                    {i < sessionTimeline.length - 1 && <div style={{ position: 'absolute', top: '10px', left: '4px', width: '2px', height: '30px', background: '#1e293b' }}></div>}
-                                                </div>
-                                                <div style={{ background: '#1e293b', padding: '10px 15px', borderRadius: '8px', border: '1px solid #334155', flex: 1 }}>
-                                                    <div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 'bold', textTransform: 'capitalize' }}>{log.event.replace('-', ' ')}</div>
-                                                    <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{log.details}</div>
-                                                </div>
-                                            </div>
-                                        ))
-                                    )}
-                                </div>
-                            </div>
-                        )}
-
-                        {activeTab === 'reports' && (
-                            /* REPORTS VIEW */
-                            <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
-                                {!studentReport ? (
-                                    <div style={{ textAlign: 'center', marginTop: '50px' }}>
-                                        <div style={{ color: '#64748b', marginBottom: '10px' }}>No report data found for {subject || 'this course'}.</div>
-                                        <button onClick={() => fetchStudentReport(selectedStudent)} style={{ background: '#334155', border: 'none', padding: '8px 16px', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>Refresh</button>
-                                    </div>
-                                ) : (
-                                    <div style={{ maxWidth: '800px', margin: '0 auto' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-                                            <div>
-                                                <h2 style={{ color: '#fff', margin: 0 }}>Detailed Lab Report</h2>
-                                                <div style={{ color: '#4ade80', marginTop: '5px', fontSize: '14px' }}>
-                                                    Total Time Spent: <span style={{ fontWeight: 'bold' }}>{(studentReport.totalTimeSpent / 60).toFixed(1)} mins</span>
-                                                </div>
-                                            </div>
-                                            <button onClick={downloadReport} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
-                                                <FaFilePdf /> Download Full Report
-                                            </button>
-                                        </div>
-
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
-                                            {studentReport.files.map((file, idx) => (
-                                                <div key={idx} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', overflow: 'hidden' }}>
-                                                    <div style={{ padding: '15px', background: '#1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                                                            <FaCode color="#94a3b8" />
-                                                            <span style={{ color: '#e2e8f0', fontWeight: '600' }}>{file.fileName}</span>
-                                                            {file.status === 'submitted' && <span style={{ fontSize: '10px', background: '#059669', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>SUBMITTED</span>}
-                                                        </div>
-                                                        <div style={{ fontSize: '13px', color: '#cbd5e1' }}>
-                                                            ⏱ {(file.timeSpent / 60).toFixed(1)} min
-                                                        </div>
-                                                    </div>
-                                                    <div style={{ padding: '15px', background: '#0f172a' }}>
-                                                        <pre style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: '#94a3b8', maxHeight: '200px', overflowY: 'auto' }}>
-                                                            {file.code || "// No code content saved"}
-                                                        </pre>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                            {studentReport.files.length === 0 && (
-                                                <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>No files recorded in this report yet.</div>
+                                            {isRaised && (
+                                                <span style={{
+                                                    fontSize: '14px', background: '#ef4444', color: '#fff',
+                                                    padding: '2px 6px', borderRadius: '6px', fontWeight: 'bold',
+                                                    boxShadow: '0 2px 8px rgba(239, 68, 68, 0.4)',
+                                                    animation: 'bounce 0.8s infinite alternate'
+                                                }}>✋</span>
                                             )}
                                         </div>
+
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center' }}>
+                                            <div style={{
+                                                fontSize: '10px', color: s.tabSwitchCount > 3 ? '#ef4444' : '#94a3b8',
+                                                fontWeight: '700', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px'
+                                            }}>
+                                                📑 {s.tabSwitchCount || 0}
+                                            </div>
+                                            <div style={{
+                                                fontSize: '10px', color: s.pasteCount > 5 ? '#fbbf24' : '#94a3b8',
+                                                fontWeight: '700', background: 'rgba(0,0,0,0.2)', padding: '2px 6px', borderRadius: '4px'
+                                            }}>
+                                                📋 {s.pasteCount || 0}
+                                            </div>
+                                            <div style={{
+                                                fontSize: '10px', color: s.attentionScore < 70 ? '#ef4444' : '#4ade80',
+                                                fontWeight: '800', letterSpacing: '0.2px'
+                                            }}>
+                                                🎯 {s.attentionScore}%
+                                            </div>
+                                        </div>
                                     </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            </div>
+
+            {/* MAIN AREA */}
+            {!selectedStudent ? (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#020617' }}>
+                    <div style={{ textAlign: 'center', opacity: 0.5 }}>
+                        <FaDesktop size={64} color="#334155" style={{ marginBottom: '20px' }} />
+                        <h3 style={{ color: '#94a3b8' }}>Select a student to monitor</h3>
+                    </div>
+                </div>
+            ) : (
+                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#0f172a' }}>
+                    {/* Student Header & Tabs */}
+                    <div style={{ padding: '0 20px', borderBottom: '1px solid #334155', background: '#1e293b', display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: '54px', flexShrink: 0, overflowX: 'auto' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 'fit-content' }}>
+                            <h3 style={{ margin: 0, color: '#fff', fontSize: '15px' }}>{selectedStudent}</h3>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: `${statusColor(students[selectedStudent]?.status)}20`, color: statusColor(students[selectedStudent]?.status), border: `1px solid ${statusColor(students[selectedStudent]?.status)}40`, fontWeight: 'bold' }}>
+                                    {students[selectedStudent]?.status?.toUpperCase()}
+                                </span>
+                                <span style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: 'rgba(99,102,241,0.1)', color: '#a5b4fc', border: '1px solid rgba(99,102,241,0.2)', fontWeight: 'bold' }}>
+                                    {students[selectedStudent]?.attentionScore}% FOCUS
+                                </span>
+                                {raisedHands.includes(selectedStudent) && (
+                                    <button onClick={() => handleAcknowledge(selectedStudent)} style={{ fontSize: '10px', padding: '2px 8px', borderRadius: '8px', background: '#ef4444', color: '#fff', border: 'none', fontWeight: 'bold', cursor: 'pointer' }}>
+                                        ✋ ACKNOWLEDGE
+                                    </button>
                                 )}
                             </div>
-                        )}
-
+                        </div>
+                        <div style={{ display: 'flex', gap: '20px', height: '100%' }}>
+                            <button onClick={() => setActiveTab('live')} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'live' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'live' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                LIVE FEED
+                            </button>
+                            <button onClick={() => setActiveTab('reports')} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'reports' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'reports' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                PERFORMANCE
+                            </button>
+                            <button onClick={() => { setActiveTab('history'); fetchSessionEvents(); }} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'history' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'history' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                TIMELINE
+                            </button>
+                            <button onClick={() => { setActiveTab('portfolio'); fetchPortfolio(selectedStudent); }} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'portfolio' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'portfolio' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
+                                ACADEMIC RECORD
+                            </button>
+                            <button onClick={downloadReport} style={{ background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.3)', color: '#ef4444', padding: '4px 10px', borderRadius: '6px', cursor: 'pointer', fontSize: '11px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '6px', alignSelf: 'center' }}>
+                                <FaFilePdf size={12} /> DOWNLOAD TXT
+                            </button>
+                        </div>
                     </div>
-                )}
-            </div>
+
+                    {/* TAB CONTENT */}
+                    {activeTab === 'live' ? (
+                        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', minWidth: 0 }}>
+                            {/* Code View */}
+                            <div style={{ flex: 1, background: '#020617', padding: '20px', overflowY: 'auto' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
+                                    <span style={{ color: '#64748b', fontSize: '12px' }}>
+                                        {selectedFileContent ? `Viewing: ${selectedFileContent.name}` : (students[selectedStudent]?.activeFile ? `Live Edit: ${students[selectedStudent].activeFile}` : 'No file open')}
+                                    </span>
+                                    <button onClick={() => setSelectedFileContent(null)} style={{ fontSize: '11px', background: 'transparent', border: '1px solid #334155', color: '#94a3b8', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer', visibility: selectedFileContent ? 'visible' : 'hidden' }}>Return to Live</button>
+                                </div>
+                                <pre style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '13px', color: '#d4d4d4', lineHeight: '1.6', whiteSpace: 'pre-wrap' }}>
+                                    {selectedFileContent ? selectedFileContent.content : (students[selectedStudent]?.code || '// Waiting for code...')}
+                                </pre>
+                            </div>
+                            {/* File List */}
+                            <div style={{ width: '250px', borderLeft: '1px solid #334155', background: '#0f172a', padding: '15px' }}>
+                                <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    FILES ({studentFiles.length})
+                                    <FaSync style={{ cursor: 'pointer' }} onClick={() => fetchStudentFiles(selectedStudent)} />
+                                </div>
+                                {studentFiles.map(f => (
+                                    <div key={f._id} onClick={() => handleViewFile(f)} style={{ padding: '8px', marginBottom: '4px', borderRadius: '6px', background: selectedFileContent?._id === f._id ? '#1e293b' : 'transparent', color: '#cbd5e1', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <FaFile size={10} color="#64748b" /> {f.name}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    ) : (
+                        /* PORTFOLIO VIEW */
+                        <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
+                            {!studentPortfolio ? (
+                                <div style={{ color: '#64748b', textAlign: 'center', marginTop: '50px' }}>Loading academic record...</div>
+                            ) : (
+                                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
+                                    {/* Global Stats */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px', marginBottom: '30px' }}>
+                                        <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
+                                            <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Total Labs Attended</div>
+                                            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#fff' }}>
+                                                {Object.values(studentPortfolio.tracks || {}).reduce((acc, t) => acc + t.attended, 0)}
+                                            </div>
+                                        </div>
+                                        <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
+                                            <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Total Active Hours</div>
+                                            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#4ade80' }}>
+                                                {(Object.values(studentPortfolio.tracks || {}).reduce((acc, t) => acc + t.totalTime, 0) / 60).toFixed(1)}h
+                                            </div>
+                                        </div>
+                                        <div style={{ background: '#1e293b', padding: '20px', borderRadius: '12px', border: '1px solid #334155' }}>
+                                            <div style={{ color: '#94a3b8', fontSize: '12px', marginBottom: '5px' }}>Subjects Tracked</div>
+                                            <div style={{ fontSize: '32px', fontWeight: 'bold', color: '#a855f7' }}>
+                                                {Object.keys(studentPortfolio.tracks || {}).length}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Subject Tracks */}
+                                    <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                        <FaChartLine /> Subject Progress
+                                    </h3>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+                                        {Object.values(studentPortfolio.tracks || {}).map(track => (
+                                            <div key={track.subject} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '12px', overflow: 'hidden' }}>
+                                                {/* Track Header */}
+                                                <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#1e293b' }}>
+                                                    <div>
+                                                        <div style={{ fontSize: '16px', fontWeight: 'bold', color: '#fff' }}>{track.subject}</div>
+                                                        <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>{track.totalLabs} Lab Sessions</div>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right' }}>
+                                                        <div style={{ fontSize: '20px', fontWeight: 'bold', color: track.attended / track.totalLabs > 0.75 ? '#4ade80' : '#fbbf24' }}>
+                                                            {Math.round((track.attended / track.totalLabs) * 100)}%
+                                                        </div>
+                                                        <div style={{ fontSize: '11px', color: '#64748b' }}>Attendance</div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Session Timeline */}
+                                                <div style={{ padding: '20px' }}>
+                                                    <div style={{ fontSize: '11px', color: '#64748b', marginBottom: '10px', textTransform: 'uppercase' }}>Recent Activity</div>
+                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                        {track.sessions.slice(0, 10).map((s, i) => (
+                                                            <div key={i} style={{
+                                                                padding: '8px 12px', borderRadius: '6px',
+                                                                background: s.attended ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                                                                border: s.attended ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(248, 113, 113, 0.2)',
+                                                                display: 'flex', flexDirection: 'column', gap: '4px',
+                                                                minWidth: '100px'
+                                                            }}>
+                                                                <div style={{ fontSize: '12px', color: '#e2e8f0', fontWeight: '500' }}>{new Date(s.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</div>
+                                                                <div style={{ fontSize: '10px', color: s.attended ? '#4ade80' : '#f87171' }}>
+                                                                    {s.attended ? `${s.duration} min` : 'Absent'}
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'history' && (
+                        <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
+                            <h3 style={{ color: '#fff', fontSize: '18px', marginBottom: '20px' }}>Session Activity Timeline</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                {sessionTimeline.length === 0 ? (
+                                    <div style={{ color: '#64748b' }}>No activity logged yet for this student.</div>
+                                ) : (
+                                    sessionTimeline.map((log, i) => (
+                                        <div key={i} style={{ display: 'flex', gap: '15px', alignItems: 'flex-start' }}>
+                                            <div style={{ minWidth: '80px', fontSize: '11px', color: '#475569', paddingTop: '4px' }}>{new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
+                                            <div style={{ width: '10px', height: '10px', borderRadius: '50%', background: '#334155', marginTop: '6px', flexShrink: 0, position: 'relative' }}>
+                                                {i < sessionTimeline.length - 1 && <div style={{ position: 'absolute', top: '10px', left: '4px', width: '2px', height: '30px', background: '#1e293b' }}></div>}
+                                            </div>
+                                            <div style={{ background: '#1e293b', padding: '10px 15px', borderRadius: '8px', border: '1px solid #334155', flex: 1 }}>
+                                                <div style={{ fontSize: '12px', color: '#f8fafc', fontWeight: 'bold', textTransform: 'capitalize' }}>{log.event.replace('-', ' ')}</div>
+                                                <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{log.details}</div>
+                                            </div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {activeTab === 'reports' && (
+                        /* REPORTS VIEW */
+                        <div style={{ flex: 1, background: '#020617', padding: '30px', overflowY: 'auto' }}>
+                            {!studentReport ? (
+                                <div style={{ textAlign: 'center', marginTop: '50px' }}>
+                                    <div style={{ color: '#64748b', marginBottom: '10px' }}>No report data found for {subject || 'this course'}.</div>
+                                    <button onClick={() => fetchStudentReport(selectedStudent)} style={{ background: '#334155', border: 'none', padding: '8px 16px', borderRadius: '6px', color: '#fff', cursor: 'pointer' }}>Refresh</button>
+                                </div>
+                            ) : (
+                                <div style={{ maxWidth: '800px', margin: '0 auto' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+                                        <div>
+                                            <h2 style={{ color: '#fff', margin: 0 }}>Detailed Lab Report</h2>
+                                            <div style={{ color: '#4ade80', marginTop: '5px', fontSize: '14px' }}>
+                                                Total Time Spent: <span style={{ fontWeight: 'bold' }}>{(studentReport.totalTimeSpent / 60).toFixed(1)} mins</span>
+                                            </div>
+                                        </div>
+                                        <button onClick={downloadReport} style={{ background: '#3b82f6', color: '#fff', border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                                            <FaFilePdf /> Download Full Report
+                                        </button>
+                                    </div>
+
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
+                                        {studentReport.files.map((file, idx) => (
+                                            <div key={idx} style={{ background: '#0f172a', border: '1px solid #334155', borderRadius: '8px', overflow: 'hidden' }}>
+                                                <div style={{ padding: '15px', background: '#1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                        <FaCode color="#94a3b8" />
+                                                        <span style={{ color: '#e2e8f0', fontWeight: '600' }}>{file.fileName}</span>
+                                                        {file.status === 'submitted' && <span style={{ fontSize: '10px', background: '#059669', color: '#fff', padding: '2px 6px', borderRadius: '4px' }}>SUBMITTED</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '13px', color: '#cbd5e1' }}>
+                                                        ⏱ {(file.timeSpent / 60).toFixed(1)} min
+                                                    </div>
+                                                </div>
+                                                <div style={{ padding: '15px', background: '#0f172a' }}>
+                                                    <pre style={{ margin: 0, fontFamily: "'JetBrains Mono', monospace", fontSize: '12px', color: '#94a3b8', maxHeight: '200px', overflowY: 'auto' }}>
+                                                        {file.code || "// No code content saved"}
+                                                    </pre>
+                                                </div>
+                                            </div>
+                                        ))}
+                                        {studentReport.files.length === 0 && (
+                                            <div style={{ textAlign: 'center', padding: '40px', color: '#64748b' }}>No files recorded in this report yet.</div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                </div>
+            )}
         </div>
     );
 };
