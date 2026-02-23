@@ -513,6 +513,12 @@ function App() {
                 setSocketConnected(false);
                 console.warn('Socket Disconnected');
             });
+
+            // LISTEN: Refresh file tree whenever any file is created (collaborative + own creation)
+            socketRef.current.on('node-created', () => {
+                console.log('[SOCKET] node-created event received, refreshing file list');
+                fetchFiles(true);
+            });
         }
 
         // --- VAYU STUDENT MONITOR LOGIC ---
@@ -923,9 +929,19 @@ function App() {
         if (!userId) return alert("Please login again (User ID missing).");
         const name = prompt(`Enter ${type} name:`);
         if (name) {
-            safeEmit('create-node', { parentId, newNode: { name, type }, userId });
-            // FORCE IMMEDIATE REFRESH (User Request: Show immediately after creation)
-            fetchFiles(true);
+            // FIX: Pass courseId so labs files are tagged correctly and appear in the lab file list
+            const courseId = activeSession?.courseId || undefined;
+            // FIX: Use a callback so we only refresh AFTER the server confirms creation (prevents race condition)
+            safeEmit('create-node', { parentId, newNode: { name, type }, userId, courseId }, (ack) => {
+                if (ack?.success) {
+                    fetchFiles(true); // Refresh only after server confirms
+                } else if (ack?.error) {
+                    alert("Failed to create file: " + ack.error);
+                } else {
+                    // Fallback if server doesn't ack (older build)
+                    setTimeout(() => fetchFiles(true), 500);
+                }
+            });
         }
     };
 

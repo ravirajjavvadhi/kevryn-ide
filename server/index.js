@@ -2451,10 +2451,9 @@ io.on('connection', (socket) => {
 
         try {
             // Check if name already includes path (e.g. from template or bulk sync)
-            const f = new File({ name, type: newNode.type, parentId: parentId || 'root', owner: userId, content: content, sharedWith: collaborators });
+            // FIX: persist courseId so lab files are filterable by /files?courseId=...
+            const f = new File({ name, type: newNode.type, parentId: parentId || 'root', owner: userId, content: content, sharedWith: collaborators, courseId: courseId || undefined });
 
-            // If in a lab, we might want to tag the metadata or just use parentId hierarchy
-            // For now, we rely on the parentId being the lab root if created via LabMode
             await f.save();
 
             // Determine actual disk path based on hierarchy
