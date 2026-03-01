@@ -2007,13 +2007,17 @@ app.get('/files', authenticate, async (req, res) => {
             });
         }
 
-        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query));
+        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query, null, 2));
 
         // PERFORMANCE: .lean() returns plain JS objects (2-3x faster than Mongoose documents)
         // select() limits fields to only what the client needs
         const files = await File.find(query)
             .select('name type parentId content owner sharedWith courseId lastActivity')
             .lean();
+
+        console.log(`[FILES] Found ${files.length} files for ${username}`);
+        if (files.length > 0) console.log(`[FILES] Sample file owner: ${files[0].owner} (${typeof files[0].owner})`);
+
         res.json(files);
     } catch (err) {
         res.status(500).json({ error: "Error" });
