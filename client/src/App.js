@@ -482,7 +482,8 @@ function App() {
                 }
                 setIsAppLoading(false); // Boot sequence complete
             }).catch(err => {
-                console.log("Fetch Error");
+                console.log("Fetch Error", err);
+                alert(`File Fetch Failed: ${err.message} (Server: ${SERVER_URL}). Check console/network for details.`);
                 setIsAppLoading(false); // Don't hang forever
             });
         };

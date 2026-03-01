@@ -2903,6 +2903,17 @@ io.on('connection', (socket) => {
     });
 });
 
+// --- LAST RESORT 404 HANDLER (For Debugging) ---
+app.use((req, res) => {
+    console.log(`[404] Unhandled request: ${req.method} ${req.url}`);
+    res.status(404).json({
+        error: "Route not found",
+        path: req.path,
+        method: req.method,
+        suggestion: "Check if the API route is correctly registered in index.js"
+    });
+});
+
 process.on('SIGTERM', () => {
     console.log('[SHUTDOWN] SIGTERM received.');
     if (server) server.close(() => process.exit(0));
