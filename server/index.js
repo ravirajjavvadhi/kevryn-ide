@@ -103,7 +103,6 @@ const { createProxyMiddleware } = require('http-proxy-middleware');
 const courseManager = require('./routes/courseManager');
 const assignmentManager = require('./routes/assignmentManager');
 
-const app = express();
 app.set('trust proxy', true);
 
 // --- GLOBAL STATE ---

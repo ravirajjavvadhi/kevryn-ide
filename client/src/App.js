@@ -1543,6 +1543,7 @@ function App() {
                         setAuthData={setAuthData}
                         handleGoogleLoginSuccess={handleGoogleLoginSuccess}
                         SERVER_URL={SERVER_URL}
+                        checkBackendConnection={checkBackendConnection}
                     />
                 ) : userRole === 'student' && showStudentAssignments ? (
                     <StudentAssignmentView
@@ -2247,7 +2248,8 @@ const Login = ({
     isFacultyLogin, setIsFacultyLogin,
     isLogin, setIsLogin,
     handleAuth, authData, setAuthData,
-    handleGoogleLoginSuccess, SERVER_URL
+    handleGoogleLoginSuccess, SERVER_URL,
+    checkBackendConnection
 }) => (
     <div className="ide-container login-container" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', perspective: '1000px', height: '100%', display: 'flex', position: 'relative' }}>
         <AntigravityBackground />
