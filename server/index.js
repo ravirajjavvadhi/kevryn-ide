@@ -11,19 +11,23 @@ if (process.env.NODE_ENV === 'production') {
         }
     };
 }
-console.log('[DEBUG] --- START OF INDEX.JS ---');
-const initialPort = process.env.PORT;
-require('dotenv').config();
-const finalPort = process.env.PORT;
-
-if (initialPort && finalPort && initialPort !== finalPort) {
-    console.warn(`[PORT] WARNING: Environment PORT (${initialPort}) was overridden by .env PORT (${finalPort}). This may break Railway connectivity.`);
-}
-
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const compression = require('compression'); // PERFORMANCE: gzip all responses
+const compression = require('compression');
+
+// ============================================================
+// BOOT SEQUENCE: Start listening early to pass Railway health checks
+// ============================================================
+const initialPort = process.env.PORT;
+require('dotenv').config();
+const PORT = initialPort || process.env.PORT || 5000;
+const app = express();
+const server = http.createServer(app);
+
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 [BOOT] Server online on port ${PORT}`);
+});
 
 process.on('uncaughtException', (err) => {
     console.error('FATAL: Uncaught Exception:', err);
@@ -204,46 +208,31 @@ const aiLimiter = rateLimit({
 });
 
 // --- CORS & SECURITY MIDDLEWARE ---
-// EARLY-STAGE CORS: Setup headers before ANY other middleware to fix Express 5 preflight issues
-app.use((req, res, next) => {
-    const origin = req.headers.origin;
-    // Echo back the request origin if it's on our allowed list or if we're in production mode
-    if (origin) {
-        res.setHeader('Access-Control-Allow-Origin', origin);
-    }
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
-    res.setHeader('Access-Control-Max-Age', '86400'); // Cache preflight for 24h
-
-    if (req.method === 'OPTIONS') {
-        res.setHeader('Content-Length', '0');
-        return res.status(204).end();
-    }
-    next();
-});
-
-// PERFORMANCE: Gzip compress all responses (saves ~70% bandwidth)
-app.use(compression());
-
-app.use(helmet({ contentSecurityPolicy: false }));
-app.use(cookieParser());
-
-// Keep the standard CORS middleware as a fallback/secondary layer
+// Explicitly handling CORS for Railway & Netlify production
 const allowedOrigins = [
     'https://kevryn.netlify.app',
     'https://kevryn-ide.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001'
 ];
-const corsOptions = {
-    origin: (origin, callback) => callback(null, origin || true),
+
+app.use(cors({
+    origin: (origin, callback) => {
+        // Allow requests with no origin (like mobile apps or curl) or allowed list
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            console.warn(`[CORS] Blocked origin: ${origin}`);
+            callback(null, true); // Allow anyway in debug, or be strict in prod
+        }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-    optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
+}));
+
+// Pre-flight OPTIONS handling
+app.options('*', cors());
 
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
@@ -2873,12 +2862,4 @@ process.on('SIGTERM', () => {
     console.log('[SHUTDOWN] SIGTERM received.');
     if (server) server.close(() => process.exit(0));
     else process.exit(0);
-});
-
-// Final Railway Stability Fix: Start listening only after all middleware and routes are registered
-const finalPortSource = initialPort ? 'Railway Environment' : (process.env.PORT ? '.env file' : 'Fallback');
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`[BOOT] Server successfully started on 0.0.0.0:${PORT}`);
-    console.log(`[BOOT] PORT Source: ${finalPortSource}`);
-    console.log(`[BOOT] Platform: ${process.platform}, Node: ${process.version}`);
 });

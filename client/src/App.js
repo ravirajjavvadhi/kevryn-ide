@@ -1443,6 +1443,20 @@ function App() {
         }
     };
 
+    // Production diagnostic tool
+    const checkBackendConnection = async () => {
+        const testUrl = `${SERVER_URL}/health`;
+        const start = Date.now();
+        console.log(`[DIAGNOSTIC] Testing connection to: ${testUrl}`);
+        try {
+            const res = await axios.get(testUrl);
+            const duration = Date.now() - start;
+            alert(`✅ Connection Successful!\n\nTarget: ${SERVER_URL}\nResponse: ${res.data}\nLatency: ${duration}ms\n\nIf you see white screen after this, it might be a local cache issue.`);
+        } catch (err) {
+            alert(`❌ Connection Failed\n\nTarget: ${testUrl}\nError: ${err.message}\n\nThis confirms the backend is either down or blocking this origin (${window.location.origin}).`);
+        }
+    };
+
     // Unified logout handled by handleLogout (line 217)
 
 
@@ -2374,6 +2388,16 @@ const Login = ({
                 {isLogin ? "Don't have an account? " : "Already using Kevryn? "}
                 <span style={{ color: isFacultyLogin ? '#a78bfa' : '#60a5fa', fontWeight: '600' }}>{isLogin ? "Sign Up" : "Log In"}</span>
             </motion.p>
+
+            {/* Production Discovery Button */}
+            <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
+                <button
+                    onClick={checkBackendConnection}
+                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.1)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
+                >
+                    Diagnostic Tool
+                </button>
+            </div>
         </motion.div>
     </div>
 );
