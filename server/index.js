@@ -1945,11 +1945,12 @@ app.post('/files', authenticate, async (req, res) => {
         const existing = await File.findOne(query);
         if (existing) return res.status(400).json({ error: "File already exists" });
 
+        const ownerId = mongoose.Types.ObjectId.isValid(req.user.userId) ? new mongoose.Types.ObjectId(req.user.userId) : req.user.userId;
         const newFile = new File({
             name,
             type: 'file',
             content: content || '',
-            owner: req.user.userId,
+            owner: ownerId,
             sharedWith: [],
             courseId: courseId || undefined
         });
@@ -1969,13 +1970,29 @@ app.post('/files', authenticate, async (req, res) => {
 app.get('/files', authenticate, async (req, res) => {
     try {
         const { courseId } = req.query;
-        const query = { $or: [{ owner: req.user.userId }, { sharedWith: req.user.username }] };
+        const userId = req.user.userId;
+        const username = req.user.username;
+
+        // CRITICAL FIX: Explicitly cast to ObjectId for reliable $or queries in Express 5 / Mongoose 8+
+        const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+        const query = {
+            $or: [
+                { owner: ownerId },
+                { sharedWith: username }
+            ]
+        };
 
         if (courseId) {
             query.courseId = courseId;
         } else {
-            query.courseId = { $exists: false };
+            // Match files where courseId is MISSING or NULL
+            query.$and = [
+                { $or: [{ courseId: { $exists: false } }, { courseId: null }] }
+            ];
         }
+
+        console.log(`[FILES] Querying for user: ${username} (${userId}), course: ${courseId || 'None'}`);
 
         // PERFORMANCE: .lean() returns plain JS objects (2-3x faster than Mongoose documents)
         // select() limits fields to only what the client needs
@@ -2456,9 +2473,20 @@ io.on('connection', (socket) => {
         const name = newNode.name;
 
         try {
+            // FIX: Explicitly cast userId to ObjectId to ensure indexed owner search works
+            const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
             // Check if name already includes path (e.g. from template or bulk sync)
             // FIX: persist courseId so lab files are filterable by /files?courseId=...
-            const f = new File({ name, type: newNode.type, parentId: parentId || 'root', owner: userId, content: content, sharedWith: collaborators, courseId: courseId || undefined });
+            const f = new File({
+                name,
+                type: newNode.type,
+                parentId: parentId || 'root',
+                owner: ownerId,
+                content: content,
+                sharedWith: collaborators,
+                courseId: courseId || undefined
+            });
 
             await f.save();
 
