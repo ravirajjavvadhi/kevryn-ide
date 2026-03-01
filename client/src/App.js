@@ -895,28 +895,7 @@ function App() {
     window.openDiff = (data) => { setDiffData(data); setIsDiffModalOpen(true); };
 
     // --- GITHUB OAUTH HANDLE ---
-    useEffect(() => {
-        const query = new URLSearchParams(window.location.search);
-        const urlToken = query.get('token');
-        const urlUsername = query.get('username');
-        const urlUserId = query.get('userId');
-        const urlPicture = query.get('picture');
-
-        if (urlToken && urlUsername && urlUserId) {
-            localStorage.setItem('token', urlToken);
-            localStorage.setItem('username', urlUsername);
-            localStorage.setItem('userId', urlUserId);
-            if (urlPicture) localStorage.setItem('picture', urlPicture);
-
-            setToken(urlToken);
-            setUsername(urlUsername);
-            setUserId(urlUserId);
-            setUserPicture(urlPicture);
-
-            // Clear URL
-            window.history.replaceState({}, document.title, "/");
-        }
-    }, []);
+    // URL params already handled by useEffect at line 697
 
 
 
@@ -1270,22 +1249,21 @@ function App() {
         if (activeFileName.endsWith('.html')) return;
 
         let cmd = "";
-        // --- FIX: LINUX PATH PREFIX for Server Languages ---
-        // Cloud servers are Linux. Hardcode ./ for server languages (py, c, cpp, java).
-        const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
-        const exePrefix = isServerLanguage ? './' : (window.navigator.platform.toUpperCase().indexOf('WIN') >= 0 ? '.\\' : './');
+        // --- FIX: Robust Path Fallback & Linux Support ---
+        const filenameOnly = activeFileName.split('/').pop();
+        const isServerLanguage = ['py', 'c', 'cpp', 'java', 'js', 'rb', 'php', 'go'].includes(ext);
+        const exePrefix = './'; // Standard for Linux/Cloud environments
 
-        // Same command set as LabMode for consistency
         const commands = {
-            'js': `node "${activeFileName}"`,
-            'py': `python3 "${activeFileName}" || python "${activeFileName}"`,
-            'java': `javac "${activeFileName}" && java "${activeFileName.replace('.java', '')}"`,
-            'c': `gcc "${activeFileName}" -o output && ${exePrefix}output`,
-            'cpp': `g++ "${activeFileName}" -o output && ${exePrefix}output`,
-            'rb': `ruby "${activeFileName}"`,
-            'go': `go run "${activeFileName}"`,
-            'php': `php "${activeFileName}"`,
-            'ts': `npx ts-node "${activeFileName}"`,
+            'js': `node "${activeFileName}" || node "${filenameOnly}"`,
+            'py': `python3 "${activeFileName}" || python3 "${filenameOnly}" || python "${activeFileName}" || python "${filenameOnly}"`,
+            'java': `javac "${activeFileName}" || javac "${filenameOnly}" && java "${filenameOnly.replace('.java', '')}"`,
+            'c': `gcc "${activeFileName}" -o output || gcc "${filenameOnly}" -o output && ${exePrefix}output`,
+            'cpp': `g++ "${activeFileName}" -o output || g++ "${filenameOnly}" -o output && ${exePrefix}output`,
+            'rb': `ruby "${activeFileName}" || ruby "${filenameOnly}"`,
+            'go': `go run "${activeFileName}" || go run "${filenameOnly}"`,
+            'php': `php "${activeFileName}" || php "${filenameOnly}"`,
+            'ts': `npx ts-node "${activeFileName}" || npx ts-node "${filenameOnly}"`,
         };
 
         cmd = commands[ext];
@@ -1465,13 +1443,7 @@ function App() {
         }
     };
 
-    const logout = () => {
-        localStorage.clear();
-        setToken(null);
-        setUserPicture(null);
-        setUserRole("student"); // Reset role on logout
-        window.location.reload();
-    };
+    // Unified logout handled by handleLogout (line 217)
 
 
 

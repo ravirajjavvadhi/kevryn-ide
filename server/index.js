@@ -55,9 +55,8 @@ const { spawn, exec } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
 const { OAuth2Client } = require('google-auth-library');
-const passport = require('passport');
-const GitHubStrategy = require('passport-github2').Strategy;
-const session = require('express-session');
+// --- DIRECT AUTH REPLACEMENTS ---
+// Removed Passport & Sessions for a cleaner, stateless API approach
 
 // --- ENV VARS ---
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
@@ -266,57 +265,12 @@ app.use((req, res, next) => {
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// --- SESSION & PASSPORT MIDDLEWARE ---
-app.use(session({
-    secret: SESSION_SECRET,
-    resave: false,
-    saveUninitialized: false,
-    cookie: {
-        secure: true, // Required for HTTPS
-        sameSite: 'none' // Required for cross-site (Vercel to Railway)
-    }
-}));
-app.use(passport.initialize());
-app.use(passport.session());
+// --- SESSION & PASSPORT REMOVED ---
+// We are now using stateless JWT authentication.
+// No session or passport middlewares required.
 
-// Passport Serialization
-passport.serializeUser((user, done) => {
-    done(null, user._id);
-});
-
-passport.deserializeUser(async (id, done) => {
-    try {
-        const user = await User.findById(id);
-        done(null, user);
-    } catch (e) {
-        done(e, null);
-    }
-});
-
-// GitHub Strategy
-passport.use(new GitHubStrategy({
-    clientID: GITHUB_CLIENT_ID,
-    clientSecret: GITHUB_CLIENT_SECRET,
-    callbackURL: GITHUB_CALLBACK_URL
-}, async (accessToken, refreshToken, profile, done) => {
-    try {
-        let user = await User.findOne({ githubId: profile.id });
-        if (!user) {
-            user = new User({
-                username: profile.username || `github_user_${profile.id}`,
-                githubId: profile.id,
-                githubUsername: profile.username,
-                githubToken: accessToken,
-                picture: profile.photos && profile.photos[0] ? profile.photos[0].value : "",
-                role: 'student'
-            });
-            await user.save();
-        }
-        return done(null, user);
-    } catch (e) {
-        return done(e, null);
-    }
-}));
+// --- DIRECT GITHUB AUTH CONFIG ---
+// Passport strategies removed in favor of direct API calls.
 
 // --- AUTH MIDDLEWARE ---
 const { authenticate } = require('./utils/authMiddleware');
@@ -388,6 +342,8 @@ app.use('/ai', aiRouter); // Mount AI routes
 
 // --- OAUTH ROUTES ---
 
+// --- MODERN DIRECT OAUTH ROUTES ---
+
 // Google Login (ID Token Verification)
 app.post('/auth/google', async (req, res) => {
     try {
@@ -402,7 +358,7 @@ app.post('/auth/google', async (req, res) => {
         let user = await User.findOne({ email });
         if (!user) {
             user = new User({
-                username: email.split('@')[0], // Use part of email as username
+                username: name || email.split('@')[0],
                 email,
                 googleId: sub,
                 picture,
@@ -411,44 +367,62 @@ app.post('/auth/google', async (req, res) => {
             await user.save();
         }
 
-        // ADMIN OVERRIDE: prsnlkalyan@gmail.com force admin + name change
-        if (user.email === 'prsnlkalyan@gmail.com') {
-            user.role = 'admin';
-            user.username = 'P KALYAN REDDY';
-        }
+        // Admin Overrides
+        if (user.email === 'prsnlkalyan@gmail.com') { user.role = 'admin'; user.username = 'P KALYAN REDDY'; }
 
-        const jwtToken = jwt.sign(
-            { userId: user._id, username: user.username, role: user.role },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
-
+        const jwtToken = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
         res.json({ token: jwtToken, username: user.username, userId: user._id, picture: user.picture, role: user.role });
     } catch (e) {
-        console.error("Google Auth Error:", e);
-        res.status(500).json({ error: "Google Authentication Failed" });
+        res.status(500).json({ error: "Google Auth Failed" });
     }
 });
 
-// GitHub Login
-app.get('/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
+// GitHub Direct API Login (No Passport)
+app.get('/auth/github', (req, res) => {
+    const githubAuthUrl = `https://github.com/login/oauth/authorize?client_id=${GITHUB_CLIENT_ID}&redirect_uri=${encodeURIComponent(GITHUB_CALLBACK_URL)}&scope=user:email`;
+    res.redirect(githubAuthUrl);
+});
 
-app.get('/auth/github/callback',
-    passport.authenticate('github', { failureRedirect: '/login' }),
-    (req, res) => {
-        // Successful authentication
-        const user = req.user;
-        const token = jwt.sign(
-            { userId: user._id, username: user.username, role: user.role },
-            JWT_SECRET,
-            { expiresIn: '7d' }
-        );
+app.get('/auth/github/callback', async (req, res) => {
+    try {
+        const { code } = req.query;
+        if (!code) return res.redirect(`${CLIENT_URL}/login?error=no_code`);
 
-        // Redirect to client with token (simple approach) or use a success page
-        // For local dev, we can redirect to client URL with query param
-        res.redirect(`${CLIENT_URL}?token=${token}&username=${user.username}&userId=${user._id}&role=${user.role}&picture=${encodeURIComponent(user.picture)}`);
+        // 1. Exchange code for access token
+        const tokenResponse = await axios.post('https://github.com/login/oauth/access_token', {
+            client_id: GITHUB_CLIENT_ID,
+            client_secret: GITHUB_CLIENT_SECRET,
+            code
+        }, { headers: { Accept: 'application/json' } });
+
+        const accessToken = tokenResponse.data.access_token;
+        if (!accessToken) throw new Error("Failed to get access token");
+
+        // 2. Get User Info from GitHub
+        const userResponse = await axios.get('https://api.github.com/user', {
+            headers: { Authorization: `token ${accessToken}` }
+        });
+
+        const profile = userResponse.data;
+        let user = await User.findOne({ githubId: profile.id.toString() });
+
+        if (!user) {
+            user = new User({
+                username: profile.login || profile.name,
+                githubId: profile.id.toString(),
+                picture: profile.avatar_url,
+                role: 'student'
+            });
+            await user.save();
+        }
+
+        const token = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        res.redirect(`${CLIENT_URL}?token=${token}&username=${encodeURIComponent(user.username)}&userId=${user._id}&role=${user.role}&picture=${encodeURIComponent(user.picture || '')}`);
+    } catch (e) {
+        console.error("GitHub Auth Error:", e);
+        res.redirect(`${CLIENT_URL}/login?error=auth_failed`);
     }
-);
+});
 
 // 1. Create Session (Faculty Only)
 app.post('/lab/create-session', async (req, res) => {
