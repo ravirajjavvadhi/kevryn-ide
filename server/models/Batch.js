@@ -20,4 +20,7 @@ const BatchSchema = new mongoose.Schema({
     createdAt: { type: Date, default: Date.now }
 });
 
+// PERFORMANCE: Index for batch-by-course lookups
+BatchSchema.index({ courseId: 1 });
+
 module.exports = mongoose.model('Batch', BatchSchema);

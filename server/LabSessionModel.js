@@ -42,4 +42,9 @@ const LabSessionSchema = new mongoose.Schema({
     }]
 });
 
+// PERFORMANCE: Indexes for the most frequent queries
+LabSessionSchema.index({ isActive: 1, facultyId: 1 }); // Faculty active session lookup
+LabSessionSchema.index({ isActive: 1, allowedStudents: 1 }); // Student session check
+LabSessionSchema.index({ startTime: -1 }); // Sort by recent
+
 module.exports = mongoose.model('LabSession', LabSessionSchema);

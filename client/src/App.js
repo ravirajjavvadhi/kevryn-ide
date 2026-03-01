@@ -637,10 +637,7 @@ function App() {
         fetchFiles();
         safeEmit('join-chat', { username });
         api.get('/deploy/status').then(res => setDeployStatus(res.data)).catch(() => { });
-        // Step 4: IDE Health Monitoring - Check compiler availability on backend
-        api.get('/api/debug-env')
-            .then(res => console.log("[IDE HEALTH] Server Environment:", res.data.environment))
-            .catch(err => console.error("[IDE HEALTH] Failed to check server env"));
+        // Removed: /api/debug-env health check (unnecessary API call on every login)
 
         const handleReceiveMessage = (msg) => { setChatMessages(prev => [...prev, msg]); };
         s.on('receive-message', handleReceiveMessage);

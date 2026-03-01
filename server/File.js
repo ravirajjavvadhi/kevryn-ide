@@ -16,4 +16,9 @@ const FileSchema = new mongoose.Schema({
   lastActivity: { type: Date, default: Date.now }
 });
 
+// PERFORMANCE: Indexes for frequent queries
+FileSchema.index({ owner: 1, courseId: 1 }); // Main file list query
+FileSchema.index({ owner: 1, name: 1 });     // Duplicate check
+FileSchema.index({ parentId: 1 });            // Tree traversal
+
 module.exports = mongoose.model('File', FileSchema);
