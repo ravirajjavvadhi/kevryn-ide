@@ -229,8 +229,14 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
-// Redundant app.options removed to fix PathError crash. CORS middleware handles OPTIONS automatically.
-
+// --- CRITICAL DEBUG ROUTES (Top Level) ---
+app.get('/debug-ping', (req, res) => res.json({ status: 'online', time: new Date() }));
+app.get('/debug-auth-public', (req, res) => {
+    res.json({
+        authHeaderPresent: !!req.headers.authorization,
+        authHeader: req.headers.authorization ? req.headers.authorization.substring(0, 15) + '...' : 'None'
+    });
+});
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
 app.use((req, res, next) => {
@@ -2193,13 +2199,7 @@ app.post('/run-code', authenticate, async (req, res) => {
     }
 });
 
-app.get('/api/debug-auth', authenticate, (req, res) => {
-    res.json({
-        tokenUser: req.user,
-        serverTime: new Date(),
-        headers: req.headers.authorization ? 'Present' : 'Missing'
-    });
-});
+// Removed to move higher up
 app.get('/api/debug-env', authenticate, async (req, res) => {
     const results = {};
     const checks = [
