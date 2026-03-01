@@ -229,8 +229,7 @@ app.use(cors({
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin']
 }));
 
-// Pre-flight OPTIONS handling
-app.options('(.*)', cors());
+// Redundant app.options removed to fix PathError crash. CORS middleware handles OPTIONS automatically.
 
 
 // --- WEBCONTAINER SECURITY HEADERS (only for non-API routes) ---
