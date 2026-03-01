@@ -151,8 +151,7 @@ const flushHeartbeatQueue = async () => {
     }
 };
 
-// --- LISTEN EARLY (Railway 502 Fix) ---
-const server = http.createServer(app);
+// server instance already created at line 26
 
 // RAW HTTP LOGGER disabled in production - was causing I/O overhead on every request
 // Uncomment below for debugging only:
