@@ -231,6 +231,7 @@ app.use(cookieParser());
 
 // Keep the standard CORS middleware as a fallback/secondary layer
 const allowedOrigins = [
+    'https://kevryn.netlify.app',
     'https://kevryn-ide.netlify.app',
     'http://localhost:3000',
     'http://localhost:3001'
