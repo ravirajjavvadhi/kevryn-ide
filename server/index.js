@@ -1973,26 +1973,35 @@ app.get('/files', authenticate, async (req, res) => {
         const userId = req.user.userId;
         const username = req.user.username;
 
-        // CRITICAL FIX: Explicitly cast to ObjectId for reliable $or queries in Express 5 / Mongoose 8+
         const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 
+        // SUPER ROBUST QUERY: Account for string IDs, ObjectIDs, and various courseId states
         const query = {
-            $or: [
-                { owner: ownerId },
-                { sharedWith: username }
+            $and: [
+                {
+                    $or: [
+                        { owner: ownerId },
+                        { owner: userId }, // String fallback
+                        { sharedWith: username }
+                    ]
+                }
             ]
         };
 
         if (courseId) {
-            query.courseId = courseId;
+            query.$and.push({ courseId: courseId });
         } else {
-            // Match files where courseId is MISSING or NULL
-            query.$and = [
-                { $or: [{ courseId: { $exists: false } }, { courseId: null }] }
-            ];
+            // Match files where courseId is MISSING, NULL, or EMPTY STRING
+            query.$and.push({
+                $or: [
+                    { courseId: { $exists: false } },
+                    { courseId: null },
+                    { courseId: "" }
+                ]
+            });
         }
 
-        console.log(`[FILES] Querying for user: ${username} (${userId}), course: ${courseId || 'None'}`);
+        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query));
 
         // PERFORMANCE: .lean() returns plain JS objects (2-3x faster than Mongoose documents)
         // select() limits fields to only what the client needs
@@ -2184,6 +2193,13 @@ app.post('/run-code', authenticate, async (req, res) => {
     }
 });
 
+app.get('/api/debug-auth', authenticate, (req, res) => {
+    res.json({
+        tokenUser: req.user,
+        serverTime: new Date(),
+        headers: req.headers.authorization ? 'Present' : 'Missing'
+    });
+});
 app.get('/api/debug-env', authenticate, async (req, res) => {
     const results = {};
     const checks = [
