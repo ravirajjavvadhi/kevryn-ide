@@ -72,7 +72,7 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
 // Railway Fix: Prefer initialPort (from environment) over potential .env overrides
-const PORT = initialPort || process.env.PORT || 5000;
+// (Declared at top of file)
 
 // Initialize Google OAuth2 client (lazy - created on first auth attempt)
 let _googleClient = null;
