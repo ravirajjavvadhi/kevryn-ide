@@ -95,7 +95,7 @@ function App() {
     const [activeFileId, setActiveFileId] = useState(null);
     const [openFiles, setOpenFiles] = useState([]); // { _id, name, content }
     const [fileName, setFileName] = useState("");
-    const [fileData, setFileData] = useState({ _id: "root", name: "Project", type: "folder", children: [] });
+    const [fileData, setFileData] = useState({ name: 'Initializing Workspace...', type: 'folder', children: [] });
     const [activeMenu, setActiveMenu] = useState(null);
     const [activeRepo] = useState(""); // Track active authenticated repo name
     const [files, setFiles] = useState([]); // Flat list of files for path resolution
@@ -205,7 +205,10 @@ function App() {
         }
     }, [wcReady, files, wcBridgeRef]);
 
-    const api = useMemo(() => axios.create({ baseURL: SERVER_URL, headers: { Authorization: token } }), [token]);
+    const api = useMemo(() => axios.create({
+        baseURL: SERVER_URL,
+        headers: { Authorization: token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '' }
+    }), [token]);
 
     const safeEmit = useCallback((event, data, callback) => {
         if (socketRef.current) {
@@ -1999,7 +2002,7 @@ function App() {
                                                                 const isServerLang = ['py', 'c', 'cpp', 'java'].includes(activeExt);
 
                                                                 // --- FORCE REMOUNT FIX ---
-                                                                // We use a combined key of termId + mode. 
+                                                                // We use a combined key of termId + mode.
                                                                 // When isServerLang changes, the key changes, forcing Terminal to remount.
                                                                 const terminalMode = isServerLang ? 'server' : 'local';
                                                                 const terminalKey = `${t.id}-${terminalMode}`;
@@ -2159,6 +2162,8 @@ function App() {
                                     </div>
                                     <span style={{ opacity: 0.3 }}>|</span>
                                     <span style={{ fontSize: '10px', opacity: 0.8 }}>Personal Workspace</span>
+                                    <span style={{ opacity: 0.3 }}>|</span>
+                                    <span style={{ fontSize: '10px', opacity: 0.6 }}>Server: {SERVER_URL.replace('https://', '')}</span>
                                     {activeSessionId && (
                                         <>
                                             <span style={{ opacity: 0.3 }}>|</span>

@@ -68,6 +68,12 @@ const GITHUB_CLIENT_ID = process.env.GITHUB_CLIENT_ID;
 const GITHUB_CLIENT_SECRET = process.env.GITHUB_CLIENT_SECRET;
 const GITHUB_CALLBACK_URL = process.env.GITHUB_CALLBACK_URL || 'http://localhost:5000/auth/github/callback';
 const JWT_SECRET = process.env.JWT_SECRET || 'my_super_secret_key_123';
+
+// Helper to strip Bearer prefix
+const getCleanToken = (header) => {
+    if (!header) return null;
+    return header.startsWith('Bearer ') ? header.slice(7) : header;
+};
 const SESSION_SECRET = process.env.SESSION_SECRET || 'kevryn_session_secret';
 const CLIENT_URL = process.env.CLIENT_URL || 'http://localhost:3000';
 const CORS_ORIGIN = process.env.CORS_ORIGIN || 'http://localhost:3000';
@@ -230,11 +236,18 @@ app.use(cors({
 }));
 
 // --- CRITICAL DEBUG ROUTES (Top Level) ---
-app.get('/debug-ping', (req, res) => res.json({ status: 'online', time: new Date() }));
+app.get('/debug-ping', (req, res) => res.json({
+    status: 'online',
+    time: new Date(),
+    env: process.env.NODE_ENV,
+    db: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
+}));
 app.get('/debug-auth-public', (req, res) => {
+    const rawHeader = req.headers.authorization || 'None';
     res.json({
         authHeaderPresent: !!req.headers.authorization,
-        authHeader: req.headers.authorization ? req.headers.authorization.substring(0, 15) + '...' : 'None'
+        authHeaderStart: rawHeader.substring(0, 20) + '...',
+        cleanTokenStart: getCleanToken(rawHeader)?.substring(0, 20) + '...'
     });
 });
 
