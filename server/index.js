@@ -25,9 +25,7 @@ const PORT = initialPort || process.env.PORT || 5000;
 const app = express();
 const server = http.createServer(app);
 
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 [BOOT] Server online on port ${PORT}`);
-});
+// server.listen(PORT, '0.0.0.0', ...); // MOVED TO BOTTOM
 
 process.on('uncaughtException', (err) => {
     console.error('FATAL: Uncaught Exception:', err);
@@ -211,6 +209,11 @@ const aiLimiter = rateLimit({
     message: { error: 'AI rate limit exceeded. Please wait a moment.' }
 });
 
+// --- APPLY RATE LIMITERS EARLY ---
+app.use('/auth', authLimiter);
+app.use('/ai', aiLimiter);
+
+
 // --- CORS & SECURITY MIDDLEWARE ---
 // Explicitly handling CORS for Railway & Netlify production
 const allowedOrigins = [
@@ -307,29 +310,6 @@ app.post('/auth/register', async (req, res) => {
     }
 });
 
-app.post('/auth/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
-        const user = await User.findOne({ username: username });
-        if (!user) return res.status(400).json({ error: "User not found" });
-
-        const match = await bcrypt.compare(password, user.password);
-        if (!match) return res.status(400).json({ error: "Invalid credentials" });
-
-        // ADMIN OVERRIDE: ravirajjavvadi force admin
-        if (user.username === 'ravirajjavvadi') {
-            user.role = 'admin';
-        }
-
-        const token = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
-
-        res.json({ token, user: { _id: user._id, username: user.username, role: user.role, picture: user.picture } });
-    } catch (e) {
-        console.error("Login Error:", e);
-        res.status(500).json({ error: e.message });
-    }
-});
-
 app.get('/auth/user', authenticate, async (req, res) => {
     try {
         const user = await User.findById(req.user.userId).select('-password');
@@ -347,6 +327,55 @@ app.use('/api/issues', issuesRouter); // NEW: Issue Reporting
 app.use('/ai', aiRouter); // Mount AI routes
 
 // --- OAUTH ROUTES ---
+
+// FIX: Move /files to top to ensure it's registered before server starts listening or broad routers match
+app.get('/files', authenticate, async (req, res) => {
+    try {
+        const { courseId } = req.query;
+        const userId = req.user.userId;
+        const username = req.user.username;
+
+        const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
+
+        // SUPER ROBUST QUERY: Account for string IDs, ObjectIDs, and various courseId states
+        const query = {
+            $and: [
+                {
+                    $or: [
+                        { owner: ownerId },
+                        { owner: userId }, // String fallback
+                        { sharedWith: username }
+                    ]
+                }
+            ]
+        };
+
+        if (courseId) {
+            query.$and.push({ courseId: courseId });
+        } else {
+            // Match files where courseId is MISSING, NULL, or EMPTY STRING
+            query.$and.push({
+                $or: [
+                    { courseId: { $exists: false } },
+                    { courseId: null },
+                    { courseId: "" }
+                ]
+            });
+        }
+
+        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query, null, 2));
+
+        const files = await File.find(query)
+            .select('name type parentId content owner sharedWith courseId lastActivity')
+            .lean();
+
+        console.log(`[FILES] Found ${files.length} files for ${username}`);
+        res.json(files);
+    } catch (err) {
+        console.error("[FILES ERROR]", err);
+        res.status(500).json({ error: "Error fetching files" });
+    }
+});
 
 // --- MODERN DIRECT OAUTH ROUTES ---
 
@@ -937,11 +966,7 @@ app.use('/deployed/:projectId', (req, res, next) => {
     })(req, res, next);
 });
 
-// (Apply rate limiters to specific routes)
-app.use('/login', authLimiter);
-app.use('/register', authLimiter);
-app.use('/auth', authLimiter);
-app.use('/ai', aiLimiter);
+// (Rate limiters moved to top)
 
 const baseUserDir = path.join(__dirname, 'user_projects');
 const baseSitesDir = path.join(__dirname, 'public_sites');
@@ -1435,77 +1460,9 @@ app.post('/project/upload', authenticate, async (req, res) => {
     } catch (err) { res.status(500).json({ error: "Upload failed" }); }
 });
 
-app.post('/register', async (req, res) => {
-    try {
-        const { username, password, role } = req.body;
-        if (!username || !password) return res.status(400).json({ error: "Username and password required" });
-        if (password.length < 6) return res.status(400).json({ error: "Password must be at least 6 characters" });
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const userRole = (role === 'faculty') ? 'faculty' : 'student'; // Validate role
-        const newUser = new User({ username, password: hashedPassword, role: userRole });
-        await newUser.save();
-        res.status(201).json({ message: "User created", role: userRole });
-    } catch (err) { res.status(400).json({ error: "User exists" }); }
-});
+// --- AUTH ROUTES CLEANUP: Redundant and broken passport routes removed ---
+// Logic moved to top level or replaced by direct API calls at lines 285-450.
 
-app.post('/auth/google', async (req, res) => {
-    const { token } = req.body;
-    try {
-        const ticket = await getGoogleClient().verifyIdToken({
-            idToken: token,
-            audience: GOOGLE_CLIENT_ID,
-        });
-        const { name, email, picture, sub: googleId } = ticket.getPayload();
-
-        let user = await User.findOne({ email });
-        if (!user) {
-            // Uniqueness Check: Ensure username is unique for new Google users
-            let uniqueUsername = name;
-            let counter = 1;
-            while (await User.findOne({ username: uniqueUsername })) {
-                uniqueUsername = `${name}${counter}`;
-                counter++;
-            }
-
-            // Create new Google user
-            user = new User({
-                username: uniqueUsername,
-                email,
-                picture,
-                googleId,
-                password: null // No password for Google users
-            });
-            await user.save();
-        } else {
-            // Update picture if changed
-            if (user.picture !== picture) {
-                user.picture = picture;
-                await user.save();
-            }
-        }
-
-        const jwtToken = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-        res.json({ token: jwtToken, username: user.username, userId: user._id, picture: user.picture, role: user.role });
-    } catch (err) {
-        console.error("Google Auth Error:", err);
-        res.status(401).json({ error: "Google authentication failed" });
-    }
-});
-
-// --- GITHUB AUTH ROUTES ---
-app.get('/auth/github',
-    passport.authenticate('github', { scope: ['user:email', 'repo'] }));
-
-app.get('/auth/github/callback',
-    passport.authenticate('github', { failureRedirect: '/login' }),
-    function (req, res) {
-        // Successful authentication
-        const user = req.user;
-        const token = jwt.sign({ userId: user._id, username: user.username }, JWT_SECRET, { expiresIn: '1d' });
-
-        // Redirect to frontend with token
-        res.redirect(`${CLIENT_URL}?token=${token}&username=${user.username}&userId=${user._id}&picture=${encodeURIComponent(user.picture || "")}`);
-    });
 
 // --- GIT ROUTES ---
 const simpleGit = require('simple-git');
@@ -1935,7 +1892,7 @@ app.delete('/snippets/:id', authenticate, async (req, res) => {
     }
 });
 
-app.post('/login', async (req, res) => {
+app.post('/auth/login', async (req, res) => {
     try {
         const { username, password } = req.body;
         if (!username || !password) return res.status(400).json({ error: "Username and password required" });
@@ -1986,56 +1943,7 @@ app.post('/files', authenticate, async (req, res) => {
         res.status(500).json({ error: "Failed to create file" });
     }
 });
-app.get('/files', authenticate, async (req, res) => {
-    try {
-        const { courseId } = req.query;
-        const userId = req.user.userId;
-        const username = req.user.username;
-
-        const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
-
-        // SUPER ROBUST QUERY: Account for string IDs, ObjectIDs, and various courseId states
-        const query = {
-            $and: [
-                {
-                    $or: [
-                        { owner: ownerId },
-                        { owner: userId }, // String fallback
-                        { sharedWith: username }
-                    ]
-                }
-            ]
-        };
-
-        if (courseId) {
-            query.$and.push({ courseId: courseId });
-        } else {
-            // Match files where courseId is MISSING, NULL, or EMPTY STRING
-            query.$and.push({
-                $or: [
-                    { courseId: { $exists: false } },
-                    { courseId: null },
-                    { courseId: "" }
-                ]
-            });
-        }
-
-        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query, null, 2));
-
-        // PERFORMANCE: .lean() returns plain JS objects (2-3x faster than Mongoose documents)
-        // select() limits fields to only what the client needs
-        const files = await File.find(query)
-            .select('name type parentId content owner sharedWith courseId lastActivity')
-            .lean();
-
-        console.log(`[FILES] Found ${files.length} files for ${username}`);
-        if (files.length > 0) console.log(`[FILES] Sample file owner: ${files[0].owner} (${typeof files[0].owner})`);
-
-        res.json(files);
-    } catch (err) {
-        res.status(500).json({ error: "Error" });
-    }
-});
+// --- FILE LIST (MOVED TO TOP) ---
 app.get('/files/:id', authenticate, async (req, res) => {
     try {
         const file = await File.findOne({ _id: req.params.id, $or: [{ owner: req.user.userId }, { sharedWith: req.user.username }] });
@@ -2311,15 +2219,7 @@ io.on('connection', (socket) => {
     socket.on('join-chat', async () => { const m = await Message.find().limit(50); socket.emit('previous-messages', m); });
 
     // --- VAYU LAB MONITOR: API ROUTES ---
-    app.get('/lab/session-activity-log/:sessionId', authenticate, async (req, res) => {
-        try {
-            const session = await LabSession.findById(req.params.sessionId).select('activityLog');
-            if (!session) return res.status(404).json({ error: 'Session not found' });
-            res.json(session.activityLog);
-        } catch (e) {
-            res.status(500).json({ error: e.message });
-        }
-    });
+    // (Moved to top level)
 
     // --- VAYU LAB MONITOR: Socket Events ---
 
@@ -2925,6 +2825,24 @@ app.use((req, res) => {
         method: req.method,
         suggestion: "Check if the API route is correctly registered in index.js"
     });
+});
+
+// --- MOVED API ROUTES ---
+app.get('/lab/session-activity-log/:sessionId', authenticate, async (req, res) => {
+    try {
+        const session = await LabSession.findById(req.params.sessionId).select('activityLog');
+        if (!session) return res.status(404).json({ error: 'Session not found' });
+        res.json(session.activityLog);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
+// ============================================================
+// FINAL BOOT: Start listening AFTER all routes are registered
+// ============================================================
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 [BOOT] Server online on port ${PORT}`);
 });
 
 process.on('SIGTERM', () => {
