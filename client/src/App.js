@@ -2309,7 +2309,7 @@ const Login = ({
                         fontWeight: !isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
                     }}
                 >
-                    Student
+                    Personal
                 </button>
                 <button
                     onClick={() => setIsFacultyLogin(true)}
@@ -2320,7 +2320,7 @@ const Login = ({
                         fontWeight: isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
                     }}
                 >
-                    Management
+                    Faculty
                 </button>
             </div>
 
@@ -2352,10 +2352,10 @@ const Login = ({
                     )}
                 </div>
                 <h2 style={{ color: '#fff', marginBottom: '10px', textAlign: 'center', fontSize: '28px', fontWeight: '900', letterSpacing: '-0.5px', transform: 'translateZ(70px)' }}>
-                    {isFacultyLogin ? 'Kevryn Faculty Portal' : 'Kevryn Student Hub'}
+                    {isFacultyLogin ? 'Kevryn Faculty Portal' : 'Welcome to Kevryn'}
                 </h2>
                 <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: '30px', fontSize: '14px', transform: 'translateZ(40px)' }}>
-                    {isFacultyLogin ? 'Secure access for academic management.' : 'The next generation Cloud IDE for students.'}
+                    {isFacultyLogin ? 'Secure access for educators & administrators.' : 'Your personal cloud workspace.'}
                 </p>
             </motion.div>
 
