@@ -337,33 +337,41 @@ app.get('/files', authenticate, async (req, res) => {
 
         const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 
-        // SUPER ROBUST QUERY: Account for string IDs, ObjectIDs, and various courseId states
-        const query = {
-            $and: [
-                {
-                    $or: [
-                        { owner: ownerId },
-                        { owner: userId }, // String fallback
-                        { sharedWith: username }
-                    ]
-                }
+        // Build the base ownership filter
+        const ownerFilter = {
+            $or: [
+                { owner: ownerId },
+                { owner: userId }, // String fallback
+                { sharedWith: username }
             ]
         };
 
-        if (courseId) {
-            query.$and.push({ courseId: courseId });
-        } else {
-            // Match files where courseId is MISSING, NULL, or EMPTY STRING
-            query.$and.push({
-                $or: [
-                    { courseId: { $exists: false } },
-                    { courseId: null },
-                    { courseId: "" }
+        let query;
+
+        if (courseId && mongoose.Types.ObjectId.isValid(courseId)) {
+            // Lab file: filter by the specific courseId
+            query = {
+                $and: [
+                    ownerFilter,
+                    { courseId: new mongoose.Types.ObjectId(courseId) }
                 ]
-            });
+            };
+        } else {
+            // Personal workspace files: courseId must be absent/null
+            query = {
+                $and: [
+                    ownerFilter,
+                    {
+                        $or: [
+                            { courseId: { $exists: false } },
+                            { courseId: null }
+                        ]
+                    }
+                ]
+            };
         }
 
-        console.log(`[FILES] STABILIZED QUERY for ${username} (${userId}):`, JSON.stringify(query, null, 2));
+        console.log(`[FILES] Query for ${username} (${userId}):`, JSON.stringify(query, null, 2));
 
         const files = await File.find(query)
             .select('name type parentId content owner sharedWith courseId lastActivity')
@@ -372,8 +380,8 @@ app.get('/files', authenticate, async (req, res) => {
         console.log(`[FILES] Found ${files.length} files for ${username}`);
         res.json(files);
     } catch (err) {
-        console.error("[FILES ERROR]", err);
-        res.status(500).json({ error: "Error fetching files" });
+        console.error("[FILES ERROR]", err.message, err.stack);
+        res.status(500).json({ error: "Error fetching files", detail: err.message });
     }
 });
 
