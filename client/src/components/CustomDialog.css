@@ -1,0 +1,216 @@
+/* ========================================
+   KEVRYN CUSTOM DIALOG
+   ======================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Inter:wght@400;500;600&display=swap');
+
+/* Overlay */
+.cdialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99998;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: cdOverlayIn 0.25s ease;
+    outline: none;
+}
+
+@keyframes cdOverlayIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* Dialog box */
+.cdialog-box {
+    position: relative;
+    width: min(420px, 90vw);
+    background: linear-gradient(145deg, #0f0f14 0%, #18181f 50%, #0f0f14 100%);
+    border: 1px solid rgba(255, 185, 0, 0.25);
+    border-radius: 16px;
+    box-shadow:
+        0 0 0 1px rgba(255, 185, 0, 0.08),
+        0 24px 64px rgba(0, 0, 0, 0.8),
+        0 0 60px rgba(255, 185, 0, 0.06) inset;
+    overflow: hidden;
+    animation: cdBoxIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes cdBoxIn {
+    from {
+        transform: scale(0.88) translateY(16px);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1) translateY(0);
+        opacity: 1;
+    }
+}
+
+/* Top glow bar */
+.cdialog-glow-bar {
+    height: 2px;
+    background: linear-gradient(90deg, transparent, #ffd700, #ff9900, #ffd700, transparent);
+    width: 100%;
+}
+
+/* Corner accents */
+.cdialog-corner-tl,
+.cdialog-corner-br {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border-color: rgba(255, 185, 0, 0.4);
+    border-style: solid;
+    pointer-events: none;
+}
+
+.cdialog-corner-tl {
+    top: 6px;
+    left: 6px;
+    border-width: 1.5px 0 0 1.5px;
+    border-radius: 4px 0 0 0;
+}
+
+.cdialog-corner-br {
+    bottom: 6px;
+    right: 6px;
+    border-width: 0 1.5px 1.5px 0;
+    border-radius: 0 0 4px 0;
+}
+
+/* Header */
+.cdialog-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 20px 24px 12px;
+}
+
+.cdialog-icon {
+    font-size: 20px;
+    line-height: 1;
+    filter: drop-shadow(0 0 6px rgba(255, 185, 0, 0.5));
+}
+
+.cdialog-title {
+    font-family: 'Orbitron', sans-serif;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, #ffd700, #ff9900);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Body */
+.cdialog-body {
+    padding: 4px 24px 20px;
+}
+
+.cdialog-message {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    line-height: 1.65;
+    color: rgba(255, 255, 255, 0.82);
+    margin: 0 0 14px;
+    white-space: pre-wrap;
+}
+
+/* Prompt input */
+.cdialog-input {
+    width: 100%;
+    box-sizing: border-box;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 185, 0, 0.25);
+    border-radius: 10px;
+    color: #fff;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    padding: 10px 14px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.cdialog-input:focus {
+    border-color: rgba(255, 185, 0, 0.6);
+    box-shadow: 0 0 0 3px rgba(255, 185, 0, 0.1);
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.cdialog-input::placeholder {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+/* Actions */
+.cdialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    padding: 0 24px 22px;
+}
+
+/* Buttons */
+.cdialog-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 9px 22px;
+    border-radius: 9px;
+    border: none;
+    cursor: pointer;
+    letter-spacing: 0.5px;
+    transition: all 0.18s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.cdialog-btn::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0);
+    transition: background 0.15s;
+}
+
+.cdialog-btn:hover::after {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.cdialog-btn-cancel {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.cdialog-btn-cancel:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+    color: rgba(255, 255, 255, 0.85);
+    transform: translateY(-1px);
+}
+
+.cdialog-btn-confirm {
+    background: linear-gradient(135deg, #c8860a 0%, #e8a020 40%, #ffd700 100%);
+    color: #0a0600;
+    box-shadow: 0 4px 16px rgba(255, 185, 0, 0.35);
+}
+
+.cdialog-btn-confirm:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px rgba(255, 185, 0, 0.55);
+    filter: brightness(1.1);
+}
+
+.cdialog-btn-confirm:active {
+    transform: translateY(0);
+}

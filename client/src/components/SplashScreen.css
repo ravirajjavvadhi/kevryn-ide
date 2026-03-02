@@ -1,0 +1,332 @@
+/* ========================================
+   KEVRYN SPLASH SCREEN
+   ======================================== */
+
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@700;900&family=Inter:wght@300;400&display=swap');
+
+.splash-root {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    animation: splashFadeIn 0.5s ease;
+}
+
+.splash-root.splash-fadeout {
+    animation: splashFadeOut 0.7s ease forwards;
+}
+
+@keyframes splashFadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes splashFadeOut {
+    from {
+        opacity: 1;
+    }
+
+    to {
+        opacity: 0;
+    }
+}
+
+/* ---- Animated grid ---- */
+.splash-grid {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 200, 0, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 200, 0, 0.04) 1px, transparent 1px);
+    background-size: 60px 60px;
+    animation: gridMove 6s linear infinite;
+}
+
+@keyframes gridMove {
+    from {
+        transform: translateY(0);
+    }
+
+    to {
+        transform: translateY(60px);
+    }
+}
+
+/* ---- Glowing orbs ---- */
+.splash-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.35;
+    animation: orbFloat 5s ease-in-out infinite alternate;
+}
+
+.splash-orb-1 {
+    width: 400px;
+    height: 400px;
+    background: radial-gradient(circle, #d4a017 0%, transparent 70%);
+    top: -100px;
+    left: -100px;
+}
+
+.splash-orb-2 {
+    width: 500px;
+    height: 500px;
+    background: radial-gradient(circle, #1a0a00 0%, #d4a017 60%, transparent 100%);
+    bottom: -150px;
+    right: -150px;
+    animation-delay: 1.5s;
+}
+
+.splash-orb-3 {
+    width: 300px;
+    height: 300px;
+    background: radial-gradient(circle, #7c4a00 0%, transparent 70%);
+    top: 50%;
+    left: 15%;
+    animation-delay: 0.8s;
+}
+
+@keyframes orbFloat {
+    from {
+        transform: scale(1) translateY(0);
+    }
+
+    to {
+        transform: scale(1.15) translateY(-20px);
+    }
+}
+
+/* ---- Central content ---- */
+.splash-content {
+    position: relative;
+    text-align: center;
+    z-index: 2;
+    animation: contentRise 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+}
+
+@keyframes contentRise {
+    from {
+        transform: translateY(40px);
+        opacity: 0;
+    }
+
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+/* ---- Brand name ---- */
+.splash-brand {
+    font-family: 'Orbitron', sans-serif;
+    font-size: clamp(52px, 10vw, 96px);
+    font-weight: 900;
+    letter-spacing: 14px;
+    line-height: 1;
+    display: flex;
+    gap: 2px;
+}
+
+.splash-letter {
+    color: #e8e8e8;
+    text-shadow:
+        0 0 20px rgba(255, 255, 255, 0.1),
+        0 2px 4px rgba(0, 0, 0, 0.8);
+    animation: letterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.splash-letter:nth-child(1) {
+    animation-delay: 0.4s;
+}
+
+.splash-letter:nth-child(2) {
+    animation-delay: 0.5s;
+}
+
+.splash-letter:nth-child(3) {
+    animation-delay: 0.6s;
+}
+
+.splash-letter:nth-child(4) {
+    animation-delay: 0.7s;
+}
+
+.splash-letter:nth-child(5) {
+    animation-delay: 0.8s;
+}
+
+.splash-letter:nth-child(6) {
+    animation-delay: 0.9s;
+}
+
+.splash-letter-gold {
+    background: linear-gradient(135deg, #ffd700 0%, #ff9900 40%, #ffd700 70%, #fff8c0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none;
+    filter: drop-shadow(0 0 18px rgba(255, 185, 0, 0.7));
+    animation: letterReveal 0.6s cubic-bezier(0.16, 1, 0.3, 1) both,
+        goldPulse 2s ease-in-out 1.5s infinite alternate;
+}
+
+.splash-letter-gold:first-child {
+    animation-delay: 0.4s, 1.5s;
+}
+
+.splash-letter-gold:nth-child(4) {
+    animation-delay: 0.7s, 1.7s;
+}
+
+@keyframes letterReveal {
+    from {
+        opacity: 0;
+        transform: translateY(20px) rotateX(40deg);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) rotateX(0deg);
+    }
+}
+
+@keyframes goldPulse {
+    from {
+        filter: drop-shadow(0 0 10px rgba(255, 185, 0, 0.5));
+    }
+
+    to {
+        filter: drop-shadow(0 0 28px rgba(255, 185, 0, 1));
+    }
+}
+
+/* ---- Animated underline ---- */
+.splash-line {
+    height: 2px;
+    margin: 20px auto 0;
+    background: linear-gradient(90deg, transparent, #ffd700, #ff9900, #ffd700, transparent);
+    border-radius: 2px;
+    animation: lineExpand 0.8s cubic-bezier(0.16, 1, 0.3, 1) 1.1s both;
+}
+
+@keyframes lineExpand {
+    from {
+        width: 0;
+        opacity: 0;
+    }
+
+    to {
+        width: 80%;
+        opacity: 1;
+    }
+}
+
+/* ---- Slogan ---- */
+.splash-slogan {
+    font-family: 'Inter', sans-serif;
+    font-size: clamp(13px, 2.5vw, 17px);
+    font-weight: 300;
+    letter-spacing: 3px;
+    color: rgba(255, 255, 255, 0.55);
+    text-transform: uppercase;
+    margin: 20px 0 36px;
+    animation: sloganFade 1s ease 1.4s both;
+}
+
+@keyframes sloganFade {
+    from {
+        opacity: 0;
+        transform: translateY(8px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+/* ---- Loading dots ---- */
+.splash-dots {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    animation: sloganFade 0.5s ease 1.8s both;
+}
+
+.splash-dots span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #ffd700;
+    animation: dotBounce 1.2s ease-in-out infinite;
+}
+
+.splash-dots span:nth-child(2) {
+    animation-delay: 0.2s;
+    background: #ff9900;
+}
+
+.splash-dots span:nth-child(3) {
+    animation-delay: 0.4s;
+    background: #e8e8e8;
+}
+
+@keyframes dotBounce {
+
+    0%,
+    80%,
+    100% {
+        transform: scale(0.8);
+        opacity: 0.5;
+    }
+
+    40% {
+        transform: scale(1.4);
+        opacity: 1;
+    }
+}
+
+/* ---- Footer ---- */
+.splash-footer {
+    position: absolute;
+    bottom: 28px;
+    font-family: 'Orbitron', sans-serif;
+    font-size: 11px;
+    letter-spacing: 5px;
+    color: rgba(255, 255, 255, 0.25);
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    animation: sloganFade 1s ease 2s both;
+}
+
+.splash-footer-k {
+    color: #ffd700;
+    font-weight: 900;
+}
+
+.splash-footer-text {
+    color: rgba(255, 255, 255, 0.3);
+}
+
+.splash-version {
+    margin-left: 12px;
+    background: rgba(255, 200, 0, 0.12);
+    border: 1px solid rgba(255, 200, 0, 0.2);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 9px;
+    color: #ffd700;
+    letter-spacing: 1px;
+}

@@ -25,7 +25,8 @@ import TimelinePanel from './components/TimelinePanel';
 import { WebContainer } from '@webcontainer/api';
 import { WebContainerBridge } from './services/WebContainerBridge';
 import LabMode from './components/LabMode';
-
+import SplashScreen from './components/SplashScreen';
+import CustomDialog from './components/CustomDialog';
 
 import FacultyHub from './components/FacultyHub'; // NEW: Unified Hub
 import StudentAssignmentView from './components/StudentAssignmentView'; // NEW: Student Assignments
@@ -58,6 +59,22 @@ function App() {
     const [isAppLoading, setIsAppLoading] = useState(() => !!localStorage.getItem('token')); // Load only if token exists
     const [isFacultyLogin, setIsFacultyLogin] = useState(false); // NEW: Faculty Toggle
     const [isLogin, setIsLogin] = useState(true);
+
+    // --- SPLASH SCREEN ---
+    const [showSplash, setShowSplash] = useState(() => !localStorage.getItem('token')); // Only show on first visit
+
+    // --- CUSTOM DIALOG STATE ---
+    const [dialog, setDialog] = useState(null);
+    // helper: showDialog({ type, title, message, defaultValue }) => Promise<value>
+    const showDialog = useCallback((opts) => {
+        return new Promise((resolve) => {
+            setDialog({
+                ...opts,
+                onConfirm: (val) => { setDialog(null); resolve(val ?? true); },
+                onCancel: () => { setDialog(null); resolve(false); }
+            });
+        });
+    }, []);
 
     // Ensure loading screen turns off if no token
     useEffect(() => {
@@ -1403,19 +1420,19 @@ function App() {
                 // --- STRICT ROLE VALIDATION ---
                 // Admins can login via Faculty Portal
                 if (isFacultyLogin && role !== 'faculty' && role !== 'admin') {
-                    alert("Access Denied: You are trying to log in as Faculty, but this account is a Student. Please use the Student Login.");
+                    showDialog({ type: 'alert', title: 'Access Denied', message: 'You are logging in as Faculty, but this account is a Student. Please use the Student Login.' });
                     return;
                 }
                 if (!isFacultyLogin && role !== 'student') {
-                    alert("Access Denied: You are trying to log in as Student, but this account is Faculty/Admin. Please use the Management Login.");
+                    showDialog({ type: 'alert', title: 'Access Denied', message: 'You are logging in as Student, but this account is Faculty/Admin. Please use the Management Login.' });
                     return;
                 }
 
                 persistAuth(r.data);
                 setIsAppLoading(false);
 
-            } else { alert("Registered! Please Log In."); setIsLogin(true); }
-        } catch (e) { alert("Auth Failed: " + (e.response?.data?.error || e.message)); }
+            } else { showDialog({ type: 'alert', title: 'Success', message: 'Registered! Please Log In.' }); setIsLogin(true); }
+        } catch (e) { showDialog({ type: 'alert', title: 'Auth Failed', message: e.response?.data?.error || e.message }); }
     };
 
     // Google Login Handler
@@ -1429,12 +1446,12 @@ function App() {
             // --- STRICT ROLE VALIDATION FOR GOOGLE LOGIN ---
             // If they are on Faculty Login screen, they must be Faculty or Admin
             if (isFacultyLogin && userRole !== 'faculty' && userRole !== 'admin') {
-                alert("Access Denied: This Google account is registered as a Student. Please switch to Student Login.");
+                showDialog({ type: 'alert', title: 'Access Denied', message: 'This Google account is a Student. Please switch to Student Login.' });
                 return;
             }
             // If they are on Student Login screen, they must be Student
             if (!isFacultyLogin && userRole !== 'student') {
-                alert("Access Denied: This Google account is Faculty/Admin. Please switch to Management Login.");
+                showDialog({ type: 'alert', title: 'Access Denied', message: 'This Google account is Faculty/Admin. Please switch to Management Login.' });
                 return;
             }
 
@@ -1443,7 +1460,7 @@ function App() {
 
         } catch (err) {
             console.error("Google Login Failed", err);
-            alert("Google Login Failed");
+            showDialog({ type: 'alert', title: 'Login Error', message: 'Google Login Failed. Please try again.' });
         }
     };
 
@@ -1455,9 +1472,9 @@ function App() {
         try {
             const res = await axios.get(testUrl);
             const duration = Date.now() - start;
-            alert(`✅ Connection Successful!\n\nTarget: ${SERVER_URL}\nResponse: ${res.data}\nLatency: ${duration}ms\n\nIf you see white screen after this, it might be a local cache issue.`);
+            showDialog({ type: 'alert', title: '✅ Connection OK', message: `Target: ${SERVER_URL}\nResponse: ${res.data}\nLatency: ${duration}ms` });
         } catch (err) {
-            alert(`❌ Connection Failed\n\nTarget: ${testUrl}\nError: ${err.message}\n\nThis confirms the backend is either down or blocking this origin (${window.location.origin}).`);
+            showDialog({ type: 'alert', title: '❌ Connection Failed', message: `Target: ${testUrl}\nError: ${err.message}` });
         }
     };
 
@@ -1511,6 +1528,21 @@ function App() {
     // 4. MAIN IDE OR AUTH SCREEN
     return (
         <div className="app-root" onMouseMove={handleGlobalMouseMove} style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+            {/* === SPLASH SCREEN === */}
+            {showSplash && <SplashScreen onDone={() => setShowSplash(false)} />}
+
+            {/* === CUSTOM DIALOG === */}
+            {dialog && (
+                <CustomDialog
+                    type={dialog.type}
+                    title={dialog.title}
+                    message={dialog.message}
+                    defaultValue={dialog.defaultValue}
+                    onConfirm={dialog.onConfirm}
+                    onCancel={dialog.onCancel}
+                />
+            )}
+
             <AntigravityBackground />
 
             {token && userRole === 'student' && activeSessionId && !isLabOpen && (
@@ -1560,8 +1592,8 @@ function App() {
                     />
                 ) : (
                     <>
-                        <CloneModal isOpen={isCloneModalOpen} onClose={() => setIsCloneModalOpen(false)} onCloneSuccess={() => { alert("Repository Cloned! Refreshing file tree..."); fetchFiles(); }} token={token} />
-                        <SwitchRepoModal isOpen={isSwitchRepoModalOpen} onClose={() => setIsSwitchRepoModalOpen(false)} onSwitch={(repoName) => { alert("Switched to " + repoName); }} token={token} />
+                        <CloneModal isOpen={isCloneModalOpen} onClose={() => setIsCloneModalOpen(false)} onCloneSuccess={() => { showDialog({ type: 'alert', title: 'Cloned!', message: 'Repository cloned. Refreshing file tree...' }); fetchFiles(); }} token={token} />
+                        <SwitchRepoModal isOpen={isSwitchRepoModalOpen} onClose={() => setIsSwitchRepoModalOpen(false)} onSwitch={(repoName) => { showDialog({ type: 'alert', title: 'Switched', message: `Now working on: ${repoName}` }); }} token={token} />
 
                         <div className="ide-container" style={{ position: 'relative', zIndex: 10 }}>
                             <div className="menubar">
@@ -1677,7 +1709,7 @@ function App() {
                                         <div className="dropdown-menu">
                                             <div className="dropdown-option" onClick={() => window.open('https://code.visualstudio.com/docs', '_blank')}>Documentation</div>
                                             <div className="dropdown-separator"></div>
-                                            <div className="dropdown-option" onClick={() => alert('Kevryn IDE v1.0\nA Cloud IDE built with React & Node.js')}>About</div>
+                                            <div className="dropdown-option" onClick={() => showDialog({ type: 'alert', title: 'Kevryn IDE', message: 'Kevryn IDE v2.0\nA premium Cloud IDE built with React & Node.js' })}>About</div>
                                         </div>
                                     )}
                                 </div>
@@ -1731,9 +1763,9 @@ function App() {
                                                 if (fname && pendingTime.current[fname] > 0) {
                                                     saveLabReport(fname, code, pendingTime.current[fname], 'submitted');
                                                     pendingTime.current[fname] = 0;
-                                                    alert("Lab Report Submitted!");
+                                                    showDialog({ type: 'alert', title: '✅ Submitted', message: 'Lab Report submitted successfully!' });
                                                 } else {
-                                                    alert("Nothing new to submit.");
+                                                    showDialog({ type: 'alert', title: 'Nothing to Submit', message: 'No new changes to submit.' });
                                                 }
                                             }} style={{ background: '#10b981', border: 'none', borderRadius: '4px', color: '#fff', padding: '2px 8px', cursor: 'pointer' }}>Submit</button>
                                         </div>
@@ -2177,7 +2209,7 @@ function App() {
                                         <span>UTF-8</span>
                                     </div>
                                     <button
-                                        onClick={() => { if (window.confirm("Are you sure you want to sign out?")) handleLogout(); }}
+                                        onClick={async () => { const ok = await showDialog({ type: 'confirm', title: 'Sign Out', message: 'Are you sure you want to sign out?' }); if (ok) handleLogout(); }}
                                         style={{
                                             background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)',
                                             padding: '1px 8px', borderRadius: '4px', cursor: 'pointer',
