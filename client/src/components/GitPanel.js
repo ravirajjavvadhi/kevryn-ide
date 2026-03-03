@@ -89,7 +89,7 @@ const GitPanel = ({ token, refreshTrigger, startRepo }) => {
                 <h3 style={{ margin: 0, fontSize: '14px', textTransform: 'uppercase' }}>Source Control</h3>
                 <FaRedo style={{ cursor: 'pointer' }} onClick={fetchStatus} title="Refresh" />
             </div>
-            <div style={{ marginBottom: '10px', fontSize: '12px', color: '#007acc' }}>Repo: {repoName}</div>
+            <div style={{ marginBottom: '10px', fontSize: '12px', color: 'var(--accent-secondary)' }}>Repo: {repoName}</div>
 
             <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
                 <button onClick={handlePull} disabled={pulling} style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px', padding: '6px', background: '#333', border: '1px solid #444', color: 'white', borderRadius: '4px', cursor: 'pointer' }}>
@@ -107,7 +107,7 @@ const GitPanel = ({ token, refreshTrigger, startRepo }) => {
                     placeholder="Message"
                     style={{ width: '100%', background: '#252526', border: '1px solid #3c3c3c', color: 'white', padding: '8px', minHeight: '60px', borderRadius: '4px', resize: 'vertical' }}
                 />
-                <button onClick={handleCommit} style={{ width: '100%', marginTop: '5px', padding: '6px', background: '#0e639c', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '5px' }}>
+                <button onClick={handleCommit} style={{ width: '100%', marginTop: '5px', padding: '6px', background: 'var(--accent-primary)', border: 'none', color: 'white', borderRadius: '4px', cursor: 'pointer', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '5px' }}>
                     <FaCheck /> Commit
                 </button>
             </div>

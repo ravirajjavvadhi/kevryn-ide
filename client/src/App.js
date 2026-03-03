@@ -1594,7 +1594,11 @@ function App() {
 
                         <div className="ide-container" style={{ position: 'relative', zIndex: 10 }}>
                             <div className="menubar">
-                                <motion.img src="/logoide.jpeg" alt="Logo" whileHover={{ rotate: 360 }} transition={{ duration: 0.8, ease: "easeInOut" }} style={{ height: '24px', width: 'auto', marginRight: '10px', borderRadius: '4px', cursor: 'pointer' }} />
+                                <div className="beast-logo-wrap" onClick={() => setActiveMenu(null)}>
+                                    <div className="beast-logo-ring">
+                                        <span className="beast-logo-inner">KR</span>
+                                    </div>
+                                </div>
 
                                 {/* File Menu */}
                                 <div className="menu-item" onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === 'file' ? null : 'file'); }}>
@@ -2170,24 +2174,12 @@ function App() {
                                 </AnimatePresence>
                             </div> {/* End main-content-horizontal */}
 
-                            {/* --- BOTTOM STATUS BAR (Personal Workspace) --- */}
-                            <div style={{
-                                height: '32px',
-                                background: 'rgba(15,23,42,0.98)',
-                                borderTop: '1px solid rgba(255,255,255,0.1)',
-                                display: 'flex',
-                                alignItems: 'center',
-                                justifyContent: 'space-between',
-                                padding: '0 12px',
-                                fontSize: '11px',
-                                color: '#94a3b8',
-                                zIndex: 100,
-                                position: 'relative'
-                            }}>
+                            {/* --- BOTTOM STATUS BAR (Beast Mode) --- */}
+                            <div className="beast-statusbar">
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#22c55e', boxShadow: '0 0 8px #22c55e' }}></div>
-                                        <span style={{ fontWeight: '600', color: '#e2e8f0' }}>{username}</span>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div className="beast-status-dot"></div>
+                                        <span style={{ fontWeight: '700', color: '#fff', letterSpacing: '0.5px' }}>{username}</span>
                                     </div>
                                     <span style={{ opacity: 0.3 }}>|</span>
                                     <span style={{ fontSize: '10px', opacity: 0.8 }}>Personal Workspace</span>

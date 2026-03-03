@@ -44,7 +44,7 @@ const ContextMenu = ({ x, y, node, onClose, onCreate, onCreateFolder, onRename, 
         gap: '8px', whiteSpace: 'nowrap',
         borderRadius: '3px', margin: '1px 4px',
       }}
-      onMouseEnter={e => e.currentTarget.style.background = '#094771'}
+      onMouseEnter={e => e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'}
       onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
       onClick={(e) => { e.stopPropagation(); onClose(); onClick(); }}
     >
@@ -183,7 +183,7 @@ const FileTree = ({
     cursor: 'pointer',
     borderRadius: '4px',
     userSelect: 'none',
-    background: isActive ? 'rgba(9,71,113,0.6)' : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
+    background: isActive ? 'rgba(139, 92, 246, 0.25)' : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
     color: isActive ? '#fff' : '#ccc',
     fontSize: '13px',
     fontFamily: 'Segoe UI, sans-serif',
@@ -229,7 +229,7 @@ const FileTree = ({
             onKeyDown={handleRenameKey}
             style={{
               background: '#1a1a2e', color: '#fff',
-              border: '1px solid #007acc', borderRadius: '3px',
+              border: '1px solid var(--accent-primary)', borderRadius: '3px',
               padding: '1px 4px', fontSize: '13px',
               outline: 'none', width: '100%',
             }}
