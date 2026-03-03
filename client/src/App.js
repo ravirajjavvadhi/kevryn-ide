@@ -32,6 +32,7 @@ import FacultyHub from './components/FacultyHub'; // NEW: Unified Hub
 import StudentAssignmentView from './components/StudentAssignmentView'; // NEW: Student Assignments
 import AdminDashboard from './components/AdminDashboard'; // NEW: Admin Dashboard
 import IssueReporter from './components/IssueReporter'; // NEW: Issue Reporting
+import KevrnLogin from './components/KevrnLogin'; // NEW: Cinematic Login
 
 // --- MONACO CDN SETUP (More Reliable) ---
 // Using CDN to avoid local worker resolution issues
@@ -1543,7 +1544,7 @@ function App() {
                 />
             )}
 
-            <AntigravityBackground />
+            {token && <AntigravityBackground />}
 
             {token && userRole === 'student' && activeSessionId && !isLabOpen && (
                 <motion.div
@@ -1565,11 +1566,7 @@ function App() {
 
             <div style={{ flex: 1, position: 'relative' }}>
                 {!token ? (
-                    <Login
-                        handleTilt={handleTilt}
-                        resetTilt={resetTilt}
-                        rotateX={rotateX}
-                        rotateY={rotateY}
+                    <KevrnLogin
                         isFacultyLogin={isFacultyLogin}
                         setIsFacultyLogin={setIsFacultyLogin}
                         isLogin={isLogin}
@@ -2279,165 +2276,3 @@ function App() {
 }
 
 export default App;
-
-// --- LOGIN COMPONENT (External) ---
-const Login = ({
-    handleTilt, resetTilt, rotateX, rotateY,
-    isFacultyLogin, setIsFacultyLogin,
-    isLogin, setIsLogin,
-    handleAuth, authData, setAuthData,
-    handleGoogleLoginSuccess, SERVER_URL,
-    runConnectionCheck
-}) => (
-    <div className="ide-container login-container" onMouseMove={handleTilt} onMouseLeave={resetTilt} style={{ justifyContent: 'center', alignItems: 'center', perspective: '1000px', height: '100%', display: 'flex', position: 'relative' }}>
-        <AntigravityBackground />
-        <motion.div
-            initial={{ opacity: 0, scale: 0.8, z: -100 }}
-            animate={{ opacity: 1, scale: 1, z: 0 }}
-            transition={{ duration: 1.2, ease: "circOut" }}
-            style={{ rotateX, rotateY, transformStyle: 'preserve-3d', padding: '40px', borderRadius: '32px', width: '420px', position: 'relative', zIndex: 10 }}
-            className={`auth-box ${isFacultyLogin ? 'faculty-mode' : ''}`}
-        >
-            {/* LOGIN TABS */}
-            <div style={{ display: 'flex', marginBottom: '30px', background: 'rgba(255,255,255,0.05)', borderRadius: '12px', padding: '4px', transform: 'translateZ(40px)' }}>
-                <button
-                    onClick={() => setIsFacultyLogin(false)}
-                    style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                        background: !isFacultyLogin ? 'rgba(255,255,255,0.1)' : 'transparent',
-                        color: !isFacultyLogin ? '#fff' : 'rgba(255,255,255,0.5)',
-                        fontWeight: !isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
-                    }}
-                >
-                    Personal
-                </button>
-                <button
-                    onClick={() => setIsFacultyLogin(true)}
-                    style={{
-                        flex: 1, padding: '10px', borderRadius: '8px', border: 'none', cursor: 'pointer',
-                        background: isFacultyLogin ? 'rgba(139, 92, 246, 0.2)' : 'transparent',
-                        color: isFacultyLogin ? '#a78bfa' : 'rgba(255,255,255,0.5)',
-                        fontWeight: isFacultyLogin ? 'bold' : 'normal', transition: 'all 0.2s'
-                    }}
-                >
-                    Faculty
-                </button>
-            </div>
-
-            <motion.div
-                initial={{ opacity: 0, y: -20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.2 }}
-                style={{ transform: 'translateZ(60px)' }}
-            >
-                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '20px', transform: 'translateZ(90px)' }}>
-                    {isFacultyLogin ? (
-                        <div style={{ padding: '20px', background: 'linear-gradient(135deg, #4c1d95, #6d28d9)', borderRadius: '24px', boxShadow: '0 0 30px rgba(109, 40, 217, 0.4)' }}>
-                            <FaGlobe size={50} color="#fff" />
-                        </div>
-                    ) : (
-                        <motion.img
-                            src="/logoide.jpeg"
-                            alt="Kevryn Logo"
-                            whileHover={{ rotate: 360, filter: 'drop-shadow(0 0 40px rgba(59, 130, 246, 0.8))' }}
-                            transition={{ duration: 0.8, ease: "easeInOut" }}
-                            style={{
-                                height: '80px',
-                                width: 'auto',
-                                filter: 'drop-shadow(0 0 25px rgba(59, 130, 246, 0.5))',
-                                borderRadius: '20px',
-                                cursor: 'pointer'
-                            }}
-                        />
-                    )}
-                </div>
-                <h2 style={{ color: '#fff', marginBottom: '10px', textAlign: 'center', fontSize: '28px', fontWeight: '900', letterSpacing: '-0.5px', transform: 'translateZ(70px)' }}>
-                    {isFacultyLogin ? 'Kevryn Faculty Portal' : 'Welcome to Kevryn'}
-                </h2>
-                <p style={{ color: 'rgba(255,255,255,0.5)', textAlign: 'center', marginBottom: '30px', fontSize: '14px', transform: 'translateZ(40px)' }}>
-                    {isFacultyLogin ? 'Secure access for educators & administrators.' : 'Your personal cloud workspace.'}
-                </p>
-            </motion.div>
-
-            <motion.form
-                onSubmit={handleAuth}
-                style={{ display: 'flex', flexDirection: 'column', gap: '20px', transform: 'translateZ(50px)' }}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.4 }}
-            >
-                <input className="auth-input" type="text" placeholder={isFacultyLogin ? "Faculty ID / Email" : "Username"} value={authData.username} onChange={e => setAuthData({ ...authData, username: e.target.value })} style={{ padding: '12px 16px', borderRadius: '12px', fontSize: '15px' }} required />
-                <input className="auth-input" type="password" placeholder="Password" value={authData.password} onChange={e => setAuthData({ ...authData, password: e.target.value })} style={{ padding: '12px 16px', borderRadius: '12px', fontSize: '15px' }} required />
-                <button
-                    className="btn"
-                    type="submit"
-                    style={{
-                        justifyContent: 'center', padding: '14px', borderRadius: '12px', fontSize: '16px', marginTop: '10px',
-                        background: isFacultyLogin ? 'linear-gradient(135deg, #6d28d9, #4c1d95)' : 'linear-gradient(135deg, #3b82f6, #2563eb)',
-                        border: 'none', color: '#fff', fontWeight: 'bold', cursor: 'pointer', boxShadow: isFacultyLogin ? '0 4px 15px rgba(109, 40, 217, 0.3)' : '0 4px 15px rgba(37, 99, 235, 0.3)'
-                    }}
-                >
-                    {isLogin ? (isFacultyLogin ? 'Access Dashboard' : 'Enter Studio') : 'Get Started'}
-                </button>
-            </motion.form>
-
-            {!isFacultyLogin && (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    transition={{ delay: 0.6 }}
-                >
-                    <div style={{ display: 'flex', alignItems: 'center', margin: '30px 0', transform: 'translateZ(30px)' }}>
-                        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                        <span style={{ padding: '0 15px', color: 'rgba(255,255,255,0.3)', fontSize: '12px', fontWeight: 'bold' }}>OR CONTINUE WITH</span>
-                        <div style={{ flex: 1, height: '1px', background: 'rgba(255,255,255,0.1)' }}></div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', transform: 'translateZ(60px)' }}>
-                        <div style={{ display: 'flex', justifyContent: 'center' }}>
-                            <GoogleLogin
-                                onSuccess={handleGoogleLoginSuccess}
-                                onError={() => console.log('Login Failed')}
-                                theme="filled_black"
-                                shape="rectangular"
-                                width="320"
-                            />
-                        </div>
-                        <button
-                            onClick={() => window.location.href = `${SERVER_URL}/auth/github`}
-                            style={{
-                                display: 'flex', alignItems: 'center', gap: '12px',
-                                background: 'rgba(255,255,255,0.05)', color: 'white', border: '1px solid rgba(255,255,255,0.1)',
-                                padding: '12px 20px', borderRadius: '12px', cursor: 'pointer',
-                                fontSize: '14px', fontWeight: '600', width: '100%', justifyContent: 'center',
-                                transition: 'all 0.3s ease'
-                            }}
-                        >
-                            <FaGithub size={20} /> Continue with GitHub
-                        </button>
-                    </div>
-                </motion.div>
-            )}
-
-            <motion.p
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                transition={{ delay: 0.9 }}
-                onClick={() => setIsLogin(!isLogin)}
-                style={{ cursor: 'pointer', color: 'rgba(255,255,255,0.4)', textAlign: 'center', fontSize: '14px', marginTop: '25px' }}
-            >
-                {isLogin ? "Don't have an account? " : "Already using Kevryn? "}
-                <span style={{ color: isFacultyLogin ? '#a78bfa' : '#60a5fa', fontWeight: '600' }}>{isLogin ? "Sign Up" : "Log In"}</span>
-            </motion.p>
-
-            {/* Production Discovery Button */}
-            <div style={{ marginTop: '40px', paddingTop: '20px', borderTop: '1px solid rgba(255,255,255,0.05)', textAlign: 'center' }}>
-                <button
-                    onClick={runConnectionCheck}
-                    style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.1)', fontSize: '11px', cursor: 'pointer', textDecoration: 'underline' }}
-                >
-                    Diagnostic Tool
-                </button>
-            </div>
-        </motion.div>
-    </div>
-);
