@@ -9,232 +9,232 @@ import { FaGithub, FaEye, FaEyeSlash } from 'react-icons/fa';
 
 // ── Particle Canvas ─────────────────────────────────────────
 function ParticleCanvas() {
-    const canvasRef = useRef(null);
-    const animRef = useRef(null);
-    const mouseRef = useRef({ x: -9999, y: -9999 });
+  const canvasRef = useRef(null);
+  const animRef = useRef(null);
+  const mouseRef = useRef({ x: -9999, y: -9999 });
 
-    useEffect(() => {
-        const canvas = canvasRef.current;
-        if (!canvas) return;
-        const ctx = canvas.getContext('2d');
-        let w = canvas.width = window.innerWidth;
-        let h = canvas.height = window.innerHeight;
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    let w = canvas.width = window.innerWidth;
+    let h = canvas.height = window.innerHeight;
 
-        const COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#60a5fa', '#22d3ee'];
+    const COLORS = ['#3b82f6', '#06b6d4', '#8b5cf6', '#60a5fa', '#22d3ee'];
 
-        // Generate particles only client-side
-        const particles = Array.from({ length: 500 }, () => ({
-            x: Math.random() * w,
-            y: Math.random() * h,
-            vx: (Math.random() - 0.5) * 0.4,
-            vy: (Math.random() - 0.5) * 0.4,
-            r: Math.random() * 2 + 0.5,
-            color: COLORS[Math.floor(Math.random() * COLORS.length)],
-            opacity: Math.random(),
-            opacityDir: Math.random() > 0.5 ? 1 : -1,
-            opacitySpeed: Math.random() * 0.005 + 0.002,
-        }));
+    // Generate particles only client-side
+    const particles = Array.from({ length: 800 }, () => ({
+      x: Math.random() * w,
+      y: Math.random() * h,
+      vx: (Math.random() - 0.5) * 0.45,
+      vy: (Math.random() - 0.5) * 0.45,
+      r: Math.random() * 2.2 + 0.6,
+      color: COLORS[Math.floor(Math.random() * COLORS.length)],
+      opacity: Math.random() * 0.8 + 0.2,
+      opacityDir: Math.random() > 0.5 ? 1 : -1,
+      opacitySpeed: Math.random() * 0.006 + 0.003,
+    }));
 
-        // Shooting stars
-        const shootingStars = [];
-        let lastShot = 0;
-        const spawnShoot = () => {
-            shootingStars.push({
-                x: Math.random() * w,
-                y: Math.random() * h * 0.4,
-                len: Math.random() * 120 + 80,
-                speed: Math.random() * 8 + 6,
-                opacity: 1,
-                angle: Math.PI / 4,
-                life: 1,
-            });
-        };
+    // Shooting stars
+    const shootingStars = [];
+    let lastShot = 0;
+    const spawnShoot = () => {
+      shootingStars.push({
+        x: Math.random() * w,
+        y: Math.random() * h * 0.4,
+        len: Math.random() * 120 + 80,
+        speed: Math.random() * 8 + 6,
+        opacity: 1,
+        angle: Math.PI / 4,
+        life: 1,
+      });
+    };
 
-        const onResize = () => {
-            w = canvas.width = window.innerWidth;
-            h = canvas.height = window.innerHeight;
-        };
-        const onMouse = (e) => {
-            mouseRef.current = { x: e.clientX, y: e.clientY };
-        };
-        window.addEventListener('resize', onResize);
-        window.addEventListener('mousemove', onMouse);
+    const onResize = () => {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    };
+    const onMouse = (e) => {
+      mouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('resize', onResize);
+    window.addEventListener('mousemove', onMouse);
 
-        const draw = (time) => {
-            ctx.clearRect(0, 0, w, h);
+    const draw = (time) => {
+      ctx.clearRect(0, 0, w, h);
 
-            // Shooting stars
-            if (time - lastShot > (Math.random() * 3000 + 2000)) {
-                spawnShoot();
-                lastShot = time;
+      // Shooting stars
+      if (time - lastShot > (Math.random() * 3000 + 2000)) {
+        spawnShoot();
+        lastShot = time;
+      }
+      for (let i = shootingStars.length - 1; i >= 0; i--) {
+        const s = shootingStars[i];
+        s.x += Math.cos(s.angle) * s.speed;
+        s.y += Math.sin(s.angle) * s.speed;
+        s.life -= 0.018;
+        if (s.life <= 0) { shootingStars.splice(i, 1); continue; }
+        const grad = ctx.createLinearGradient(
+          s.x, s.y,
+          s.x - Math.cos(s.angle) * s.len,
+          s.y - Math.sin(s.angle) * s.len
+        );
+        grad.addColorStop(0, `rgba(255,255,255,${s.life})`);
+        grad.addColorStop(0.3, `rgba(99,179,255,${s.life * 0.6})`);
+        grad.addColorStop(1, 'transparent');
+        ctx.beginPath();
+        ctx.moveTo(s.x, s.y);
+        ctx.lineTo(s.x - Math.cos(s.angle) * s.len, s.y - Math.sin(s.angle) * s.len);
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+
+      // Particles
+      const mx = mouseRef.current.x;
+      const my = mouseRef.current.y;
+      for (let i = 0; i < particles.length; i++) {
+        const p = particles[i];
+        // Magnetic pull toward cursor
+        const dx = mx - p.x;
+        const dy = my - p.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        if (dist < 150) {
+          p.vx += (dx / dist) * 0.025;
+          p.vy += (dy / dist) * 0.025;
+        }
+        p.vx *= 0.98;
+        p.vy *= 0.98;
+        p.x += p.vx;
+        p.y += p.vy;
+        p.opacity += p.opacityDir * p.opacitySpeed;
+        if (p.opacity >= 1 || p.opacity <= 0.1) p.opacityDir *= -1;
+        if (p.x < 0) p.x = w;
+        if (p.x > w) p.x = 0;
+        if (p.y < 0) p.y = h;
+        if (p.y > h) p.y = 0;
+
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.color;
+        ctx.globalAlpha = p.opacity;
+        ctx.fill();
+        ctx.globalAlpha = 1;
+
+        // Connection lines to nearby particles within 120px of mouse
+        if (dist < 120) {
+          for (let j = i + 1; j < particles.length; j++) {
+            const q = particles[j];
+            const qx = mx - q.x;
+            const qy = my - q.y;
+            const qdist = Math.sqrt(qx * qx + qy * qy);
+            if (qdist < 120) {
+              ctx.beginPath();
+              ctx.moveTo(p.x, p.y);
+              ctx.lineTo(q.x, q.y);
+              const alpha = (1 - qdist / 120) * 0.15;
+              ctx.strokeStyle = `rgba(99,179,255,${alpha})`;
+              ctx.lineWidth = 0.5;
+              ctx.stroke();
             }
-            for (let i = shootingStars.length - 1; i >= 0; i--) {
-                const s = shootingStars[i];
-                s.x += Math.cos(s.angle) * s.speed;
-                s.y += Math.sin(s.angle) * s.speed;
-                s.life -= 0.018;
-                if (s.life <= 0) { shootingStars.splice(i, 1); continue; }
-                const grad = ctx.createLinearGradient(
-                    s.x, s.y,
-                    s.x - Math.cos(s.angle) * s.len,
-                    s.y - Math.sin(s.angle) * s.len
-                );
-                grad.addColorStop(0, `rgba(255,255,255,${s.life})`);
-                grad.addColorStop(0.3, `rgba(99,179,255,${s.life * 0.6})`);
-                grad.addColorStop(1, 'transparent');
-                ctx.beginPath();
-                ctx.moveTo(s.x, s.y);
-                ctx.lineTo(s.x - Math.cos(s.angle) * s.len, s.y - Math.sin(s.angle) * s.len);
-                ctx.strokeStyle = grad;
-                ctx.lineWidth = 2;
-                ctx.stroke();
-            }
+          }
+        }
+      }
 
-            // Particles
-            const mx = mouseRef.current.x;
-            const my = mouseRef.current.y;
-            for (let i = 0; i < particles.length; i++) {
-                const p = particles[i];
-                // Magnetic pull toward cursor
-                const dx = mx - p.x;
-                const dy = my - p.y;
-                const dist = Math.sqrt(dx * dx + dy * dy);
-                if (dist < 150) {
-                    p.vx += (dx / dist) * 0.025;
-                    p.vy += (dy / dist) * 0.025;
-                }
-                p.vx *= 0.98;
-                p.vy *= 0.98;
-                p.x += p.vx;
-                p.y += p.vy;
-                p.opacity += p.opacityDir * p.opacitySpeed;
-                if (p.opacity >= 1 || p.opacity <= 0.1) p.opacityDir *= -1;
-                if (p.x < 0) p.x = w;
-                if (p.x > w) p.x = 0;
-                if (p.y < 0) p.y = h;
-                if (p.y > h) p.y = 0;
+      animRef.current = requestAnimationFrame(draw);
+    };
+    animRef.current = requestAnimationFrame(draw);
 
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-                ctx.fillStyle = p.color;
-                ctx.globalAlpha = p.opacity;
-                ctx.fill();
-                ctx.globalAlpha = 1;
+    return () => {
+      cancelAnimationFrame(animRef.current);
+      window.removeEventListener('resize', onResize);
+      window.removeEventListener('mousemove', onMouse);
+    };
+  }, []);
 
-                // Connection lines to nearby particles within 120px of mouse
-                if (dist < 120) {
-                    for (let j = i + 1; j < particles.length; j++) {
-                        const q = particles[j];
-                        const qx = mx - q.x;
-                        const qy = my - q.y;
-                        const qdist = Math.sqrt(qx * qx + qy * qy);
-                        if (qdist < 120) {
-                            ctx.beginPath();
-                            ctx.moveTo(p.x, p.y);
-                            ctx.lineTo(q.x, q.y);
-                            const alpha = (1 - qdist / 120) * 0.15;
-                            ctx.strokeStyle = `rgba(99,179,255,${alpha})`;
-                            ctx.lineWidth = 0.5;
-                            ctx.stroke();
-                        }
-                    }
-                }
-            }
-
-            animRef.current = requestAnimationFrame(draw);
-        };
-        animRef.current = requestAnimationFrame(draw);
-
-        return () => {
-            cancelAnimationFrame(animRef.current);
-            window.removeEventListener('resize', onResize);
-            window.removeEventListener('mousemove', onMouse);
-        };
-    }, []);
-
-    return (
-        <canvas
-            ref={canvasRef}
-            style={{
-                position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
-                pointerEvents: 'none', zIndex: 0,
-            }}
-        />
-    );
+  return (
+    <canvas
+      ref={canvasRef}
+      style={{
+        position: 'fixed', top: 0, left: 0, width: '100%', height: '100%',
+        pointerEvents: 'none', zIndex: -1, background: 'transparent'
+      }}
+    />
+  );
 }
 
 // ── Typewriter Hook ──────────────────────────────────────────
 function useTypewriter(text, speed = 60) {
-    const [displayed, setDisplayed] = useState('');
-    useEffect(() => {
-        setDisplayed('');
-        let i = 0;
-        const id = setInterval(() => {
-            setDisplayed(text.slice(0, ++i));
-            if (i >= text.length) clearInterval(id);
-        }, speed);
-        return () => clearInterval(id);
-    }, [text, speed]);
-    return displayed;
+  const [displayed, setDisplayed] = useState('');
+  useEffect(() => {
+    setDisplayed('');
+    let i = 0;
+    const id = setInterval(() => {
+      setDisplayed(text.slice(0, ++i));
+      if (i >= text.length) clearInterval(id);
+    }, speed);
+    return () => clearInterval(id);
+  }, [text, speed]);
+  return displayed;
 }
 
 // ── 3D Tilt Hook ─────────────────────────────────────────────
 function useTilt(ref) {
-    useEffect(() => {
-        const el = ref.current;
-        if (!el) return;
-        const onMove = (e) => {
-            const rect = el.getBoundingClientRect();
-            const cx = rect.left + rect.width / 2;
-            const cy = rect.top + rect.height / 2;
-            const rx = ((e.clientY - cy) / rect.height) * -8;
-            const ry = ((e.clientX - cx) / rect.width) * 8;
-            el.style.transform = `perspective(1000px) rotateX(${rx}deg) rotateY(${ry}deg)`;
-        };
-        const onLeave = () => {
-            el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
-        };
-        el.addEventListener('mousemove', onMove);
-        el.addEventListener('mouseleave', onLeave);
-        return () => {
-            el.removeEventListener('mousemove', onMove);
-            el.removeEventListener('mouseleave', onLeave);
-        };
-    }, [ref]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const onMove = (e) => {
+      const rect = el.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const rx = ((e.clientY - cy) / rect.height) * -8;
+      const ry = ((e.clientX - cx) / rect.width) * 8;
+      el.style.transform = `perspective(1000px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+    };
+    const onLeave = () => {
+      el.style.transform = 'perspective(1000px) rotateX(0deg) rotateY(0deg)';
+    };
+    el.addEventListener('mousemove', onMove);
+    el.addEventListener('mouseleave', onLeave);
+    return () => {
+      el.removeEventListener('mousemove', onMove);
+      el.removeEventListener('mouseleave', onLeave);
+    };
+  }, [ref]);
 }
 
 // ── Main Login Component ─────────────────────────────────────
 export default function KevrnLogin({
-    isFacultyLogin,
-    setIsFacultyLogin,
-    isLogin,
-    setIsLogin,
-    handleAuth,
-    authData,
-    setAuthData,
-    handleGoogleLoginSuccess,
-    SERVER_URL,
-    runConnectionCheck,
+  isFacultyLogin,
+  setIsFacultyLogin,
+  isLogin,
+  setIsLogin,
+  handleAuth,
+  authData,
+  setAuthData,
+  handleGoogleLoginSuccess,
+  SERVER_URL,
+  runConnectionCheck,
 }) {
-    const cardRef = useRef(null);
-    useTilt(cardRef);
-    const subtitle = isFacultyLogin
-        ? 'Secure access for educators & administrators.'
-        : 'Your personal cloud workspace.';
-    const typeText = useTypewriter(subtitle, 50);
-    const [showPass, setShowPass] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+  const cardRef = useRef(null);
+  useTilt(cardRef);
+  const subtitle = isFacultyLogin
+    ? 'Secure access for educators & administrators.'
+    : 'Your personal cloud workspace.';
+  const typeText = useTypewriter(subtitle, 50);
+  const [showPass, setShowPass] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
-    const onSubmit = async (e) => {
-        setIsLoading(true);
-        try { await handleAuth(e); }
-        finally { setIsLoading(false); }
-    };
+  const onSubmit = async (e) => {
+    setIsLoading(true);
+    try { await handleAuth(e); }
+    finally { setIsLoading(false); }
+  };
 
-    return (
-        <>
-            {/* ── Styles ── */}
-            <style>{`
+  return (
+    <>
+      {/* ── Styles ── */}
+      <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
 
         .kl-root {
@@ -373,7 +373,7 @@ export default function KevrnLogin({
 
         /* Logo */
         .kl-logo-wrap {
-          display: flex; justify-content: center; margin-bottom: 16px;
+          display: flex; justify-content: center; margin-bottom: 24px;
           animation: logoFlip 0.8s ease both;
           animation-delay: 0.2s;
         }
@@ -384,35 +384,37 @@ export default function KevrnLogin({
         .kl-logo-ring {
           position: relative; width: 72px; height: 72px;
           display: flex; align-items: center; justify-content: center;
+          background: rgba(59, 130, 246, 0.15);
+          border-radius: 18px;
+          box-shadow: 0 0 50px rgba(59, 130, 246, 0.4), 0 0 100px rgba(139, 92, 246, 0.2);
         }
         .kl-logo-ring::before {
           content: '';
-          position: absolute; inset: 0; border-radius: 50%;
+          position: absolute; inset: -2px; border-radius: 20px;
           background: conic-gradient(#3b82f6, #06b6d4, #8b5cf6, #3b82f6);
-          animation: spinBorder 3s linear infinite;
+          animation: spinBorder 4s linear infinite;
           padding: 2px;
           -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
           -webkit-mask-composite: xor;
           mask-composite: exclude;
         }
         .kl-logo-inner {
-          width: 60px; height: 60px; border-radius: 14px;
-          background: rgba(10,12,40,0.9);
+          width: 58px; height: 58px; border-radius: 14px;
+          background: rgba(10,12,40,0.85);
           display: flex; align-items: center; justify-content: center;
-          font-size: 20px; font-weight: 800; letter-spacing: -1px;
-          background-clip: text;
-          -webkit-background-clip: text;
           position: relative; z-index: 1;
+          box-shadow: inset 0 0 15px rgba(59, 130, 246, 0.3);
         }
         .kl-logo-text {
-          background: linear-gradient(135deg, #3b82f6, #06b6d4, #8b5cf6);
+          background: linear-gradient(135deg, #60a5fa, #22d3ee, #a78bfa);
           background-size: 200% 200%;
           -webkit-background-clip: text;
           -webkit-text-fill-color: transparent;
           background-clip: text;
           animation: gradShift 3s ease infinite;
           font-family: 'Inter', sans-serif;
-          font-weight: 800; font-size: 20px;
+          font-weight: 900; font-size: 24px;
+          filter: drop-shadow(0 0 8px rgba(96, 165, 250, 0.5));
         }
         @keyframes gradShift {
           0%   { background-position: 0% 50%; }
@@ -470,18 +472,20 @@ export default function KevrnLogin({
         .kl-input {
           width: 100%; box-sizing: border-box;
           padding: 13px 16px;
-          background: rgba(255,255,255,0.04);
-          border: 1px solid rgba(59,130,246,0.2);
+          background: rgba(255,255,255,0.05);
+          border: 1px solid rgba(59,130,246,0.15);
           border-radius: 12px; color: #e8eaf6;
           font-size: 14px; font-family: 'Inter', sans-serif;
           outline: none;
-          transition: all 0.3s ease;
+          /* Stable transitions to prevent blinking */
+          transition: border-color 0.2s ease, background 0.2s ease, box-shadow 0.2s ease;
+          backface-visibility: hidden;
         }
-        .kl-input::placeholder { color: rgba(255,255,255,0.22); }
+        .kl-input::placeholder { color: rgba(255,255,255,0.25); }
         .kl-input:focus {
           border-color: #3b82f6;
-          background: rgba(59,130,246,0.06);
-          box-shadow: 0 0 0 3px rgba(59,130,246,0.15), 0 0 20px rgba(59,130,246,0.1);
+          background: rgba(59,130,246,0.08);
+          box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
         }
         .kl-input-eye {
           position: absolute; right: 12px; top: 50%;
@@ -632,201 +636,201 @@ export default function KevrnLogin({
         }
       `}</style>
 
-            {/* ── Canvas particles ── */}
-            <ParticleCanvas />
+      {/* ── Canvas particles ── */}
+      <ParticleCanvas />
 
-            {/* ── Aurora ── */}
-            <div className="kl-aurora">
-                <div className="kl-aurora-wave" />
-                <div className="kl-aurora-wave" />
-                <div className="kl-aurora-wave" />
+      {/* ── Aurora ── */}
+      <div className="kl-aurora">
+        <div className="kl-aurora-wave" />
+        <div className="kl-aurora-wave" />
+        <div className="kl-aurora-wave" />
+      </div>
+
+      {/* ── Nebula orbs ── */}
+      {[
+        { w: 700, h: 700, top: '-15%', left: '-10%', color: '#3b82f6', dur: '30s', opacity: 0.07 },
+        { w: 600, h: 600, top: '20%', right: '-8%', color: '#06b6d4', dur: '38s', opacity: 0.07 },
+        { w: 800, h: 800, bottom: '-20%', left: '20%', color: '#8b5cf6', dur: '45s', opacity: 0.06 },
+      ].map((n, i) => (
+        <div
+          key={i}
+          className="kl-nebula"
+          style={{
+            width: n.w, height: n.h,
+            top: n.top, left: n.left, right: n.right, bottom: n.bottom,
+            background: n.color,
+            opacity: n.opacity,
+            animationDuration: n.dur,
+            animationDelay: `${i * 3}s`,
+          }}
+        />
+      ))}
+
+      {/* ── Small glowing orbs ── */}
+      {[
+        { size: 12, top: '20%', left: '10%', color: '#3b82f6', dur: '4s' },
+        { size: 8, top: '70%', left: '8%', color: '#06b6d4', dur: '5.5s' },
+        { size: 14, top: '15%', right: '12%', color: '#8b5cf6', dur: '3.5s' },
+        { size: 9, top: '75%', right: '9%', color: '#60a5fa', dur: '6s' },
+      ].map((o, i) => (
+        <div
+          key={i}
+          className="kl-orb"
+          style={{
+            width: o.size, height: o.size,
+            top: o.top, left: o.left, right: o.right,
+            background: o.color,
+            color: o.color,
+            boxShadow: `0 0 20px ${o.color}`,
+            animationDuration: o.dur,
+            animationDelay: `${i * 1.2}s`,
+          }}
+        />
+      ))}
+
+      {/* ── Login Card ── */}
+      <div className="kl-root">
+        <div className="kl-card-wrapper" ref={cardRef}>
+          <div className="kl-border-ring" />
+          <div className="kl-card">
+
+            {/* Tab Switcher */}
+            <div className="kl-tabs">
+              <button
+                className={`kl-tab${!isFacultyLogin ? ' active' : ''}`}
+                onClick={() => setIsFacultyLogin(false)}
+              >Personal</button>
+              <button
+                className={`kl-tab${isFacultyLogin ? ' active' : ''}`}
+                onClick={() => setIsFacultyLogin(true)}
+              >Faculty</button>
             </div>
 
-            {/* ── Nebula orbs ── */}
-            {[
-                { w: 700, h: 700, top: '-15%', left: '-10%', color: '#3b82f6', dur: '30s', opacity: 0.07 },
-                { w: 600, h: 600, top: '20%', right: '-8%', color: '#06b6d4', dur: '38s', opacity: 0.07 },
-                { w: 800, h: 800, bottom: '-20%', left: '20%', color: '#8b5cf6', dur: '45s', opacity: 0.06 },
-            ].map((n, i) => (
-                <div
-                    key={i}
-                    className="kl-nebula"
-                    style={{
-                        width: n.w, height: n.h,
-                        top: n.top, left: n.left, right: n.right, bottom: n.bottom,
-                        background: n.color,
-                        opacity: n.opacity,
-                        animationDuration: n.dur,
-                        animationDelay: `${i * 3}s`,
-                    }}
-                />
-            ))}
-
-            {/* ── Small glowing orbs ── */}
-            {[
-                { size: 12, top: '20%', left: '10%', color: '#3b82f6', dur: '4s' },
-                { size: 8, top: '70%', left: '8%', color: '#06b6d4', dur: '5.5s' },
-                { size: 14, top: '15%', right: '12%', color: '#8b5cf6', dur: '3.5s' },
-                { size: 9, top: '75%', right: '9%', color: '#60a5fa', dur: '6s' },
-            ].map((o, i) => (
-                <div
-                    key={i}
-                    className="kl-orb"
-                    style={{
-                        width: o.size, height: o.size,
-                        top: o.top, left: o.left, right: o.right,
-                        background: o.color,
-                        color: o.color,
-                        boxShadow: `0 0 20px ${o.color}`,
-                        animationDuration: o.dur,
-                        animationDelay: `${i * 1.2}s`,
-                    }}
-                />
-            ))}
-
-            {/* ── Login Card ── */}
-            <div className="kl-root">
-                <div className="kl-card-wrapper" ref={cardRef}>
-                    <div className="kl-border-ring" />
-                    <div className="kl-card">
-
-                        {/* Tab Switcher */}
-                        <div className="kl-tabs">
-                            <button
-                                className={`kl-tab${!isFacultyLogin ? ' active' : ''}`}
-                                onClick={() => setIsFacultyLogin(false)}
-                            >Personal</button>
-                            <button
-                                className={`kl-tab${isFacultyLogin ? ' active' : ''}`}
-                                onClick={() => setIsFacultyLogin(true)}
-                            >Faculty</button>
-                        </div>
-
-                        {/* Logo */}
-                        <div className="kl-logo-wrap">
-                            <div className="kl-logo-ring">
-                                <div className="kl-logo-inner">
-                                    <span className="kl-logo-text">KR</span>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* Heading */}
-                        <h1 className="kl-heading">
-                            Welcome to <span>Kevryn</span>
-                        </h1>
-
-                        {/* Typewriter subtitle */}
-                        <p className="kl-subtitle">
-                            {typeText}
-                            <span className="kl-cursor" />
-                        </p>
-
-                        {/* Form */}
-                        <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
-                            <div className="kl-input-wrap">
-                                <input
-                                    suppressHydrationWarning
-                                    className="kl-input"
-                                    type="text"
-                                    placeholder={isFacultyLogin ? 'Faculty ID / Email' : 'Username'}
-                                    value={authData.username}
-                                    onChange={e => setAuthData({ ...authData, username: e.target.value })}
-                                    required
-                                />
-                            </div>
-
-                            <div className="kl-input-wrap" style={{ position: 'relative' }}>
-                                <input
-                                    suppressHydrationWarning
-                                    className="kl-input"
-                                    type={showPass ? 'text' : 'password'}
-                                    placeholder="Password"
-                                    value={authData.password}
-                                    onChange={e => setAuthData({ ...authData, password: e.target.value })}
-                                    style={{ paddingRight: '44px' }}
-                                    required
-                                />
-                                <button
-                                    type="button"
-                                    className="kl-input-eye"
-                                    onClick={() => setShowPass(v => !v)}
-                                    tabIndex={-1}
-                                >
-                                    {showPass ? <FaEyeSlash size={15} /> : <FaEye size={15} />}
-                                </button>
-                            </div>
-
-                            <div className="kl-btn-wrap">
-                                <button
-                                    type="submit"
-                                    className={`kl-submit${isFacultyLogin ? ' kl-faculty-btn' : ''}`}
-                                    disabled={isLoading}
-                                >
-                                    {isLoading && <span className="kl-spinner" />}
-                                    {isLogin
-                                        ? (isFacultyLogin ? 'Access Dashboard' : 'Enter Studio')
-                                        : 'Get Started'}
-                                </button>
-                            </div>
-                        </form>
-
-                        {/* Divider + OAuth (Personal only) */}
-                        {!isFacultyLogin && (
-                            <>
-                                <div className="kl-divider">
-                                    <div className="kl-divider-line" />
-                                    <span className="kl-divider-text">OR CONTINUE WITH</span>
-                                    <div className="kl-divider-line" />
-                                </div>
-
-                                <div className="kl-oauth-wrap">
-                                    {/* Google */}
-                                    <div className="kl-google-wrap" style={{ width: '100%' }}>
-                                        <GoogleLogin
-                                            onSuccess={handleGoogleLoginSuccess}
-                                            onError={() => console.log('Google Login Failed')}
-                                            theme="filled_black"
-                                            shape="rectangular"
-                                            width="100%"
-                                            text="signin_with"
-                                        />
-                                    </div>
-
-                                    {/* GitHub */}
-                                    <button
-                                        type="button"
-                                        className="kl-oauth-btn"
-                                        onClick={() => window.location.href = `${SERVER_URL}/auth/github`}
-                                    >
-                                        <FaGithub size={18} />
-                                        Continue with GitHub
-                                    </button>
-                                </div>
-                            </>
-                        )}
-
-                        {/* Sign Up / Log In toggle */}
-                        <p className="kl-signup">
-                            {isLogin ? "Don't have an account? " : 'Already using Kevryn? '}
-                            <span
-                                className="kl-signup-link"
-                                onClick={() => setIsLogin(v => !v)}
-                            >
-                                {isLogin ? 'Sign Up' : 'Log In'}
-                            </span>
-                        </p>
-
-                        {/* Diagnostic */}
-                        <div className="kl-diag">
-                            <button className="kl-diag-btn" onClick={runConnectionCheck}>
-                                Diagnostic Tool
-                            </button>
-                        </div>
-
-                    </div>{/* .kl-card */}
-                </div>{/* .kl-card-wrapper */}
+            {/* Logo */}
+            <div className="kl-logo-wrap">
+              <div className="kl-logo-ring">
+                <div className="kl-logo-inner">
+                  <span className="kl-logo-text">KR</span>
+                </div>
+              </div>
             </div>
-        </>
-    );
+
+            {/* Heading */}
+            <h1 className="kl-heading">
+              Welcome to <span>Kevryn</span>
+            </h1>
+
+            {/* Typewriter subtitle */}
+            <p className="kl-subtitle">
+              {typeText}
+              <span className="kl-cursor" />
+            </p>
+
+            {/* Form */}
+            <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+              <div className="kl-input-wrap">
+                <input
+                  suppressHydrationWarning
+                  className="kl-input"
+                  type="text"
+                  placeholder={isFacultyLogin ? 'Faculty ID / Email' : 'Username'}
+                  value={authData.username}
+                  onChange={e => setAuthData({ ...authData, username: e.target.value })}
+                  required
+                />
+              </div>
+
+              <div className="kl-input-wrap" style={{ position: 'relative' }}>
+                <input
+                  suppressHydrationWarning
+                  className="kl-input"
+                  type={showPass ? 'text' : 'password'}
+                  placeholder="Password"
+                  value={authData.password}
+                  onChange={e => setAuthData({ ...authData, password: e.target.value })}
+                  style={{ paddingRight: '44px' }}
+                  required
+                />
+                <button
+                  type="button"
+                  className="kl-input-eye"
+                  onClick={() => setShowPass(v => !v)}
+                  tabIndex={-1}
+                >
+                  {showPass ? <FaEyeSlash size={15} /> : <FaEye size={15} />}
+                </button>
+              </div>
+
+              <div className="kl-btn-wrap">
+                <button
+                  type="submit"
+                  className={`kl-submit${isFacultyLogin ? ' kl-faculty-btn' : ''}`}
+                  disabled={isLoading}
+                >
+                  {isLoading && <span className="kl-spinner" />}
+                  {isLogin
+                    ? (isFacultyLogin ? 'Access Dashboard' : 'Enter Studio')
+                    : 'Get Started'}
+                </button>
+              </div>
+            </form>
+
+            {/* Divider + OAuth (Personal only) */}
+            {!isFacultyLogin && (
+              <>
+                <div className="kl-divider">
+                  <div className="kl-divider-line" />
+                  <span className="kl-divider-text">OR CONTINUE WITH</span>
+                  <div className="kl-divider-line" />
+                </div>
+
+                <div className="kl-oauth-wrap">
+                  {/* Google */}
+                  <div className="kl-google-wrap" style={{ width: '100%' }}>
+                    <GoogleLogin
+                      onSuccess={handleGoogleLoginSuccess}
+                      onError={() => console.log('Google Login Failed')}
+                      theme="filled_black"
+                      shape="rectangular"
+                      width="100%"
+                      text="signin_with"
+                    />
+                  </div>
+
+                  {/* GitHub */}
+                  <button
+                    type="button"
+                    className="kl-oauth-btn"
+                    onClick={() => window.location.href = `${SERVER_URL}/auth/github`}
+                  >
+                    <FaGithub size={18} />
+                    Continue with GitHub
+                  </button>
+                </div>
+              </>
+            )}
+
+            {/* Sign Up / Log In toggle */}
+            <p className="kl-signup">
+              {isLogin ? "Don't have an account? " : 'Already using Kevryn? '}
+              <span
+                className="kl-signup-link"
+                onClick={() => setIsLogin(v => !v)}
+              >
+                {isLogin ? 'Sign Up' : 'Log In'}
+              </span>
+            </p>
+
+            {/* Diagnostic */}
+            <div className="kl-diag">
+              <button className="kl-diag-btn" onClick={runConnectionCheck}>
+                Diagnostic Tool
+              </button>
+            </div>
+
+          </div>{/* .kl-card */}
+        </div>{/* .kl-card-wrapper */}
+      </div>
+    </>
+  );
 }
