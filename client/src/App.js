@@ -1511,6 +1511,13 @@ function App() {
                 token={token}
                 theme={currentTheme}
                 onLogout={() => {
+                    // Notify server that THIS socket (App.js) is also leaving the lab
+                    if (socketRef.current && activeSessionId) {
+                        socketRef.current.emit('student-leave-lab', {
+                            sessionId: activeSessionId,
+                            username: username
+                        });
+                    }
                     // FIXED: DON'T clear activeSessionId here, just close the lab view
                     // This allows the "Join Session" banner to persist so they can re-enter
                     setIsLabOpen(false);

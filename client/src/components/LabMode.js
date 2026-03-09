@@ -305,6 +305,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
             document.removeEventListener('paste', handlePaste);
             window.removeEventListener('keydown', blockShortcuts);
             document.removeEventListener('contextmenu', blockContextMenu);
+            if (codeChangeTimeoutRef.current) clearTimeout(codeChangeTimeoutRef.current);
         };
     }, [session, username, updateStatus]);
 

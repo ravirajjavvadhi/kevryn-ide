@@ -2327,21 +2327,25 @@ io.on('connection', (socket) => {
             // Update state
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
 
-            // Allow code update to revive if offline (user clearly typing)
-            const currentStatus = liveLabState[sessionId][username]?.status;
-            const newStatus = (currentStatus === 'offline') ? 'active' : (currentStatus || 'active');
+            // Guard: Only allow updates if the student is supposedly active or idle
+            const currentStatus = liveLabState[sessionId][username]?.status || 'active';
+            if (currentStatus === 'offline') {
+                // console.log(`[LAB] Ignoring code update from offline student ${username}`);
+                return;
+            }
 
             liveLabState[sessionId][username] = {
                 ...(liveLabState[sessionId][username] || {}),
                 username,
-                status: newStatus,
+                status: currentStatus,
                 lastActive: new Date().toLocaleTimeString(),
                 code: code || '',
                 activeFile: fileName || 'untitled',
                 language: language || 'javascript'
             };
-            console.log(`[DIAGNOSTIC] STUDENT CODE UPDATE: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
+
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+
         }
     });
 
@@ -2469,31 +2473,32 @@ io.on('connection', (socket) => {
 
     // Student explicitly leaves (Logout button)
     socket.on('student-leave-lab', async ({ sessionId, username, userId }) => {
-        if (sessionId && username) {
-            console.log(`[LAB] Student ${username} explicitly left session ${sessionId}`);
-            if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
-                liveLabState[sessionId][username].status = 'offline';
-                liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
+        if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
+            liveLabState[sessionId][username].status = 'offline';
+            liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
 
-                // Notify faculty
-                console.log(`[DIAGNOSTIC] STUDENT LEAVE LAB: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
-                io.to(`lab-${sessionId}`).emit('student-data-update', {
-                    username,
-                    status: 'offline',
-                    lastActive: new Date().toLocaleTimeString()
-                });
+            // Notify faculty
+            io.to(`lab-${sessionId}`).emit('student-data-update', {
+                username,
+                status: 'offline',
+                lastActive: new Date().toLocaleTimeString()
+            });
 
-                // PERSIST TO DB: Mark as offline immediately on explicit leave
-                try {
-                    await LabSession.updateOne(
-                        { _id: sessionId, "activeStudents.username": username },
-                        { $set: { "activeStudents.$.currentStatus": 'offline' } }
-                    );
-                    console.log(`[LAB DB] Saved OFFLINE status for ${username} on explicit leave.`);
-                } catch (err) {
-                    console.error(`[LAB DB ERROR] Failed to persist offline status for ${username}:`, err);
-                }
+            // PERSIST TO DB
+            try {
+                await LabSession.updateOne(
+                    { _id: sessionId, "activeStudents.username": username },
+                    { $set: { "activeStudents.$.currentStatus": 'offline' } }
+                );
+            } catch (err) { }
+
+            // FIX: Clear the sessionId from this socket to prevent revival by other events
+            if (socketToUser[socket.id]) {
+                console.log(`[LAB] Clearing session ${sessionId} for socket ${socket.id}`);
+                delete socketToUser[socket.id];
             }
+            // FIX: Leave the socket room so no more updates are received/interfered
+            socket.leave(`lab-${sessionId}`);
         }
     });
 
