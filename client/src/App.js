@@ -482,8 +482,8 @@ function App() {
         if (window.fetchFilesTimer) clearTimeout(window.fetchFilesTimer);
 
         const executeAction = () => {
-            // FIX: Pass courseId to /files to ensure we get lab files when in a session
-            const fetchUrl = activeSession?.courseId ? `/files?courseId=${activeSession.courseId}` : '/files';
+            // FIX: Pass courseId to /files to ensure we get lab files ONLY when in an active lab session
+            const fetchUrl = (isLabOpen && activeSession?.courseId) ? `/files?courseId=${activeSession.courseId}` : '/files';
             api.get(fetchUrl).then(res => {
                 setFiles(res.data); // Store flat list
                 const map = {}, nodeTree = { _id: "root", name: "My Workspace", type: "folder", children: [] };
@@ -1012,8 +1012,8 @@ function App() {
         if (!userId) return alert("Please login again (User ID missing).");
         const name = prompt(`Enter ${type} name:`);
         if (name) {
-            // FIX: Pass courseId so labs files are tagged correctly and appear in the lab file list
-            const courseId = activeSession?.courseId || undefined;
+            // FIX: Pass courseId so labs files are tagged correctly and appear in the lab file list. ONLY when in lab
+            const courseId = (isLabOpen && activeSession?.courseId) ? activeSession.courseId : undefined;
             // FIX: Use a callback so we only refresh AFTER the server confirms creation (prevents race condition)
             safeEmit('create-node', { parentId, newNode: { name, type }, userId, courseId }, (ack) => {
                 if (ack?.success) {
@@ -1252,13 +1252,13 @@ function App() {
             code,
             userId,
             fileId: activeFileId,
-            courseId: activeSession?.courseId || undefined
+            courseId: (isLabOpen && activeSession?.courseId) ? activeSession.courseId : undefined
         };
 
         const openPreview = () => {
             if (activeFileName.endsWith('.html')) {
                 let previewUrl = `${SERVER_URL}/preview/${userId}/${activeFileName}`;
-                if (activeSession?.courseId) {
+                if (isLabOpen && activeSession?.courseId) {
                     previewUrl = `${SERVER_URL}/preview/${userId}/labs/${activeSession.courseId}/${activeFileName}`;
                 }
                 window.open(previewUrl, '_blank');
@@ -1319,7 +1319,7 @@ function App() {
                     safeEmit('terminal:write', {
                         termId: termIdToUse,
                         data: '\r' + cmd + '\r',
-                        courseId: activeSession?.courseId || undefined
+                        courseId: (isLabOpen && activeSession?.courseId) ? activeSession.courseId : undefined
                     });
                 }
             }, 100);
@@ -1383,7 +1383,7 @@ function App() {
             const res = await api.post('/deploy/frontend', {
                 siteName,
                 backendUrl,
-                courseId: activeSession?.courseId || null
+                courseId: (isLabOpen && activeSession?.courseId) ? activeSession.courseId : null
             });
             alert(res.data.message);
             const fullUrl = res.data.url.startsWith('http') ? res.data.url : `${SERVER_URL}${res.data.url}`;
@@ -1397,7 +1397,7 @@ function App() {
         try {
             const res = await api.post('/deploy/backend', {
                 entryFile: entry,
-                courseId: activeSession?.courseId || null
+                courseId: (isLabOpen && activeSession?.courseId) ? activeSession.courseId : null
             });
             const fullUrl = res.data.url.startsWith('http') ? res.data.url : `${SERVER_URL}${res.data.url}`;
             alert(`Backend Live at: ${fullUrl}`);
