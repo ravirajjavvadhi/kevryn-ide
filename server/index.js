@@ -2269,7 +2269,7 @@ io.on('connection', (socket) => {
     });
 
     // Student joins a session room and notifies faculty
-    socket.on('student-join-lab', ({ sessionId, username, userId, initialData }) => {
+    socket.on('student-join-lab', async ({ sessionId, username, userId, initialData }) => {
         if (sessionId && username) {
             socket.join(`lab-${sessionId}`);
             console.log(`[DIAGNOSTIC] STUDENT JOIN LAB: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
@@ -2286,12 +2286,24 @@ io.on('connection', (socket) => {
                 lastActive: new Date().toLocaleTimeString(),
                 code: initialData?.code || '',
                 activeFile: initialData?.activeFile || null,
-                language: initialData?.language || 'javascript'
+                language: initialData?.language || 'javascript',
+                tabSwitchCount: liveLabState[sessionId][username]?.tabSwitchCount || 0,
+                pasteCount: liveLabState[sessionId][username]?.pasteCount || 0,
+                attentionScore: liveLabState[sessionId][username]?.attentionScore || 100
             };
 
             // Merge with existing if present to avoid overwriting code with empty if reconnecting without data
-            // But we prefer fresh data if provided
             liveLabState[sessionId][username] = { ...liveLabState[sessionId][username], ...state };
+
+            // PERSIST TO DB: Ensure student is marked as active in DB
+            try {
+                await LabSession.updateOne(
+                    { _id: sessionId, "activeStudents.username": username },
+                    { $set: { "activeStudents.$.currentStatus": 'active', "activeStudents.$.lastHeartbeat": new Date() } }
+                );
+            } catch (err) {
+                console.error(`[LAB DB ERROR] Failed to update join status for ${username}:`, err);
+            }
 
             // CLEAR OFFLINE TIMEOUT: If they reconnected during grace
             if (offlineTimeouts[username]) {
@@ -2334,7 +2346,7 @@ io.on('connection', (socket) => {
     });
 
     // NEW: Real-time status update (Immediate feedback for Active/Idle)
-    socket.on('student-status-update', ({ sessionId, username, status }) => {
+    socket.on('student-status-update', async ({ sessionId, username, status }) => {
         if (sessionId && username && status) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
 
@@ -2347,43 +2359,116 @@ io.on('connection', (socket) => {
 
             console.log(`[LAB] Status Update: ${username} is now ${status}`);
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+
+            // PERSIST TO DB: Update status in MongoDB activeStudents array
+            try {
+                await LabSession.updateOne(
+                    { _id: sessionId, "activeStudents.username": username },
+                    { $set: { "activeStudents.$.currentStatus": status } }
+                );
+            } catch (err) {
+                console.error(`[LAB DB ERROR] Failed to persist status for ${username}:`, err);
+            }
         }
     });
 
-    // NEW: Tab Switch Event
-    socket.on('student-tab-switch', ({ sessionId, username, type, count }) => {
+    // Tab Switch Event (Consolidated & Persisted)
+    socket.on('student-tab-switch', async ({ sessionId, username, direction, count }) => {
         if (sessionId && username) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
 
-            liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
-                tabSwitchCount: count || (liveLabState[sessionId][username]?.tabSwitchCount || 0) + 1,
+            const switchCount = count || (liveLabState[sessionId][username].tabSwitchCount || 0) + 1;
+            liveLabState[sessionId][username].tabSwitchCount = switchCount;
+
+            // Update status to 'distracted' if they left the tab
+            if (liveLabState[sessionId][username].status !== 'offline') {
+                liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : 'active';
+            }
+
+            // Recompute attention score
+            const tabPenalty = Math.min(switchCount * 5, 40);
+            const pastePenalty = Math.min((liveLabState[sessionId][username].pasteCount || 0) * 8, 30);
+            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
+
+            io.to(`lab-${sessionId}`).emit('student-data-update', {
+                ...liveLabState[sessionId][username],
                 lastActive: new Date().toLocaleTimeString()
-            };
+            });
 
-            console.log(`[LAB] Tab Switch: ${username} | Total: ${liveLabState[sessionId][username].tabSwitchCount}`);
-            io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+            // PERSIST TO DB: Update counts and status
+            try {
+                await LabSession.updateOne(
+                    { _id: sessionId, "activeStudents.username": username },
+                    {
+                        $set: {
+                            "activeStudents.$.tabSwitchCount": switchCount,
+                            "activeStudents.$.currentStatus": liveLabState[sessionId][username].status,
+                            "activeStudents.$.attentionScore": liveLabState[sessionId][username].attentionScore
+                        },
+                        $push: {
+                            activityLog: {
+                                username,
+                                event: 'tab-switch',
+                                details: `Tab Switched (#${switchCount}) - Direction: ${direction}`,
+                                timestamp: new Date()
+                            }
+                        }
+                    }
+                );
+            } catch (err) {
+                console.error(`[LAB DB ERROR] Tab switch persistence failed:`, err);
+            }
         }
     });
 
-    // NEW: Paste Event
-    socket.on('student-paste', ({ sessionId, username, count, contentSnippet }) => {
+    // Paste Event (Consolidated & Persisted)
+    socket.on('student-paste', async ({ sessionId, username, charCount, count }) => {
         if (sessionId && username) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
 
-            liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
-                pasteCount: count || (liveLabState[sessionId][username]?.pasteCount || 0) + 1,
+            const pasteCount = count || (liveLabState[sessionId][username].pasteCount || 0) + 1;
+            liveLabState[sessionId][username].pasteCount = pasteCount;
+
+            // Recompute attention score
+            const tabPenalty = Math.min((liveLabState[sessionId][username].tabSwitchCount || 0) * 5, 40);
+            const pastePenalty = Math.min(pasteCount * 8, 30);
+            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
+
+            io.to(`lab-${sessionId}`).emit('student-data-update', {
+                ...liveLabState[sessionId][username],
+                suspicious: (charCount || 0) > 80,
                 lastActive: new Date().toLocaleTimeString()
-            };
+            });
 
-            console.log(`[LAB] Paste Activity: ${username} | Total: ${liveLabState[sessionId][username].pasteCount}`);
-            io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+            // PERSIST TO DB: Update paste count and attention score
+            try {
+                await LabSession.updateOne(
+                    { _id: sessionId, "activeStudents.username": username },
+                    {
+                        $set: {
+                            "activeStudents.$.pasteCount": pasteCount,
+                            "activeStudents.$.attentionScore": liveLabState[sessionId][username].attentionScore
+                        },
+                        $push: {
+                            activityLog: {
+                                username,
+                                event: 'paste-detected',
+                                details: `${charCount || 0} chars pasted (Total #${pasteCount})`,
+                                timestamp: new Date()
+                            }
+                        }
+                    }
+                );
+            } catch (err) {
+                console.error(`[LAB DB ERROR] Paste persistence failed:`, err);
+            }
         }
     });
 
     // Student explicitly leaves (Logout button)
-    socket.on('student-leave-lab', ({ sessionId, username, userId }) => {
+    socket.on('student-leave-lab', async ({ sessionId, username, userId }) => {
         if (sessionId && username) {
             console.log(`[LAB] Student ${username} explicitly left session ${sessionId}`);
             if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
@@ -2397,6 +2482,17 @@ io.on('connection', (socket) => {
                     status: 'offline',
                     lastActive: new Date().toLocaleTimeString()
                 });
+
+                // PERSIST TO DB: Mark as offline immediately on explicit leave
+                try {
+                    await LabSession.updateOne(
+                        { _id: sessionId, "activeStudents.username": username },
+                        { $set: { "activeStudents.$.currentStatus": 'offline' } }
+                    );
+                    console.log(`[LAB DB] Saved OFFLINE status for ${username} on explicit leave.`);
+                } catch (err) {
+                    console.error(`[LAB DB ERROR] Failed to persist offline status for ${username}:`, err);
+                }
             }
         }
     });
@@ -2656,7 +2752,7 @@ io.on('connection', (socket) => {
             // Clear any existing timeout for this user
             if (offlineTimeouts[username]) clearTimeout(offlineTimeouts[username]);
 
-            offlineTimeouts[username] = setTimeout(() => {
+            offlineTimeouts[username] = setTimeout(async () => {
                 if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
                     liveLabState[sessionId][username].status = 'offline';
                     liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
@@ -2667,6 +2763,17 @@ io.on('connection', (socket) => {
                         lastActive: new Date().toLocaleTimeString()
                     });
                     console.log(`[LAB] Grace period ended. ${username} is now OFFLINE.`);
+
+                    // PERSIST TO DB: Save offline status to database after grace period
+                    try {
+                        await LabSession.updateOne(
+                            { _id: sessionId, "activeStudents.username": username },
+                            { $set: { "activeStudents.$.currentStatus": 'offline' } }
+                        );
+                        console.log(`[LAB DB] Persisted OFFLINE status for ${username} after disconnect.`);
+                    } catch (err) {
+                        console.error(`[LAB DB ERROR] Failed to persist disconnect offline status for ${username}:`, err);
+                    }
                 }
                 delete offlineTimeouts[username];
             }, 15000); // 15 seconds grace
@@ -2675,158 +2782,7 @@ io.on('connection', (socket) => {
         }
     });
 
-    // --- VAYU LAB MONITOR SOCKETS ---
-    socket.on('join-session', ({ sessionId, username, role }) => {
-        socket.join(`session_${sessionId}`);
-        if (role === 'student') {
-            // Notify faculty that student is online
-            io.to(`session_${sessionId}_faculty`).emit('student-status-change', { username, status: 'online' });
-        }
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-        // BEAST FEATURES: Advanced Behavior Tracking
-        // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-
-        // Tab Switch Tracking â€” fires when student leaves the lab tab
-        socket.on('student-tab-switch', ({ sessionId, username, direction, switchCount }) => {
-            if (!sessionId || !username) return;
-            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-            // Update live state
-            liveLabState[sessionId][username].tabSwitchCount = switchCount || 0;
-
-            // GUARD: If offline, don't let behavioral updates flip back to active
-            if (liveLabState[sessionId][username].status !== 'offline') {
-                liveLabState[sessionId][username].status = direction === 'left' ? 'distracted' : (liveLabState[sessionId][username].prevStatus || 'active');
-                if (direction === 'left') liveLabState[sessionId][username].prevStatus = liveLabState[sessionId][username].status;
-            }
-
-            // Recompute attention score
-            const tabPenalty = Math.min(switchCount * 5, 40);
-            const pastePenalty = Math.min((liveLabState[sessionId][username].pasteCount || 0) * 8, 30);
-            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
-
-            // Notify faculty in the room
-            io.to(`lab-${sessionId}`).emit('student-data-update', {
-                ...liveLabState[sessionId][username],
-                lastActive: new Date().toLocaleTimeString()
-            });
-
-            // Log to DB
-            LabSession.findByIdAndUpdate(sessionId, {
-                $push: {
-                    activityLog: {
-                        username,
-                        event: 'tab-switch',
-                        details: `Tab Switched: ${switchCount}`,
-                        timestamp: new Date()
-                    }
-                }
-            }).catch(() => { });
-
-            console.log(`[LAB] Tab switch #${switchCount} â€” ${username} ${direction} (session ${sessionId})`);
-        });
-
-        // Paste Detection â€” fires when student pastes in the editor
-        socket.on('student-paste', ({ sessionId, username, charCount, pasteCount }) => {
-            if (!sessionId || !username) return;
-            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-            liveLabState[sessionId][username].pasteCount = pasteCount || 0;
-
-            // Recompute attention score
-            const tabPenalty = Math.min((liveLabState[sessionId][username].tabSwitchCount || 0) * 5, 40);
-            const pastePenalty = Math.min(pasteCount * 8, 30);
-            liveLabState[sessionId][username].attentionScore = Math.max(0, 100 - tabPenalty - pastePenalty);
-
-            // GUARD: If offline, don't let behavioral updates flip back to active
-            if (liveLabState[sessionId][username].status !== 'offline') {
-                io.to(`lab-${sessionId}`).emit('student-data-update', {
-                    ...liveLabState[sessionId][username],
-                    suspicious: charCount > 80,
-                    lastActive: new Date().toLocaleTimeString()
-                });
-            }
-
-            LabSession.findByIdAndUpdate(sessionId, {
-                $push: {
-                    activityLog: {
-                        username,
-                        event: 'paste-detected',
-                        details: `${charCount} chars pasted (total: ${pasteCount})`,
-                        timestamp: new Date()
-                    }
-                }
-            }).catch(() => { });
-
-            console.log(`[LAB] Paste #${pasteCount} by ${username} â€” ${charCount} chars`);
-        });
-
-        // Faculty Announces to all students in session
-        socket.on('faculty-announcement', ({ sessionId, message }) => {
-            if (!sessionId || !message) return;
-            // Broadcast to everyone in the lab room (students are there too)
-            io.to(`lab-${sessionId}`).emit('faculty-announcement', { message, timestamp: new Date().toLocaleTimeString() });
-
-            LabSession.findByIdAndUpdate(sessionId, {
-                $push: {
-                    activityLog: {
-                        username: 'faculty',
-                        event: 'announcement',
-                        details: message,
-                        timestamp: new Date()
-                    }
-                }
-            }).catch(() => { });
-
-            console.log(`[LAB] Faculty announcement in session ${sessionId}: "${message}"`);
-        });
-
-        // Student raises hand
-        socket.on('student-raise-hand', ({ sessionId, username }) => {
-            if (!sessionId || !username) return;
-            if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-            if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
-
-            liveLabState[sessionId][username].raiseHand = true;
-
-            io.to(`lab-${sessionId}`).emit('student-raise-hand', { username, timestamp: new Date().toLocaleTimeString() });
-
-            LabSession.findByIdAndUpdate(sessionId, {
-                $push: {
-                    activityLog: {
-                        username,
-                        event: 'raise-hand',
-                        details: 'Student requested help',
-                        timestamp: new Date()
-                    }
-                }
-            }).catch(() => { });
-            console.log(`[LAB] ${username} raised hand in session ${sessionId}`);
-        });
-
-        // Faculty acknowledges raised hand
-        socket.on('faculty-acknowledge', ({ sessionId, username }) => {
-            if (!sessionId || !username) return;
-            if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
-                liveLabState[sessionId][username].raiseHand = false;
-            }
-            io.to(`lab-${sessionId}`).emit('faculty-acknowledge', { username });
-
-            LabSession.findByIdAndUpdate(sessionId, {
-                $push: {
-                    activityLog: {
-                        username,
-                        event: 'hand-acknowledged',
-                        details: 'Faculty acknowledged help request',
-                        timestamp: new Date()
-                    }
-                }
-            }).catch(() => { });
-            // --- REPAIRED END OF FILE ---
-        });
-    });
+    // LEGACY REDUNDANT HANDLERS REMOVED (Consolidated above)
 });
 
 // --- LAST RESORT 404 HANDLER (For Debugging) ---
