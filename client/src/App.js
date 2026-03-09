@@ -486,7 +486,7 @@ function App() {
             const fetchUrl = activeSession?.courseId ? `/files?courseId=${activeSession.courseId}` : '/files';
             api.get(fetchUrl).then(res => {
                 setFiles(res.data); // Store flat list
-                const map = {}, nodeTree = { _id: "root", name: "Project Root", type: "folder", children: [] };
+                const map = {}, nodeTree = { _id: "root", name: "My Workspace", type: "folder", children: [] };
                 res.data.forEach(node => { map[node._id] = { ...node, children: [] }; });
                 res.data.forEach(node => {
                     if (node.parentId !== "root") {
@@ -503,9 +503,17 @@ function App() {
                 }
                 setIsAppLoading(false); // Boot sequence complete
             }).catch(err => {
-                console.log("Fetch Error", err);
-                alert(`File Fetch Failed: ${err.message} (Server: ${SERVER_URL}). Check console/network for details.`);
-                setIsAppLoading(false); // Don't hang forever
+                const status = err.response?.status;
+                if (status === 401 || status === 400) {
+                    // Token expired or invalid — force logout so user can re-login
+                    console.warn('[AUTH] Token invalid/expired. Logging out.');
+                    handleLogout();
+                } else {
+                    console.error('[FILES] Failed to fetch files:', err.message);
+                    // Show empty workspace instead of hanging on loading screen
+                    setFileData({ _id: 'root', name: 'My Workspace', type: 'folder', children: [] });
+                    setIsAppLoading(false);
+                }
             });
         };
 
@@ -514,7 +522,7 @@ function App() {
         } else {
             window.fetchFilesTimer = setTimeout(executeAction, 300); // 300ms debounce
         }
-    }, [token, api, activeSession]);
+    }, [token, api, activeSession, handleLogout]);
 
     // Handle Global Shortcuts (Ctrl+S, F2, Ctrl+N, Ctrl+Shift+N, Ctrl+W, Ctrl+Tab)
     useEffect(() => {
