@@ -792,28 +792,23 @@ app.post('/lab/heartbeat', async (req, res) => {
 
         // Update in-memory Live State (no DB needed)
         if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
-        const currentLiveState = liveLabState[sessionId][username];
+        const currentLiveState = liveLabState[sessionId][username] || {};
 
-        if (liveLabState[sessionId][username]?.status === 'offline' && (!status || status === 'active')) {
-            liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
-                status: status || 'active',
-                lastActive: new Date().toLocaleTimeString(),
-                lastHeartbeat: new Date(),
-                code: code || currentLiveState?.code || '',
-                activeFile: activeFile || currentLiveState?.activeFile || null
-            };
-        } else {
-            liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
-                username,
-                status: status || 'active',
-                lastActive: new Date().toLocaleTimeString(),
-                code: code || currentLiveState?.code || '',
-                activeFile: activeFile || currentLiveState?.activeFile || null,
-                language: currentLiveState?.language || 'javascript'
-            };
+        // LOCKDOWN: If student explicitly left, do NOT revive to active via heartbeat
+        if (currentLiveState.explicitlyLeft) {
+            return res.status(200).json({ status: 'offline', explicitlyLeft: true });
         }
+
+        liveLabState[sessionId][username] = {
+            ...currentLiveState,
+            username,
+            status: status || 'active',
+            lastActive: new Date().toLocaleTimeString(),
+            lastHeartbeat: new Date(),
+            code: code || currentLiveState.code || '',
+            activeFile: activeFile || currentLiveState.activeFile || null,
+            language: currentLiveState.language || 'javascript'
+        };
 
         // Broadcast live state to faculty via socket
         if (io) io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
@@ -2283,6 +2278,7 @@ io.on('connection', (socket) => {
             const state = {
                 username,
                 status: 'active',
+                explicitlyLeft: false, // RESET LOCKDOWN
                 lastActive: new Date().toLocaleTimeString(),
                 code: initialData?.code || '',
                 activeFile: initialData?.activeFile || null,
@@ -2292,7 +2288,6 @@ io.on('connection', (socket) => {
                 attentionScore: liveLabState[sessionId][username]?.attentionScore || 100
             };
 
-            // Merge with existing if present to avoid overwriting code with empty if reconnecting without data
             liveLabState[sessionId][username] = { ...liveLabState[sessionId][username], ...state };
 
             // PERSIST TO DB: Ensure student is marked as active in DB
@@ -2328,16 +2323,16 @@ io.on('connection', (socket) => {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
 
             // Guard: Only allow updates if the student is supposedly active or idle
-            const currentStatus = liveLabState[sessionId][username]?.status || 'active';
-            if (currentStatus === 'offline') {
-                // console.log(`[LAB] Ignoring code update from offline student ${username}`);
+            const studentState = liveLabState[sessionId][username] || {};
+            if (studentState.status === 'offline' || studentState.explicitlyLeft) {
+                // console.log(`[LAB] Ignoring code update from offline/left student ${username}`);
                 return;
             }
 
             liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
+                ...studentState,
                 username,
-                status: currentStatus,
+                status: studentState.status || 'active',
                 lastActive: new Date().toLocaleTimeString(),
                 code: code || '',
                 activeFile: fileName || 'untitled',
@@ -2353,9 +2348,13 @@ io.on('connection', (socket) => {
     socket.on('student-status-update', async ({ sessionId, username, status }) => {
         if (sessionId && username && status) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            const studentState = liveLabState[sessionId][username] || {};
+
+            // LOCKDOWN: If student explicitly left, do NOT revive
+            if (studentState.explicitlyLeft) return;
 
             liveLabState[sessionId][username] = {
-                ...(liveLabState[sessionId][username] || {}),
+                ...studentState,
                 username,
                 status: status,
                 lastActive: new Date().toLocaleTimeString()
@@ -2380,6 +2379,11 @@ io.on('connection', (socket) => {
     socket.on('student-tab-switch', async ({ sessionId, username, direction, count }) => {
         if (sessionId && username) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            const studentState = liveLabState[sessionId][username] || {};
+
+            // LOCKDOWN: If student explicitly left, do NOT revive or track
+            if (studentState.explicitlyLeft) return;
+
             if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
 
             const switchCount = count || (liveLabState[sessionId][username].tabSwitchCount || 0) + 1;
@@ -2430,6 +2434,11 @@ io.on('connection', (socket) => {
     socket.on('student-paste', async ({ sessionId, username, charCount, count }) => {
         if (sessionId && username) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
+            const studentState = liveLabState[sessionId][username] || {};
+
+            // LOCKDOWN: If student explicitly left, do NOT revive or track
+            if (studentState.explicitlyLeft) return;
+
             if (!liveLabState[sessionId][username]) liveLabState[sessionId][username] = {};
 
             const pasteCount = count || (liveLabState[sessionId][username].pasteCount || 0) + 1;
@@ -2475,6 +2484,7 @@ io.on('connection', (socket) => {
     socket.on('student-leave-lab', async ({ sessionId, username, userId }) => {
         if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
             liveLabState[sessionId][username].status = 'offline';
+            liveLabState[sessionId][username].explicitlyLeft = true; // LOCKDOWN: Cannot be revived except by student-join-lab
             liveLabState[sessionId][username].lastActive = new Date().toLocaleTimeString();
 
             // Notify faculty
