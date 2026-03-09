@@ -1,6 +1,8 @@
 ﻿// ============================================================
 // PERFORMANCE: Silence verbose logs in production
 // ============================================================
+// [TEMPORARILY DISABLED FOR DEBUGGING 502 ERROR]
+/*
 if (process.env.NODE_ENV === 'production') {
     const _originalLog = console.log;
     console.log = (...args) => {
@@ -11,6 +13,7 @@ if (process.env.NODE_ENV === 'production') {
         }
     };
 }
+*/
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -1036,9 +1039,11 @@ app.use('/preview/:userId', (req, res, next) => {
     express.static(dir)(req, res, next);
 });
 
-app.use('/sites/:userId', (req, res, next) => {
-    const dir = path.join(baseSitesDir, req.params.userId);
-    express.static(dir)(req, res, next);
+// ============================================================
+// FINAL BOOT: Start listening BEFORE heavy DB/logic to pass healthchecks
+// ============================================================
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`🚀 [BOOT] Server online on port ${PORT}`);
 });
 
 // --- DB CONNECTION ---
@@ -2847,11 +2852,9 @@ app.get('/lab/session-activity-log/:sessionId', authenticate, async (req, res) =
 });
 
 // ============================================================
-// FINAL BOOT: Start listening AFTER all routes are registered
+// FINAL BOOT: MOVED TO TOP OF DB CONNECTION BLOCK
 // ============================================================
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 [BOOT] Server online on port ${PORT}`);
-});
+
 
 process.on('SIGTERM', () => {
     console.log('[SHUTDOWN] SIGTERM received.');
