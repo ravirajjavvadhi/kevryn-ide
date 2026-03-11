@@ -59,7 +59,7 @@ export class LanguageRuntime {
                 log('[LanguageRuntime] python3 not found. Installing python-wasm (~30s first time)...');
                 try {
                     await this._installPackage('python-wasm', log);
-                    this.pythonCmd = 'npx --yes python-wasm';
+                    this.pythonCmd = './node_modules/.bin/python-wasm';
                     log('[LanguageRuntime] ✅ python-wasm installed');
                 } catch (e) {
                     log('[LanguageRuntime] ⚠️ python-wasm install failed: ' + e.message);

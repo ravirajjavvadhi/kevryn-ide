@@ -1309,9 +1309,9 @@ function App() {
         const runtimeReady = langRuntimeStatus === 'ready';
 
         const browserCommands = {
-            // Python: use python-wasm via npx (installed by LanguageRuntime)
+            // Python: use python-wasm binary (installed by LanguageRuntime)
             'py': runtimeReady
-                ? `npx python-wasm "${activeFileName}" 2>&1`
+                ? `./node_modules/.bin/python-wasm "${activeFileName}" 2>&1`
                 : `python3 "${activeFileName}" || python "${activeFileName}"`,
             // C: compile with gcc (WASM) then run
             'c': runtimeReady
