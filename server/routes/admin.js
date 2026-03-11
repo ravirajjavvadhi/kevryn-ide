@@ -54,6 +54,32 @@ router.patch('/users/:id/status', authenticate, checkAdmin, async (req, res) => 
     }
 });
 
+// 2b. Change User Role (Admin, Faculty, Student)
+router.patch('/users/:id/role', authenticate, checkAdmin, async (req, res) => {
+    try {
+        const { role } = req.body;
+        if (!['admin', 'faculty', 'student'].includes(role)) {
+            return res.status(400).json({ error: "Invalid role specified" });
+        }
+        
+        let updateData = { role };
+        // If promoting to faculty, auto-approve them so they aren't stuck in "Pending"
+        if (role === 'faculty') {
+            updateData.isFacultyActive = true;
+        }
+
+        const user = await User.findByIdAndUpdate(
+            req.params.id,
+            updateData,
+            { new: true }
+        ).select('-password');
+        
+        res.json(user);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // 3. Admin Analytics
 router.get('/analytics', authenticate, checkAdmin, async (req, res) => {
     try {
