@@ -1301,45 +1301,34 @@ function App() {
         const exePrefix = './'; // Standard for Linux/Cloud environments
 
         // =====================================================================
-        // BROWSER-FIRST execution for Python, C, C++:
-        //   If WebContainer is ready AND LanguageRuntime is installed, run locally.
-        //   Otherwise fall back to the server PTY.
+        // INTELLIGENT ROUTING: Ask LanguageRuntime for the correct command
         // =====================================================================
-        const wcActive = !!webcontainerRef.current;
-        const runtimeReady = langRuntimeStatus === 'ready';
+        let isBrowserLanguage = false;
+        
+        if (languageRuntimeRef.current && langRuntimeStatus === 'ready') {
+            const runCmdObj = languageRuntimeRef.current.getRunCommand(activeFileName);
+            if (runCmdObj && runCmdObj.isBrowser) {
+                // The LanguageRuntime correctly detected it can handle this file
+                cmd = runCmdObj.terminal;
+                isBrowserLanguage = true;
+            }
+        }
 
-        const browserCommands = {
-            // Python: use python-wasm binary (installed by LanguageRuntime)
-            'py': runtimeReady
-                ? `./node_modules/.bin/python-wasm "${activeFileName}" 2>&1`
-                : `python3 "${activeFileName}" || python "${activeFileName}"`,
-            // C: compile with gcc (WASM) then run
-            'c': runtimeReady
-                ? `gcc "${activeFileName}" -o /tmp/${fileNameNoExt}_out && /tmp/${fileNameNoExt}_out`
-                : null, // fallback to server
-            // C++: compile with g++ (WASM) then run
-            'cpp': runtimeReady
-                ? `g++ "${activeFileName}" -o /tmp/${fileNameNoExt}_out && /tmp/${fileNameNoExt}_out`
-                : null, // fallback to server
-        };
-
-        const serverCommands = {
-            'js': `node "${activeFileName}" || node "${filenameOnly}"`,
-            'py': `python3 "${activeFileName}" || python3 "${filenameOnly}" || python "${filenameOnly}"`,
-            'java': `javac "${activeFileName}" || javac "${filenameOnly}" && java "${fileNameNoExt}"`,
-            'c': `gcc "${activeFileName}" -o output && ${exePrefix}output`,
-            'cpp': `g++ "${activeFileName}" -o output && ${exePrefix}output`,
-            'rb': `ruby "${activeFileName}" || ruby "${filenameOnly}"`,
-            'go': `go run "${activeFileName}" || go run "${filenameOnly}"`,
-            'php': `php "${activeFileName}" || php "${filenameOnly}"`,
-            'ts': `npx ts-node "${activeFileName}" || npx ts-node "${filenameOnly}"`,
-        };
-
-        // Decide whether to run locally in browser or send to server PTY
-        const browserLangs = ['py', 'c', 'cpp'];
-        const useBrowser = wcActive && browserLangs.includes(ext) && browserCommands[ext];
-
-        cmd = useBrowser ? browserCommands[ext] : serverCommands[ext];
+        // --- SERVER FALLBACK (if browser execution not supported for this file) ---
+        if (!cmd) {
+            const serverCommands = {
+                'js': `node "${activeFileName}" || node "${filenameOnly}"`,
+                'py': `python3 "${activeFileName}" || python3 "${filenameOnly}" || python "${filenameOnly}"`,
+                'java': `javac "${activeFileName}" || javac "${filenameOnly}" && java "${fileNameNoExt}"`,
+                'c': `gcc "${activeFileName}" -o output && ${exePrefix}output`,
+                'cpp': `g++ "${activeFileName}" -o output && ${exePrefix}output`,
+                'rb': `ruby "${activeFileName}" || ruby "${filenameOnly}"`,
+                'go': `go run "${activeFileName}" || go run "${filenameOnly}"`,
+                'php': `php "${activeFileName}" || php "${filenameOnly}"`,
+                'ts': `npx ts-node "${activeFileName}" || npx ts-node "${filenameOnly}"`,
+            };
+            cmd = serverCommands[ext];
+        }
 
         if (cmd) {
             setBottomPanelTab('terminal');
@@ -1350,7 +1339,7 @@ function App() {
                 const termIdToUse = activeTermId || 1;
                 const inputWriter = inputs[termIdToUse];
 
-                if (useBrowser && inputWriter && typeof inputWriter.write === 'function') {
+                if (isBrowserLanguage && inputWriter && typeof inputWriter.write === 'function') {
                     // ✅ LOCAL execution — no server hit, zero lag for 300 students
                     inputWriter.write('\r' + cmd + '\r');
                 } else {
