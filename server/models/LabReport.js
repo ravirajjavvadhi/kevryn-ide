@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const LabReportSchema = new mongoose.Schema({
+    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
     studentId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
     courseName: { type: String, required: true },
@@ -26,5 +27,6 @@ const LabReportSchema = new mongoose.Schema({
 });
 
 LabReportSchema.index({ studentId: 1, courseName: 1 }, { unique: true });
+LabReportSchema.index({ collegeId: 1 });
 
 module.exports = mongoose.model('LabReport', LabReportSchema);

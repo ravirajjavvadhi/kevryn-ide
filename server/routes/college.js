@@ -2,6 +2,11 @@ const express = require('express');
 const router = express.Router();
 const College = require('../models/College');
 const User = require('../User');
+const Course = require('../models/Course');
+const Batch = require('../models/Batch');
+const Assignment = require('../models/Assignment');
+const LabReport = require('../models/LabReport');
+const Submission = require('../models/Submission');
 const { authenticate } = require('../utils/authMiddleware');
 const jwt = require('jsonwebtoken');
 
@@ -168,6 +173,32 @@ router.post('/college/join', authenticate, async (req, res) => {
         // 3. Permanently bind user to this college
         currentUser.collegeId = college._id;
         await currentUser.save();
+
+        // 3.5 CASCADING MIGRATION: Sweep all existing data and tag with collegeId
+        console.log(`[MIGRATION] Sweeping data for ${currentUser.username}...`);
+        
+        // Update all courses owned by this faculty
+        const courses = await Course.find({ facultyId: currentUser._id });
+        const courseIds = courses.map(c => c._id);
+        
+        await Course.updateMany({ facultyId: currentUser._id }, { $set: { collegeId: college._id } });
+        
+        // Update all batches and assignments linked to those courses
+        if (courseIds.length > 0) {
+            await Batch.updateMany({ courseId: { $in: courseIds } }, { $set: { collegeId: college._id } });
+            await Assignment.updateMany({ courseId: { $in: courseIds } }, { $set: { collegeId: college._id } });
+            
+            // Update all student lab reports for these courses
+            await LabReport.updateMany({ courseId: { $in: courseIds } }, { $set: { collegeId: college._id } });
+        }
+        
+        // If it's a student, update their existing lab reports and submissions
+        if (currentUser.role === 'student') {
+            await LabReport.updateMany({ studentId: currentUser._id }, { $set: { collegeId: college._id } });
+            await Submission.updateMany({ studentUsername: currentUser.username }, { $set: { collegeId: college._id } });
+        }
+
+        console.log(`[MIGRATION] Completed for ${currentUser.username}. Scoped ${courseIds.length} courses to ${college.name}`);
 
         // 4. Issue a NEW JWT with the collegeId baked in
         const newToken = jwt.sign({

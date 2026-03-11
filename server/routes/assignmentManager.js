@@ -22,13 +22,14 @@ router.post('/', authenticate, async (req, res) => {
         if (req.user.collegeId && course.collegeId && course.collegeId.toString() !== req.user.collegeId.toString()) return res.status(403).json({ error: "Course belongs to another college" });
 
         const newAssignment = new Assignment({
+            collegeId: req.user.collegeId || undefined,
             courseId,
             title,
             description,
             language,
             starterCode,
             testCases,
-            maxPoints: points,
+            maxPoints,
             dueDate
         });
 

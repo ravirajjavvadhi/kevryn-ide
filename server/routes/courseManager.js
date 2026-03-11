@@ -32,7 +32,14 @@ router.post('/courses', authenticate, async (req, res) => {
 router.get('/courses', authenticate, async (req, res) => {
     try {
         const query = { facultyId: req.user.userId };
-        if (req.user.collegeId) query.collegeId = req.user.collegeId;
+        // FALLBACK: Show courses that match college OR have no college (legacy)
+        if (req.user.collegeId) {
+            query.$or = [
+                { collegeId: req.user.collegeId },
+                { collegeId: { $exists: false } },
+                { collegeId: null }
+            ];
+        }
 
         const courses = await Course.find(query)
             .populate('batches')
@@ -104,6 +111,7 @@ router.post('/courses/:id/batches', authenticate, async (req, res) => {
         if (course.facultyId.toString() !== req.user.userId) return res.status(403).json({ error: "Unauthorized" });
 
         const newBatch = new Batch({
+            collegeId: req.user.collegeId || undefined,
             courseId: course._id,
             name,
             schedule

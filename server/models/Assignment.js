@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const AssignmentSchema = new mongoose.Schema({
+    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course', required: true },
     title: { type: String, required: true }, // "Lab 1: Hello World"
     description: { type: String }, // Markdown supported
@@ -22,5 +23,9 @@ const AssignmentSchema = new mongoose.Schema({
 
     createdAt: { type: Date, default: Date.now }
 });
+
+// PERFORMANCE: Indexes for fast scoping
+AssignmentSchema.index({ courseId: 1 });
+AssignmentSchema.index({ collegeId: 1 });
 
 module.exports = mongoose.model('Assignment', AssignmentSchema);

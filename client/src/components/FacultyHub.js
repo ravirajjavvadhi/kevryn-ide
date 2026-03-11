@@ -24,11 +24,22 @@ const LiveClock = () => {
     return <span>{time.toLocaleTimeString()}</span>;
 };
 
+const Skeleton = ({ width = '100%', height = '20px', borderRadius = '4px', margin = '0' }) => (
+    <div style={{
+        width, height, borderRadius, margin,
+        background: 'linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%)',
+        backgroundSize: '200% 100%',
+        animation: 'shimmer 2s infinite linear'
+    }} />
+);
+
 const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
     const [activeView, setActiveView] = useState(localStorage.getItem('facultyActiveView') || 'dashboard');
     const [stats, setStats] = useState({ courses: 0, students: 0, activeSessions: 0 });
     const [facultyName, setFacultyName] = useState('Faculty');
-    const [time, setTime] = useState(new Date()); // Keep for logic but remove the frequent setTime
+    const [collegeName, setCollegeName] = useState(localStorage.getItem('collegeName') || null);
+    const [isLoading, setIsLoading] = useState(true);
+    const [time, setTime] = useState(new Date());
 
     useEffect(() => {
         localStorage.setItem('facultyActiveView', activeView);
@@ -38,19 +49,44 @@ const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
     // The 'time' state will now only update on component mount or other re-renders,
     // which is sufficient for greeting and dashboard date display.
 
-    const refreshStats = () => {
+    const refreshStats = async () => {
         if (!token) return;
+        setIsLoading(true);
         const api = axios.create({ baseURL: serverUrl || SERVER_FALLBACK, headers: { Authorization: token } });
-        api.get('/api/courses').then(r => setStats(s => ({ ...s, courses: r.data.length }))).catch(() => { });
-        api.get('/lab/active-session').then(r => setStats(s => ({ ...s, activeSessions: r.data.session ? 1 : 0 }))).catch(() => { });
+        try {
+            const [courseRes, sessionRes] = await Promise.all([
+                api.get('/api/courses'),
+                api.get('/lab/active-session')
+            ]);
+            setStats({
+                courses: courseRes.data.length,
+                students: 0, // Mock student count for now or fetch if available
+                activeSessions: sessionRes.data.session ? 1 : 0
+            });
+        } catch (e) {
+            console.error("Stats Fetch Error:", e);
+        } finally {
+            setIsLoading(false);
+        }
     };
 
     useEffect(() => {
         refreshStats();
-        // Try to get faculty name from token
+        // Try to get faculty info from token
         try {
             const payload = JSON.parse(atob(token.replace('Bearer ', '').split('.')[1]));
             if (payload.username) setFacultyName(payload.username);
+            
+            // Fetch college info if not in localStorage
+            if (!localStorage.getItem('collegeName')) {
+                const api = axios.create({ baseURL: serverUrl || SERVER_FALLBACK, headers: { Authorization: token } });
+                api.get('/api/college/my').then(res => {
+                    if (res.data.college) {
+                        setCollegeName(res.data.college.name);
+                        localStorage.setItem('collegeName', res.data.college.name);
+                    }
+                });
+            }
         } catch (e) { }
     }, [token, serverUrl]);
 
@@ -103,10 +139,16 @@ const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
                         </div>
                         <div style={{ minWidth: 0 }}>
                             <div style={{ fontSize: '13px', fontWeight: '600', color: '#f1f5f9', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{facultyName}</div>
-                            <div style={{ fontSize: '10px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                <span style={{ width: '5px', height: '5px', background: '#4ade80', borderRadius: '50%', display: 'inline-block' }}></span>
-                                Online
-                            </div>
+                            {collegeName ? (
+                                <div style={{ fontSize: '9px', color: '#818cf8', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                    {collegeName.substring(0, 20)}{collegeName.length > 20 ? '...' : ''}
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: '10px', color: '#4ade80', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <span style={{ width: '5px', height: '5px', background: '#4ade80', borderRadius: '50%', display: 'inline-block' }}></span>
+                                    Online
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>
@@ -150,13 +192,24 @@ const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
             {/* === MAIN CONTENT === */}
             <div style={{ flex: 1, overflowY: 'auto', position: 'relative', display: 'flex', flexDirection: 'column' }}>
                 {activeView === 'dashboard' && (
-                    <FacultyDashboardHome
-                        greeting={greeting()}
-                        facultyName={facultyName}
-                        stats={stats}
-                        time={time}
-                        onNavigate={setActiveView}
-                    />
+                    isLoading ? (
+                        <div style={{ padding: '40px' }}>
+                            <Skeleton width="200px" height="30px" margin="0 0 20px 0" />
+                            <Skeleton height="150px" borderRadius="16px" margin="0 0 40px 0" />
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                                <Skeleton height="100px" borderRadius="16px" />
+                                <Skeleton height="100px" borderRadius="16px" />
+                            </div>
+                        </div>
+                    ) : (
+                        <FacultyDashboardHome
+                            greeting={greeting()}
+                            facultyName={facultyName}
+                            stats={stats}
+                            time={time}
+                            onNavigate={setActiveView}
+                        />
+                    )
                 )}
                 {activeView === 'courses' && <CourseManager token={token} serverUrl={serverUrl} userId={userId} />}
                 {activeView === 'assignments' && <AssignmentManager token={token} serverUrl={serverUrl} userId={userId} />}
