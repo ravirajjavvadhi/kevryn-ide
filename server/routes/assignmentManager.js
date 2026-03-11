@@ -29,7 +29,7 @@ router.post('/', authenticate, async (req, res) => {
             language,
             starterCode,
             testCases,
-            maxPoints,
+            maxPoints: points,
             dueDate
         });
 

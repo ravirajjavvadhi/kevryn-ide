@@ -494,9 +494,11 @@ app.get('/auth/github/callback', async (req, res) => {
 });
 
 // 1. Create Session (Faculty Only)
-app.post('/lab/create-session', async (req, res) => {
+app.post('/lab/create-session', authenticate, async (req, res) => {
     try {
-        const { facultyId, sessionName, subject, semester, allowedStudents, courseId, batchId, duration } = req.body;
+        const { sessionName, subject, semester, allowedStudents, courseId, batchId, duration } = req.body;
+        const facultyId = req.user.userId; // Securely take from token
+        const collegeId = req.user.collegeId;
 
 
         let whitelistedStudents = allowedStudents || [];
@@ -524,7 +526,7 @@ app.post('/lab/create-session', async (req, res) => {
 
         const session = new LabSession({
             facultyId,
-            collegeId: req.user.collegeId || undefined,
+            collegeId: collegeId || undefined,
             courseId,
             batchId,
             sessionName,
@@ -749,7 +751,7 @@ app.get('/lab/report/:studentId/:courseName', authenticate, async (req, res) => 
 });
 
 // 2. Add Student to Session (Register)
-app.post('/lab/add-student', async (req, res) => {
+app.post('/lab/add-student', authenticate, async (req, res) => {
     try {
         const { sessionId, username } = req.body;
         const session = await LabSession.findById(sessionId);

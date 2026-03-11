@@ -152,7 +152,8 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                 if (onSessionChange) onSessionChange();
             }
         } catch (e) {
-            alert("Failed to create session: " + e.message);
+            const errorMsg = e.response?.data?.error || e.message;
+            alert("Failed to create session: " + errorMsg);
         }
     };
 
@@ -388,7 +389,10 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                 [newStudentId]: { status: 'offline', activeFile: null }
             }));
             setNewStudentId("");
-        } catch (e) { alert("Failed: " + e.message); }
+        } catch (e) {
+            const errorMsg = e.response?.data?.error || e.message;
+            alert("Failed to add student: " + errorMsg);
+        }
     };
 
     const handleEndSession = async () => {
