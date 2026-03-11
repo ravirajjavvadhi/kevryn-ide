@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // PERFORMANCE: Silence verbose logs in production
 // ============================================================
 // [TEMPORARILY DISABLED FOR DEBUGGING 502 ERROR]
@@ -223,17 +223,24 @@ const allowedOrigins = [
     'https://kevryn.netlify.app',
     'https://kevryn-ide.netlify.app',
     'http://localhost:3000',
-    'http://localhost:3001'
+    'http://localhost:3001',
+    // Cloudflare Pages deployments (preview + production)
+    /^https:\/\/.*\.kevryn-ide\.pages\.dev$/,
+    /^https:\/\/.*\.pages\.dev$/,
 ];
 
 app.use(cors({
     origin: (origin, callback) => {
-        // Allow requests with no origin (like mobile apps or curl) or allowed list
-        if (!origin || allowedOrigins.includes(origin)) {
+        // Allow requests with no origin (mobile apps, curl, etc.) or known origins
+        if (!origin) return callback(null, true);
+        const isAllowed = allowedOrigins.some(o =>
+            typeof o === 'string' ? o === origin : o.test(origin)
+        );
+        if (isAllowed) {
             callback(null, true);
         } else {
             console.warn(`[CORS] Blocked origin: ${origin}`);
-            callback(null, true); // Allow anyway in debug, or be strict in prod
+            callback(null, true); // Allow anyway (permissive for debug)
         }
     },
     credentials: true,
