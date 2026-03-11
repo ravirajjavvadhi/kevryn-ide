@@ -1540,7 +1540,7 @@ function App() {
     const handleJoinCollege = async (code) => {
         if (!code) return;
         try {
-            const res = await api.post('/college/join', { code });
+            const res = await api.post('/api/college/join', { code });
             const { token, college } = res.data;
             // Update token and local storage
             localStorage.setItem('token', token);
@@ -1551,9 +1551,34 @@ function App() {
             setCollegeName(college.name);
             showDialog({ type: 'alert', title: 'College Linked', message: `Welcome! You are now permanently linked to ${college.name}.` });
         } catch (e) {
+            console.error("Join College Error:", e);
             showDialog({ type: 'alert', title: 'Error Linking College', message: e.response?.data?.error || e.message });
         }
     };
+
+    // --- INVITE LINK HANDLER ---
+    useEffect(() => {
+        const inviteToken = window.location.pathname.match(/\/join\/(.+)/)?.[1];
+        if (inviteToken && token) {
+            const checkInvite = async () => {
+                try {
+                    const res = await api.get(`/api/college/invite/${inviteToken}`);
+                    const { college } = res.data;
+                    const confirmJoin = await showDialog({
+                        type: 'confirm',
+                        title: 'Join College?',
+                        message: `Would you like to permanently join "${college.name}"?`
+                    });
+                    if (confirmJoin) {
+                        handleJoinCollege(college.code);
+                    }
+                } catch (err) {
+                    console.error("Invite check failed:", err);
+                }
+            };
+            checkInvite();
+        }
+    }, [token, api, showDialog]);
 
 
 
@@ -1607,26 +1632,49 @@ function App() {
         if (!collegeId) {
             // FACULTY MANDATORY GATE: Block access until college linked
             return (
-                <div style={{ position: 'fixed', inset: 0, background: '#0a0a0f', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
-                    <div style={{ background: '#1e1e2d', padding: '40px', borderRadius: '12px', textAlign: 'center', maxWidth: '400px', border: '1px solid #7c3aed', boxShadow: '0 0 40px rgba(124, 58, 237, 0.2)' }}>
-                        <div style={{ marginBottom: '20px', color: '#7c3aed' }}><FaUserGraduate size={40} /></div>
-                        <h2 style={{ color: '#fff', marginBottom: '10px' }}>Link Your College Account</h2>
-                        <p style={{ color: '#a0aec0', fontSize: '14px', marginBottom: '24px' }}>
+                <div style={{ position: 'fixed', inset: 0, background: '#050505', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999, overflow: 'hidden' }}>
+                    <AntigravityBackground />
+                    <div style={{ position: 'relative', zIndex: 10, background: 'rgba(30, 30, 45, 0.8)', backdropFilter: 'blur(20px)', padding: '40px', borderRadius: '24px', textAlign: 'center', maxWidth: '440px', border: '1px solid rgba(124, 58, 237, 0.3)', boxShadow: '0 0 60px rgba(124, 58, 237, 0.15)' }}>
+                        <div style={{ marginBottom: '20px', color: '#7c3aed' }}><FaUserGraduate size={48} /></div>
+                        <h2 style={{ color: '#fff', marginBottom: '10px', fontSize: '24px', fontWeight: '800' }}>Link Your College Account</h2>
+                        <p style={{ color: '#a0aec0', fontSize: '15px', lineHeight: '1.6', marginBottom: '30px' }}>
                             As a faculty member, you must be linked to a college before accessing the Faculty Hub. This action is permanent.
                         </p>
-                        <input
-                            type="text"
-                            placeholder="Enter College Code (e.g. JNTUH-X1Y2)"
-                            id="facultyCollegeCodeInput"
-                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #333', background: '#0f0f13', color: '#fff', marginBottom: '20px', fontSize: '16px', textAlign: 'center', textTransform: 'uppercase' }}
-                        />
+                        <div style={{ position: 'relative', marginBottom: '20px' }}>
+                            <input
+                                type="text"
+                                placeholder="ACEEN-A5EC"
+                                id="facultyCollegeCodeInput"
+                                style={{ width: '100%', padding: '16px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.1)', background: 'rgba(0,0,0,0.3)', color: '#fff', fontSize: '18px', textAlign: 'center', textTransform: 'uppercase', letterSpacing: '2px', outline: 'none' }}
+                            />
+                        </div>
                         <button
                             onClick={() => handleJoinCollege(document.getElementById('facultyCollegeCodeInput').value)}
-                            style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #7c3aed, #9333ea)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}
+                            style={{ width: '100%', padding: '16px', background: 'linear-gradient(135deg, #7c3aed, #9333ea)', border: 'none', borderRadius: '12px', color: '#fff', fontWeight: '800', cursor: 'pointer', fontSize: '16px', transition: 'all 0.3s', boxShadow: '0 4px 20px rgba(124, 58, 237, 0.4)' }}
+                            onMouseEnter={(e) => e.target.style.transform = 'translateY(-2px)'}
+                            onMouseLeave={(e) => e.target.style.transform = 'translateY(0)'}
                         >
                             Verify & Join
                         </button>
+                        <button 
+                            onClick={handleLogout}
+                            style={{ background: 'none', border: 'none', color: '#4a5568', marginTop: '20px', cursor: 'pointer', fontSize: '14px', textDecoration: 'underline' }}
+                        >
+                            Logout and switch account
+                        </button>
                     </div>
+
+                    {/* === GLOBAL DIALOG (CRITICAL FOR GATE) === */}
+                    {dialog && (
+                        <CustomDialog
+                            type={dialog.type}
+                            title={dialog.title}
+                            message={dialog.message}
+                            defaultValue={dialog.defaultValue}
+                            onConfirm={dialog.onConfirm}
+                            onCancel={dialog.onCancel}
+                        />
+                    )}
                 </div>
             );
         }
@@ -2334,7 +2382,10 @@ function App() {
                                         <span>UTF-8</span>
                                     </div>
                                     <button
-                                        onClick={async () => { const ok = await showDialog({ type: 'confirm', title: 'Sign Out', message: 'Are you sure you want to sign out?' }); if (ok) handleLogout(); }}
+                                        onClick={async () => { 
+                                            const ok = await showDialog({ type: 'confirm', title: 'Sign Out', message: 'Are you sure you want to sign out?' }); 
+                                            if (ok) handleLogout(); 
+                                        }}
                                         style={{
                                             background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)',
                                             padding: '1px 8px', borderRadius: '4px', cursor: 'pointer',
