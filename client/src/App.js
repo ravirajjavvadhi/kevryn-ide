@@ -24,6 +24,7 @@ import SnippetsPanel from './components/SnippetsPanel';
 import TimelinePanel from './components/TimelinePanel';
 import { WebContainer } from '@webcontainer/api';
 import { WebContainerBridge } from './services/WebContainerBridge';
+import { LanguageRuntime } from './services/LanguageRuntime';
 import LabMode from './components/LabMode';
 import SplashScreen from './components/SplashScreen';
 import CustomDialog from './components/CustomDialog';
@@ -181,8 +182,10 @@ function App() {
 
     const webcontainerRef = useRef(null);
     const wcBridgeRef = useRef(null);
+    const languageRuntimeRef = useRef(null); // NEW: C/Python browser runner
     const [webcontainerInstance, setWebcontainerInstance] = useState(null);
     const [wcReady, setWcReady] = useState(false);
+    const [langRuntimeStatus, setLangRuntimeStatus] = useState('idle'); // 'idle' | 'installing' | 'ready' | 'error'
 
     useEffect(() => {
         const bootWebContainer = async () => {
@@ -209,6 +212,19 @@ function App() {
                 });
 
                 console.log("[WebContainer] Booted Successfully");
+
+                // === NEW: SETUP LANGUAGE RUNTIMES (Python + C) ===
+                const runtime = new LanguageRuntime(instance);
+                languageRuntimeRef.current = runtime;
+                setLangRuntimeStatus('installing');
+                try {
+                    await runtime.setup((msg) => console.log(msg));
+                    setLangRuntimeStatus('ready');
+                    console.log('[LanguageRuntime] ✅ Python & C/C++ runtimes ready');
+                } catch (runtimeErr) {
+                    console.warn('[LanguageRuntime] Setup failed (non-critical):', runtimeErr);
+                    setLangRuntimeStatus('error');
+                }
             } catch (e) {
                 console.error("[WebContainer] Boot Failed:", e);
             }
@@ -1281,26 +1297,51 @@ function App() {
         let cmd = "";
         // --- FIX: Robust Path Fallback & Linux Support ---
         const filenameOnly = activeFileName.split('/').pop();
-        const isServerLanguage = ['py', 'c', 'cpp', 'java', 'js', 'rb', 'php', 'go'].includes(ext);
+        const fileNameNoExt = filenameOnly.replace(/\.[^.]+$/, '');
         const exePrefix = './'; // Standard for Linux/Cloud environments
 
-        const commands = {
+        // =====================================================================
+        // BROWSER-FIRST execution for Python, C, C++:
+        //   If WebContainer is ready AND LanguageRuntime is installed, run locally.
+        //   Otherwise fall back to the server PTY.
+        // =====================================================================
+        const wcActive = !!webcontainerRef.current;
+        const runtimeReady = langRuntimeStatus === 'ready';
+
+        const browserCommands = {
+            // Python: use python-wasm via npx (installed by LanguageRuntime)
+            'py': runtimeReady
+                ? `npx python-wasm "${activeFileName}" 2>&1`
+                : `python3 "${activeFileName}" || python "${activeFileName}"`,
+            // C: compile with gcc (WASM) then run
+            'c': runtimeReady
+                ? `gcc "${activeFileName}" -o /tmp/${fileNameNoExt}_out && /tmp/${fileNameNoExt}_out`
+                : null, // fallback to server
+            // C++: compile with g++ (WASM) then run
+            'cpp': runtimeReady
+                ? `g++ "${activeFileName}" -o /tmp/${fileNameNoExt}_out && /tmp/${fileNameNoExt}_out`
+                : null, // fallback to server
+        };
+
+        const serverCommands = {
             'js': `node "${activeFileName}" || node "${filenameOnly}"`,
-            'py': `python3 "${activeFileName}" || python3 "${filenameOnly}" || python "${activeFileName}" || python "${filenameOnly}"`,
-            'java': `javac "${activeFileName}" || javac "${filenameOnly}" && java "${filenameOnly.replace('.java', '')}"`,
-            'c': `gcc "${activeFileName}" -o output || gcc "${filenameOnly}" -o output && ${exePrefix}output`,
-            'cpp': `g++ "${activeFileName}" -o output || g++ "${filenameOnly}" -o output && ${exePrefix}output`,
+            'py': `python3 "${activeFileName}" || python3 "${filenameOnly}" || python "${filenameOnly}"`,
+            'java': `javac "${activeFileName}" || javac "${filenameOnly}" && java "${fileNameNoExt}"`,
+            'c': `gcc "${activeFileName}" -o output && ${exePrefix}output`,
+            'cpp': `g++ "${activeFileName}" -o output && ${exePrefix}output`,
             'rb': `ruby "${activeFileName}" || ruby "${filenameOnly}"`,
             'go': `go run "${activeFileName}" || go run "${filenameOnly}"`,
             'php': `php "${activeFileName}" || php "${filenameOnly}"`,
             'ts': `npx ts-node "${activeFileName}" || npx ts-node "${filenameOnly}"`,
         };
 
-        cmd = commands[ext];
+        // Decide whether to run locally in browser or send to server PTY
+        const browserLangs = ['py', 'c', 'cpp'];
+        const useBrowser = wcActive && browserLangs.includes(ext) && browserCommands[ext];
+
+        cmd = useBrowser ? browserCommands[ext] : serverCommands[ext];
 
         if (cmd) {
-            // isServerLanguage is already defined above
-
             setBottomPanelTab('terminal');
             setIsBottomPanelOpen(true);
 
@@ -1309,13 +1350,11 @@ function App() {
                 const termIdToUse = activeTermId || 1;
                 const inputWriter = inputs[termIdToUse];
 
-                if (!isServerLanguage && inputWriter && typeof inputWriter.write === 'function') {
-                    // Local WebContainer execution
-                    // FIX: Remove character-swallowing \x03\x03. Use \r (Enter) to clear prompt safely.
+                if (useBrowser && inputWriter && typeof inputWriter.write === 'function') {
+                    // ✅ LOCAL execution — no server hit, zero lag for 300 students
                     inputWriter.write('\r' + cmd + '\r');
                 } else {
-                    // Server PTY execution
-                    // FIX: Remove character-swallowing \x03\x03. Use \r (Enter) to clear prompt safely.
+                    // Server PTY execution (Java, Ruby, Go, PHP, or fallback)
                     safeEmit('terminal:write', {
                         termId: termIdToUse,
                         data: '\r' + cmd + '\r',
@@ -2047,7 +2086,9 @@ function App() {
                                                             {terminals.map(t => {
                                                                 const activeFile = openFiles.find(f => f._id === activeFileId);
                                                                 const activeExt = activeFile?.name?.split('.').pop()?.toLowerCase() || '';
-                                                                const isServerLang = ['py', 'c', 'cpp', 'java'].includes(activeExt);
+                                                                // For terminal routing: Python and C/C++ now run in the browser (WebContainer).
+                                                                // Only Java still requires the server PTY.
+                                                                const isServerLang = ['java'].includes(activeExt);
 
                                                                 // --- FORCE REMOUNT FIX ---
                                                                 // We use a combined key of termId + mode.
@@ -2200,6 +2241,11 @@ function App() {
                                     <span style={{ fontSize: '10px', opacity: 0.8 }}>Personal Workspace</span>
                                     <span style={{ opacity: 0.3 }}>|</span>
                                     <span style={{ fontSize: '10px', opacity: 0.6 }}>Server: {SERVER_URL.replace('https://', '')}</span>
+                                    <span style={{ opacity: 0.3 }}>|</span>
+                                    {/* Language Runtime Status */}
+                                    <span title={langRuntimeStatus === 'ready' ? 'Python & C/C++ running in your browser (zero server load)' : langRuntimeStatus === 'installing' ? 'Installing Python/C runtime...' : 'Python/C runtime unavailable'} style={{ fontSize: '10px', color: langRuntimeStatus === 'ready' ? '#34d399' : langRuntimeStatus === 'installing' ? '#fbbf24' : '#6b7280', display: 'flex', alignItems: 'center', gap: '4px', cursor: 'default' }}>
+                                        {langRuntimeStatus === 'ready' ? '✅ 🐍/⚙️ Browser' : langRuntimeStatus === 'installing' ? '⏳ Installing Runtime...' : '🐍/⚙️ Server'}
+                                    </span>
                                     {activeSessionId && (
                                         <>
                                             <span style={{ opacity: 0.3 }}>|</span>
