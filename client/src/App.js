@@ -2075,9 +2075,10 @@ function App() {
                                                             {terminals.map(t => {
                                                                 const activeFile = openFiles.find(f => f._id === activeFileId);
                                                                 const activeExt = activeFile?.name?.split('.').pop()?.toLowerCase() || '';
-                                                                // For terminal routing: Python and C/C++ now run in the browser (WebContainer).
-                                                                // Only Java still requires the server PTY.
-                                                                const isServerLang = ['java'].includes(activeExt);
+                                                                
+                                                                // Use LanguageRuntime to determine if we should stay local
+                                                                const canRunLocally = languageRuntimeRef.current?.canRun(activeExt);
+                                                                const isServerLang = !canRunLocally && ['java', 'c', 'cpp', 'rb', 'go', 'php', 'js', 'ts'].includes(activeExt);
 
                                                                 // --- FORCE REMOUNT FIX ---
                                                                 // We use a combined key of termId + mode.
