@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const LabSessionSchema = new mongoose.Schema({
+    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
     facultyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
     batchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch' },

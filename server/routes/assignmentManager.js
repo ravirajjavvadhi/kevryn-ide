@@ -15,10 +15,11 @@ router.post('/', authenticate, async (req, res) => {
         // Verify Faculty Role
         if (req.user.role !== 'faculty') return res.status(403).json({ error: "Only faculty can create assignments" });
 
-        // Verify Course Ownership
+        // Verify Course Ownership & College
         const course = await Course.findById(courseId);
         if (!course) return res.status(404).json({ error: "Course not found" });
         if (course.facultyId.toString() !== req.user.userId) return res.status(403).json({ error: "Unauthorized for this course" });
+        if (req.user.collegeId && course.collegeId && course.collegeId.toString() !== req.user.collegeId.toString()) return res.status(403).json({ error: "Course belongs to another college" });
 
         const newAssignment = new Assignment({
             courseId,
@@ -41,6 +42,13 @@ router.post('/', authenticate, async (req, res) => {
 // 2. Get Assignments for a Course
 router.get('/course/:courseId', authenticate, async (req, res) => {
     try {
+        const course = await Course.findById(req.params.courseId);
+        if (!course) return res.status(404).json({ error: "Course not found" });
+        // Scoping
+        if (req.user.collegeId && course.collegeId && course.collegeId.toString() !== req.user.collegeId.toString()) {
+            return res.status(403).json({ error: "Unauthorized access to this college's data" });
+        }
+
         const assignments = await Assignment.find({ courseId: req.params.courseId }).sort({ createdAt: -1 });
         res.json(assignments);
     } catch (e) {
@@ -51,8 +59,14 @@ router.get('/course/:courseId', authenticate, async (req, res) => {
 // 3. Get Specific Assignment
 router.get('/:id', authenticate, async (req, res) => {
     try {
-        const assignment = await Assignment.findById(req.params.id);
+        const assignment = await Assignment.findById(req.params.id).populate('courseId');
         if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+
+        // Scoping
+        if (req.user.collegeId && assignment.courseId.collegeId && assignment.courseId.collegeId.toString() !== req.user.collegeId.toString()) {
+            return res.status(403).json({ error: "Unauthorized access to this college's data" });
+        }
+
         res.json(assignment);
     } catch (e) {
         res.status(500).json({ error: e.message });

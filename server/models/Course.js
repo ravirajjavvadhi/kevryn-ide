@@ -1,6 +1,7 @@
 const mongoose = require('mongoose');
 
 const CourseSchema = new mongoose.Schema({
+    collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
     facultyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     name: { type: String, required: true }, // e.g., "Python Programming"
     code: { type: String, required: true }, // e.g., "CS101"

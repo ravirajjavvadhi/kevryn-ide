@@ -57,6 +57,15 @@ function App() {
         const id = localStorage.getItem('userId');
         return (id && id !== 'undefined') ? id : "";
     });
+    // Multi-College Tenancy State
+    const [collegeId, setCollegeId] = useState(() => {
+        const id = localStorage.getItem('collegeId');
+        return (id && id !== 'undefined' && id !== 'null') ? id : null;
+    });
+    const [collegeName, setCollegeName] = useState(() => {
+        const name = localStorage.getItem('collegeName');
+        return (name && name !== 'undefined' && name !== 'null') ? name : null;
+    });
     const [userRole, setUserRole] = useState(localStorage.getItem('role') || "student");
     const [isAppLoading, setIsAppLoading] = useState(() => !!localStorage.getItem('token')); // Load only if token exists
     const [isFacultyLogin, setIsFacultyLogin] = useState(false); // NEW: Faculty Toggle
@@ -83,7 +92,7 @@ function App() {
         if (!token) setIsAppLoading(false);
     }, [token]);
     const [showStudentAssignments, setShowStudentAssignments] = useState(false); // NEW: Default to workspace (IDE) first <!-- id: 401 -->
-    const [authData, setAuthData] = useState({ username: '', password: '' });
+    const [authData, setAuthData] = useState({ username: "", password: "", email: "", collegeCode: "" });
     const [userPicture, setUserPicture] = useState(localStorage.getItem('picture') || null); // Store picture
 
     // --- LAB MODE STATE (Moved to top to fix ReferenceError) ---
@@ -153,6 +162,8 @@ function App() {
         const id = data.user?._id || data.userId;
         const r = data.user?.role || data.role;
         const p = data.user?.picture || data.picture || "";
+        const cId = data.user?.collegeId || data.collegeId || null;
+        const cName = data.user?.collegeName || data.collegeName || null;
 
         if (u && u !== 'undefined') {
             localStorage.setItem('token', data.token);
@@ -160,12 +171,18 @@ function App() {
             localStorage.setItem('userId', id);
             localStorage.setItem('role', r);
             localStorage.setItem('picture', p);
+            if (cId) localStorage.setItem('collegeId', cId);
+            else localStorage.removeItem('collegeId');
+            if (cName) localStorage.setItem('collegeName', cName);
+            else localStorage.removeItem('collegeName');
 
             setToken(data.token);
             setUsername(u);
             setUserId(id);
             setUserRole(r);
             setUserPicture(p);
+            setCollegeId(cId);
+            setCollegeName(cName);
         }
     };
 
@@ -258,6 +275,8 @@ function App() {
         localStorage.removeItem('userId');
         localStorage.removeItem('role');
         localStorage.removeItem('picture');
+        localStorage.removeItem('collegeId');
+        localStorage.removeItem('collegeName');
         localStorage.removeItem('lastSessionId');
         localStorage.removeItem('theme'); // Optional: keep or clear based on preference, clearing for safety
 
@@ -266,6 +285,8 @@ function App() {
         setUsername("");
         setUserId("");
         setUserRole("student"); // Default back to student
+        setCollegeId(null);
+        setCollegeName(null);
         setIsFacultyLogin(false); // Default back to student login
         setIsLogin(true);
         setActiveSessionId(null);
@@ -1515,7 +1536,24 @@ function App() {
         }
     };
 
-    // Unified logout handled by handleLogout (line 217)
+    // --- MULTI-COLLEGE TENANCY: JOIN LOGIC ---
+    const handleJoinCollege = async (code) => {
+        if (!code) return;
+        try {
+            const res = await api.post('/college/join', { code });
+            const { token, college } = res.data;
+            // Update token and local storage
+            localStorage.setItem('token', token);
+            localStorage.setItem('collegeId', college._id);
+            localStorage.setItem('collegeName', college.name);
+            setToken(token);
+            setCollegeId(college._id);
+            setCollegeName(college.name);
+            showDialog({ type: 'alert', title: 'College Linked', message: `Welcome! You are now permanently linked to ${college.name}.` });
+        } catch (e) {
+            showDialog({ type: 'alert', title: 'Error Linking College', message: e.response?.data?.error || e.message });
+        }
+    };
 
 
 
@@ -1566,6 +1604,32 @@ function App() {
     }
 
     if (token && userRole === 'faculty') {
+        if (!collegeId) {
+            // FACULTY MANDATORY GATE: Block access until college linked
+            return (
+                <div style={{ position: 'fixed', inset: 0, background: '#0a0a0f', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999 }}>
+                    <div style={{ background: '#1e1e2d', padding: '40px', borderRadius: '12px', textAlign: 'center', maxWidth: '400px', border: '1px solid #7c3aed', boxShadow: '0 0 40px rgba(124, 58, 237, 0.2)' }}>
+                        <div style={{ marginBottom: '20px', color: '#7c3aed' }}><FaUserGraduate size={40} /></div>
+                        <h2 style={{ color: '#fff', marginBottom: '10px' }}>Link Your College Account</h2>
+                        <p style={{ color: '#a0aec0', fontSize: '14px', marginBottom: '24px' }}>
+                            As a faculty member, you must be linked to a college before accessing the Faculty Hub. This action is permanent.
+                        </p>
+                        <input
+                            type="text"
+                            placeholder="Enter College Code (e.g. JNTUH-X1Y2)"
+                            id="facultyCollegeCodeInput"
+                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #333', background: '#0f0f13', color: '#fff', marginBottom: '20px', fontSize: '16px', textAlign: 'center', textTransform: 'uppercase' }}
+                        />
+                        <button
+                            onClick={() => handleJoinCollege(document.getElementById('facultyCollegeCodeInput').value)}
+                            style={{ width: '100%', padding: '14px', background: 'linear-gradient(135deg, #7c3aed, #9333ea)', border: 'none', borderRadius: '8px', color: '#fff', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}
+                        >
+                            Verify & Join
+                        </button>
+                    </div>
+                </div>
+            );
+        }
         return <FacultyHub token={token} SERVER_URL={SERVER_URL} userId={userId} onLogout={handleLogout} />;
     }
 
@@ -1871,18 +1935,39 @@ function App() {
                                     </div>
 
                                     {/* Sidebar Bottom Row (User Info & Logout) */}
-                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '10px', textAlign: 'center', borderTop: '1px solid var(--border-color)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: 'rgba(0,0,0,0.1)' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            {userPicture ? (
-                                                <img src={userPicture} alt="Profile" style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
-                                            ) : (
-                                                <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
-                                                    {username?.charAt(0).toUpperCase() || '?'}
-                                                </div>
-                                            )}
-                                            <span style={{ fontWeight: '600', color: '#fff' }}>{username}</span>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-secondary)', padding: '10px', textAlign: 'center', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '10px', background: 'rgba(0,0,0,0.1)' }}>
+                                        {/* College Join Button for unassigned students */}
+                                        {userRole === 'student' && !collegeId && (
+                                            <button 
+                                                onClick={() => {
+                                                    const code = prompt("Enter your College Code to link your account permanently:");
+                                                    if (code) handleJoinCollege(code);
+                                                }}
+                                                style={{ width: '100%', background: 'rgba(124, 58, 237, 0.15)', border: '1px solid rgba(124, 58, 237, 0.3)', color: '#c4b5fd', padding: '6px 0', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '11px', fontWeight: '600', transition: 'all 0.2s' }}
+                                                title="Link your account to your college"
+                                            >
+                                                <FaChalkboardTeacher /> Join College
+                                            </button>
+                                        )}
+                                        {/* Display College Badge if enrolled */}
+                                        {collegeName && (
+                                            <div style={{ width: '100%', background: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.2)', color: '#93c5fd', padding: '4px 0', borderRadius: '6px', fontSize: '10px', fontWeight: '700', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '4px' }} title={`Permanently linked to ${collegeName}`}>
+                                                <FaChalkboardTeacher size={10} /> {collegeName.substring(0, 15)}{collegeName.length > 15 ? '...' : ''}
+                                            </div>
+                                        )}
+                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {userPicture ? (
+                                                    <img src={userPicture} alt="Profile" style={{ width: '24px', height: '24px', borderRadius: '50%' }} />
+                                                ) : (
+                                                    <div style={{ width: '28px', height: '28px', borderRadius: '50%', background: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'white', fontWeight: 'bold', fontSize: '14px' }}>
+                                                        {username?.charAt(0).toUpperCase() || '?'}
+                                                    </div>
+                                                )}
+                                                <span style={{ fontWeight: '600', color: '#fff' }}>{username}</span>
+                                            </div>
+                                            <button onClick={handleLogout} className="btn-icon" style={{ border: 'none', cursor: 'pointer', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }} title="Logout"><FaSignOutAlt color="#ef4444" size={16} /></button>
                                         </div>
-                                        <button onClick={handleLogout} className="btn-icon" style={{ border: 'none', cursor: 'pointer', padding: '10px', background: 'rgba(255,255,255,0.05)', borderRadius: '8px' }} title="Logout"><FaSignOutAlt color="#ef4444" size={16} /></button>
                                     </div>
                                 </div>
 

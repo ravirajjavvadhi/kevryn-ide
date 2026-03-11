@@ -14,6 +14,7 @@ router.post('/courses', authenticate, async (req, res) => {
 
         const newCourse = new Course({
             facultyId: req.user.userId,
+            collegeId: req.user.collegeId || undefined,
             name,
             code,
             semester,
@@ -30,7 +31,10 @@ router.post('/courses', authenticate, async (req, res) => {
 // 2. Get All Courses for Faculty
 router.get('/courses', authenticate, async (req, res) => {
     try {
-        const courses = await Course.find({ facultyId: req.user.userId })
+        const query = { facultyId: req.user.userId };
+        if (req.user.collegeId) query.collegeId = req.user.collegeId;
+
+        const courses = await Course.find(query)
             .populate('batches')
             .sort({ createdAt: -1 });
         res.json(courses);
@@ -42,8 +46,11 @@ router.get('/courses', authenticate, async (req, res) => {
 // 3. Get Specific Course Details
 router.get('/courses/:id', authenticate, async (req, res) => {
     try {
-        const course = await Course.findById(req.params.id).populate('batches');
-        if (!course) return res.status(404).json({ error: "Course not found" });
+        const query = { _id: req.params.id };
+        if (req.user.collegeId) query.collegeId = req.user.collegeId;
+
+        const course = await Course.findOne(query).populate('batches');
+        if (!course) return res.status(404).json({ error: "Course not found or access denied" });
         res.json(course);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -211,6 +218,11 @@ router.get('/student/enrolled-courses', authenticate, async (req, res) => {
         const coursesMap = new Map();
         student.enrolledBatches.forEach(batch => {
             if (batch.courseId) {
+                // Multi-College Tenancy Scoping
+                // If the student has a college, only show courses from that college
+                if (req.user.collegeId && batch.courseId.collegeId && batch.courseId.collegeId.toString() !== req.user.collegeId.toString()) {
+                    return; // Skip this course as it belongs to a different college
+                }
                 coursesMap.set(batch.courseId._id.toString(), batch.courseId);
             }
         });

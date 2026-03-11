@@ -135,4 +135,58 @@ router.get('/issues', authenticate, checkAdmin, async (req, res) => {
     }
 });
 
+// 4. Delete User (Deep Cascading Delete)
+router.delete('/users/:id', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'admin') return res.status(403).json({ error: "Only admins can delete users" });
+        if (req.user.userId === req.params.id) return res.status(400).json({ error: "Cannot delete yourself" });
+
+        const userToDelete = await User.findById(req.params.id);
+        if (!userToDelete) return res.status(404).json({ error: "User not found" });
+
+        // Cascading Deletes Based on Role
+        if (userToDelete.role === 'faculty') {
+            // Find all courses taught by this faculty
+            
+            const courses = await Course.find({ facultyId: userToDelete._id });
+            const courseIds = courses.map(c => c._id);
+
+            // Delete Assignments from these courses
+            await Assignment.deleteMany({ courseId: { $in: courseIds } });
+            
+            // Delete Batches from these courses
+            await Batch.deleteMany({ courseId: { $in: courseIds } });
+
+            // Delete the Courses themselves
+            await Course.deleteMany({ facultyId: userToDelete._id });
+
+            // Delete Lab Sessions
+            await LabSession.deleteMany({ facultyId: userToDelete._id });
+
+        } else if (userToDelete.role === 'student' || userToDelete.role === 'user') {
+            
+            // Remove student from any enrolled batches
+            await Batch.updateMany(
+                { "students.username": userToDelete.username },
+                { $pull: { students: { username: userToDelete.username } } }
+            );
+
+            // Delete all their array submissions
+            await Submission.deleteMany({ studentUsername: userToDelete.username });
+        }
+
+        // Wipe IDE files (Snippet, Files)
+        
+        await Snippet.deleteMany({ userId: userToDelete._id });
+        await File.deleteMany({ owner: userToDelete._id });
+
+        // Finally, delete the User document
+        await User.findByIdAndDelete(req.params.id);
+
+        res.json({ success: true, message: "User and all associated data permanently deleted" });
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 module.exports = router;

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaUserShield, FaUsers, FaChartPie, FaExclamationCircle, FaCheckCircle, FaSearch, FaCode, FaSignOutAlt, FaRocket, FaClock } from 'react-icons/fa';
+import { FaUserShield, FaUsers, FaChartPie, FaExclamationCircle, FaCheckCircle, FaSearch, FaCode, FaSignOutAlt, FaRocket, FaClock, FaBuilding, FaPlus, FaCopy, FaTrashAlt } from 'react-icons/fa';
 import { PieChart, Pie, Cell, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } from 'recharts';
 import ParticleBackground from './ParticleBackground';
 
@@ -26,9 +26,12 @@ const AdminDashboard = ({ token, onLogout }) => {
     });
     const [users, setUsers] = useState([]);
     const [issues, setIssues] = useState([]);
+    const [colleges, setColleges] = useState([]); // NEW: Colleges State
     const [searchQuery, setSearchQuery] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [showWelcome, setShowWelcome] = useState(true);
+    const [showCreateCollege, setShowCreateCollege] = useState(false); // NEW: College Modal
+    const [newCollegeName, setNewCollegeName] = useState("");
 
     // API Instance
     const api = axios.create({
@@ -72,6 +75,31 @@ const AdminDashboard = ({ token, onLogout }) => {
         } catch (e) { console.error("User fetch failed", e); }
     };
 
+    const fetchColleges = async () => {
+        try {
+            const res = await api.get('/api/admin/colleges');
+            setColleges(res.data);
+        } catch (e) { console.error("Colleges fetch failed", e); }
+    };
+
+    const handleCreateCollege = async () => {
+        if (!newCollegeName.trim()) return;
+        try {
+            await api.post('/api/admin/colleges', { name: newCollegeName });
+            setNewCollegeName("");
+            setShowCreateCollege(false);
+            fetchColleges();
+            alert("College Created Successfully!");
+        } catch (e) { alert("Failed to create college: " + e.message); }
+    };
+
+    const toggleCollegeStatus = async (id, currentStatus) => {
+        try {
+            await api.patch(`/api/admin/colleges/${id}`, { isActive: !currentStatus });
+            fetchColleges();
+        } catch (e) { alert(e.message); }
+    };
+
     useEffect(() => {
         // Initial Load
         fetchData();
@@ -85,6 +113,7 @@ const AdminDashboard = ({ token, onLogout }) => {
         if (activeTab === 'overview') fetchData();
         if (activeTab === 'users') fetchUsers();
         if (activeTab === 'issues') fetchData();
+        if (activeTab === 'colleges') fetchColleges();
     }, [activeTab, searchQuery]);
 
     const toggleFacultyStatus = async (userId, currentStatus) => {
@@ -103,6 +132,16 @@ const AdminDashboard = ({ token, onLogout }) => {
         } catch (e) { alert(e.message); }
     };
 
+    const handleDeleteUser = async (userId, username) => {
+        if (!window.confirm(`CRITICAL WARNING: Are you sure you want to PERMANENTLY delete user "${username}" and ALL their associated data? This cannot be undone.`)) return;
+        try {
+            await api.delete(`/api/admin/users/${userId}`);
+            fetchUsers();
+            fetchData(); // Refresh stats
+            alert(`User ${username} deleted successfully.`);
+        } catch (e) { alert("Failed to delete user: " + (e.response?.data?.error || e.message)); }
+    };
+
     // --- RENDER ---
     return (
         <div style={{
@@ -111,6 +150,30 @@ const AdminDashboard = ({ token, onLogout }) => {
             fontFamily: "'Rajdhani', sans-serif", overflow: 'hidden',
             display: 'flex', position: 'relative'
         }}>
+            <style>{`
+                .hover-row:hover {
+                    background: rgba(0, 212, 255, 0.05);
+                    box-shadow: inset 2px 0 0 #00d4ff;
+                }
+                .glitch-btn {
+                    transition: all 0.3s ease;
+                }
+                .glitch-btn:hover {
+                    box-shadow: 0 0 15px rgba(255, 77, 77, 0.6);
+                    transform: translateY(-2px);
+                }
+                .cyber-input {
+                    background: rgba(0,0,0,0.5);
+                    border: 1px solid #333;
+                    color: #fff;
+                    transition: all 0.3s;
+                }
+                .cyber-input:focus {
+                    border-color: #00d4ff;
+                    box-shadow: 0 0 10px rgba(0, 212, 255, 0.2);
+                    outline: none;
+                }
+            `}</style>
             <ParticleBackground />
 
             {/* WELCOME OVERLAY */}
@@ -164,6 +227,7 @@ const AdminDashboard = ({ token, onLogout }) => {
                 <div style={{ fontSize: '30px', color: '#00d4ff', marginBottom: '30px', filter: 'drop-shadow(0 0 10px #00d4ff)' }}><FaUserShield /></div>
 
                 <SidebarIcon icon={<FaChartPie />} label="Overview" active={activeTab === 'overview'} onClick={() => setActiveTab('overview')} />
+                <SidebarIcon icon={<FaBuilding />} label="Colleges" active={activeTab === 'colleges'} onClick={() => setActiveTab('colleges')} />
                 <SidebarIcon icon={<FaUsers />} label="Users" active={activeTab === 'users'} onClick={() => setActiveTab('users')} />
                 <SidebarIcon icon={<FaExclamationCircle />} label="Issues" active={activeTab === 'issues'} onClick={() => setActiveTab('issues')} />
 
@@ -328,9 +392,19 @@ const AdminDashboard = ({ token, onLogout }) => {
                                                     )}
                                                 </td>
                                                 <td>
-                                                    <button onClick={() => alert(JSON.stringify(user, null, 2))} style={{ background: 'transparent', border: 'none', color: '#0088FE', cursor: 'pointer', opacity: 0.7 }}>
-                                                        <FaCode /> JSON
-                                                    </button>
+                                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                                        <button onClick={() => alert(JSON.stringify(user, null, 2))} style={{ background: 'transparent', border: 'none', color: '#0088FE', cursor: 'pointer', opacity: 0.7 }}>
+                                                            <FaCode size={16} /> JSON
+                                                        </button>
+                                                        <button 
+                                                            className="glitch-btn"
+                                                            onClick={() => handleDeleteUser(user._id, user.username)} 
+                                                            style={{ background: 'transparent', border: 'none', color: '#FF4D4D', cursor: 'pointer', opacity: 0.8 }}
+                                                            title="Delete User Permanently"
+                                                        >
+                                                            <FaTrashAlt size={16} /> 
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))}
@@ -369,6 +443,94 @@ const AdminDashboard = ({ token, onLogout }) => {
                                             <FaUserShield /> {issue.username || 'Anonymous'}
                                             <span style={{ width: '4px', height: '4px', background: '#444', borderRadius: '50%' }} />
                                             {new Date(issue.createdAt).toLocaleString()}
+                                        </div>
+                                    </motion.div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    )}
+
+                    {/* COLLEGES TAB */}
+                    {activeTab === 'colleges' && (
+                        <motion.div key="colleges" variants={dashboardVariants} initial="hidden" animate="visible">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
+                                <h2 style={headerStyle}>MULTI-COLLEGE TENANCY</h2>
+                                <button
+                                    onClick={() => setShowCreateCollege(true)}
+                                    style={{
+                                        background: 'linear-gradient(135deg, #00d4ff, #0088FE)', color: '#fff',
+                                        border: 'none', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer',
+                                        fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px',
+                                        boxShadow: '0 0 15px rgba(0, 212, 255, 0.3)'
+                                    }}
+                                >
+                                    <FaPlus /> CREATE COLLEGE
+                                </button>
+                            </div>
+
+                            {showCreateCollege && (
+                                <div style={{ background: 'rgba(255,255,255,0.05)', padding: '20px', borderRadius: '8px', marginBottom: '30px', border: '1px solid rgba(0, 212, 255, 0.2)' }}>
+                                    <h3 style={{ color: '#00d4ff', marginTop: 0 }}>Register New Institution</h3>
+                                    <div style={{ display: 'flex', gap: '10px' }}>
+                                        <input
+                                            type="text" placeholder="College Name (e.g., JNTU Hyderabad)"
+                                            value={newCollegeName} onChange={e => setNewCollegeName(e.target.value)}
+                                            className="cyber-input"
+                                            style={{ flex: 1, padding: '12px', borderRadius: '4px' }}
+                                        />
+                                        <button onClick={handleCreateCollege} style={{ background: '#00C49F', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Register</button>
+                                        <button onClick={() => setShowCreateCollege(false)} style={{ background: '#333', color: '#fff', border: 'none', padding: '0 20px', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                                    </div>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '20px' }}>
+                                {colleges.map(college => (
+                                    <motion.div
+                                        key={college._id} variants={cardVariants}
+                                        style={{
+                                            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+                                            borderRadius: '12px', padding: '24px', position: 'relative', overflow: 'hidden'
+                                        }}
+                                    >
+                                        {!college.isActive && <div style={{ position: 'absolute', top: 0, right: 0, background: '#FF4D4D', color: '#fff', fontSize: '10px', padding: '4px 8px', fontWeight: 'bold', borderBottomLeftRadius: '8px' }}>INACTIVE</div>}
+                                        <h3 style={{ margin: '0 0 15px 0', color: '#fff', fontSize: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <FaBuilding style={{ color: '#00d4ff' }} /> {college.name}
+                                        </h3>
+                                        
+                                        <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '6px', marginBottom: '15px' }}>
+                                            <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '4px', textTransform: 'uppercase' }}>Permanent Code</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#00d4ff', fontWeight: 'bold', fontSize: '18px', letterSpacing: '2px' }}>{college.code}</span>
+                                                <button onClick={() => { navigator.clipboard.writeText(college.code); alert('Code copied'); }} style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer' }} title="Copy Code"><FaCopy /></button>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ background: 'rgba(0,0,0,0.3)', padding: '12px', borderRadius: '6px', marginBottom: '20px' }}>
+                                            <div style={{ fontSize: '12px', color: '#aaa', marginBottom: '4px', textTransform: 'uppercase' }}>Invite Link</div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                <span style={{ color: '#FFBB28', fontSize: '12px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{window.location.origin}/join/{college.inviteToken}</span>
+                                                <button onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/join/${college.inviteToken}`); alert('Link copied'); }} style={{ background: 'transparent', border: 'none', color: '#666', cursor: 'pointer', marginLeft: '10px' }} title="Copy Link"><FaCopy /></button>
+                                            </div>
+                                        </div>
+
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '15px' }}>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <div style={{ fontSize: '20px', color: '#fff', fontWeight: 'bold' }}>{college.facultyCount || 0}</div>
+                                                <div style={{ fontSize: '10px', color: '#aaa', textTransform: 'uppercase' }}>Faculty</div>
+                                            </div>
+                                            <div style={{ textAlign: 'center' }}>
+                                                <div style={{ fontSize: '20px', color: '#fff', fontWeight: 'bold' }}>{college.studentCount || 0}</div>
+                                                <div style={{ fontSize: '10px', color: '#aaa', textTransform: 'uppercase' }}>Students</div>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <button
+                                                    onClick={() => toggleCollegeStatus(college._id, college.isActive)}
+                                                    style={{ background: 'transparent', border: `1px solid ${college.isActive ? '#FF4D4D' : '#00C49F'}`, color: college.isActive ? '#FF4D4D' : '#00C49F', padding: '4px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer', fontWeight: 'bold' }}
+                                                >
+                                                    {college.isActive ? 'DEACTIVATE' : 'ACTIVATE'}
+                                                </button>
+                                            </div>
                                         </div>
                                     </motion.div>
                                 ))}

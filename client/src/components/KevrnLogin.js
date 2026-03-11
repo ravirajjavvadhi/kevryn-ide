@@ -224,11 +224,34 @@ export default function KevrnLogin({
   const typeText = useTypewriter(subtitle, 50);
   const [showPass, setShowPass] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isForgotPassword, setIsForgotPassword] = useState(false);
+  const [forgotData, setForgotData] = useState({ username: '', email: '', newPassword: '' });
 
   const onSubmit = async (e) => {
     setIsLoading(true);
     try { await handleAuth(e); }
     finally { setIsLoading(false); }
+  };
+
+  const onForgotPasswordSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    try {
+      const res = await fetch(`${SERVER_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(forgotData),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to reset password');
+      alert('Password reset successful! Please log in with your new password.');
+      setIsForgotPassword(false);
+      setForgotData({ username: '', email: '', newPassword: '' });
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -726,7 +749,28 @@ export default function KevrnLogin({
               <span className="kl-cursor" />
             </p>
 
-            {/* Form */}
+            {/* Form Area */}
+            {isForgotPassword ? (
+              <form onSubmit={onForgotPasswordSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
+                <div className="kl-input-wrap">
+                  <input className="kl-input" type="text" placeholder="Username" value={forgotData.username} onChange={e => setForgotData({...forgotData, username: e.target.value})} required />
+                </div>
+                <div className="kl-input-wrap">
+                  <input className="kl-input" type="email" placeholder="Email Address" value={forgotData.email} onChange={e => setForgotData({...forgotData, email: e.target.value})} required />
+                </div>
+                <div className="kl-input-wrap">
+                  <input className="kl-input" type="password" placeholder="New Password" value={forgotData.newPassword} onChange={e => setForgotData({...forgotData, newPassword: e.target.value})} required />
+                </div>
+                <div className="kl-btn-wrap" style={{ marginTop: '16px' }}>
+                  <button type="submit" className="kl-submit" disabled={isLoading}>
+                    {isLoading && <span className="kl-spinner" />} Reset Password
+                  </button>
+                </div>
+                <p className="kl-signup">
+                   <span className="kl-signup-link" onClick={() => setIsForgotPassword(false)}>Back to Login</span>
+                </p>
+              </form>
+            ) : (
             <form onSubmit={onSubmit} style={{ display: 'flex', flexDirection: 'column' }}>
               <div className="kl-input-wrap">
                 <input
@@ -739,6 +783,18 @@ export default function KevrnLogin({
                   required
                 />
               </div>
+
+              {!isLogin && (
+                <div className="kl-input-wrap">
+                  <input
+                    className="kl-input"
+                    type="text"
+                    placeholder="College Code (optional, e.g. JNTUH-A1B2)"
+                    value={authData.collegeCode || ''}
+                    onChange={e => setAuthData({ ...authData, collegeCode: e.target.value })}
+                  />
+                </div>
+              )}
 
               <div className="kl-input-wrap" style={{ position: 'relative' }}>
                 <input
@@ -761,6 +817,14 @@ export default function KevrnLogin({
                 </button>
               </div>
 
+              {isLogin && (
+                <div style={{ textAlign: 'right', marginBottom: '8px', marginTop: '-4px' }}>
+                  <span style={{ fontSize: '12px', color: '#60a5fa', cursor: 'pointer', transition: 'color 0.2s' }} onClick={() => setIsForgotPassword(true)}>
+                    Forgot Password?
+                  </span>
+                </div>
+              )}
+
               <div className="kl-btn-wrap">
                 <button
                   type="submit"
@@ -774,9 +838,10 @@ export default function KevrnLogin({
                 </button>
               </div>
             </form>
+            )}
 
             {/* Divider + OAuth (Personal only) */}
-            {!isFacultyLogin && (
+            {!isFacultyLogin && !isForgotPassword && (
               <>
                 <div className="kl-divider">
                   <div className="kl-divider-line" />
@@ -811,6 +876,7 @@ export default function KevrnLogin({
             )}
 
             {/* Sign Up / Log In toggle */}
+            {!isForgotPassword && (
             <p className="kl-signup">
               {isLogin ? "Don't have an account? " : 'Already using Kevryn? '}
               <span
@@ -820,6 +886,7 @@ export default function KevrnLogin({
                 {isLogin ? 'Sign Up' : 'Log In'}
               </span>
             </p>
+            )}
 
             {/* Diagnostic */}
             <div className="kl-diag">

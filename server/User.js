@@ -11,6 +11,8 @@ const UserSchema = new mongoose.Schema({
   githubUsername: { type: String },
   // New field to remember who you are working with
   collaborators: [{ type: String }],
+  // Multi-College Tenancy: Permanent college binding
+  collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
   // Vayu Lab Monitor Role
   role: { type: String, enum: ['student', 'faculty', 'admin', 'user'], default: 'student' },
   isFacultyActive: { type: Boolean, default: false }, // Faculty approval status

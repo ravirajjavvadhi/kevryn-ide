@@ -105,6 +105,8 @@ const Batch = require('./models/Batch');   // NEW: For report roster
 const aiRouter = require('./routes/ai');
 const adminRouter = require('./routes/admin'); // NEW: Admin Dashboard
 const issuesRouter = require('./routes/issues'); // NEW: Issue Reporting
+const collegeRouter = require('./routes/college'); // NEW: Multi-College Tenancy
+const College = require('./models/College'); // NEW: College Model
 const DeployManager = require('./deploy/DeployManager');
 const { createProxyMiddleware } = require('http-proxy-middleware');
 const courseManager = require('./routes/courseManager');
@@ -297,24 +299,37 @@ const { authenticate } = require('./utils/authMiddleware');
 // --- AUTH ROUTES ---
 app.post('/auth/register', async (req, res) => {
     try {
-        const { username, password, email, role } = req.body;
+        const { username, password, email, role, collegeCode } = req.body;
         if (!username || !password) return res.status(400).json({ error: "Username and password required" });
 
         const existing = await User.findOne({ username });
         if (existing) return res.status(400).json({ error: "Username taken" });
+
+        // Optional: Auto-join college if code provided during registration
+        let collegeId = null;
+        let collegeName = null;
+        if (collegeCode) {
+            const college = await College.findOne({ code: collegeCode.toUpperCase().trim(), isActive: true });
+            if (college) {
+                collegeId = college._id;
+                collegeName = college.name;
+            }
+            // If invalid code, silently ignore — user can join later
+        }
 
         const hashedPassword = await bcrypt.hash(password, 10);
         const user = new User({
             username,
             password: hashedPassword,
             email,
-            role: role || 'student'
+            role: role || 'student',
+            collegeId: collegeId || undefined
         });
         await user.save();
 
-        const token = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '7d' });
+        const token = jwt.sign({ userId: user._id, username: user.username, role: user.role, collegeId: user.collegeId || null }, JWT_SECRET, { expiresIn: '7d' });
 
-        res.json({ token, user: { _id: user._id, username: user.username, role: user.role, picture: user.picture } });
+        res.json({ token, user: { _id: user._id, username: user.username, role: user.role, picture: user.picture, collegeId: user.collegeId || null, collegeName } });
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
@@ -334,6 +349,7 @@ app.use('/api', courseManager);
 app.use('/api/assignments', assignmentManager);
 app.use('/api/admin', adminRouter); // NEW: Admin API
 app.use('/api/issues', issuesRouter); // NEW: Issue Reporting
+app.use('/api', collegeRouter); // NEW: Multi-College Routes (/api/college/join, /api/admin/colleges)
 app.use('/ai', aiRouter); // Mount AI routes
 
 // --- OAUTH ROUTES ---
@@ -508,6 +524,7 @@ app.post('/lab/create-session', async (req, res) => {
 
         const session = new LabSession({
             facultyId,
+            collegeId: req.user.collegeId || undefined,
             courseId,
             batchId,
             sessionName,
@@ -528,11 +545,11 @@ app.post('/lab/create-session', async (req, res) => {
 // 1.5 Get Active Session (Resume)
 app.get('/lab/active-session', authenticate, async (req, res) => {
     try {
+        const query = { facultyId: req.user.userId, isActive: true };
+        if (req.user.collegeId) query.collegeId = req.user.collegeId;
+
         // Find the most recent active session for this faculty
-        const session = await LabSession.findOne({
-            facultyId: req.user.userId,
-            isActive: true
-        }).sort({ startTime: -1 });
+        const session = await LabSession.findOne(query).sort({ startTime: -1 });
 
         console.log(`[DIAGNOSTIC] FETCH ACTIVE SESSION for ${req.user.userId}: ${session ? session._id : 'none'}`);
         res.json({ session });
@@ -544,11 +561,12 @@ app.get('/lab/active-session', authenticate, async (req, res) => {
 // 1.5.1 Get Active Session (Student Check)
 app.get('/lab/student/active-session', authenticate, async (req, res) => {
     try {
+        const query = { isActive: true, allowedStudents: req.user.username };
+        // If student is bound to a college, they can only see sessions from their college
+        if (req.user.collegeId) query.collegeId = req.user.collegeId;
+
         // Find an active session where this student is whitelisted
-        const session = await LabSession.findOne({
-            isActive: true,
-            allowedStudents: req.user.username
-        }).sort({ startTime: -1 });
+        const session = await LabSession.findOne(query).sort({ startTime: -1 });
 
         res.json({ session });
     } catch (e) {
@@ -1912,13 +1930,43 @@ app.post('/auth/login', async (req, res) => {
         const { username, password } = req.body;
         if (!username || !password) return res.status(400).json({ error: "Username and password required" });
         const user = await User.findOne({ username });
-        if (user && user.password && await bcrypt.compare(password, user.password)) {
-            const token = jwt.sign({ userId: user._id, username: user.username, role: user.role }, JWT_SECRET, { expiresIn: '1d' });
-            res.json({ token, username: user.username, userId: user._id, picture: user.picture, role: user.role });
+        
+        if (!user) {
+            return res.status(404).json({ error: "User not found" });
+        }
+
+        if (user.password && await bcrypt.compare(password, user.password)) {
+            // Include collegeId in JWT for query scoping
+            const token = jwt.sign({ userId: user._id, username: user.username, role: user.role, collegeId: user.collegeId || null }, JWT_SECRET, { expiresIn: '1d' });
+            // Fetch college name if enrolled
+            let collegeName = null;
+            if (user.collegeId) {
+                const college = await College.findById(user.collegeId);
+                if (college) collegeName = college.name;
+            }
+            res.json({ token, username: user.username, userId: user._id, picture: user.picture, role: user.role, collegeId: user.collegeId || null, collegeName });
         } else {
             res.status(401).json({ error: "Invalid credentials" });
         }
     } catch (err) {
+        res.status(500).json({ error: "Server error" });
+    }
+});
+
+app.post('/auth/reset-password', async (req, res) => {
+    try {
+        const { username, email, newPassword } = req.body;
+        if (!username || !email || !newPassword) return res.status(400).json({ error: "All fields are required" });
+
+        const user = await User.findOne({ username, email });
+        if (!user) return res.status(404).json({ error: "User not found or email doesn't match" });
+
+        const salt = await bcrypt.genSalt(10);
+        user.password = await bcrypt.hash(newPassword, salt);
+        await user.save();
+
+        res.json({ success: true, message: "Password updated successfully" });
+    } catch (e) {
         res.status(500).json({ error: "Server error" });
     }
 });
