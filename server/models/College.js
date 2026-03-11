@@ -13,7 +13,7 @@ const CollegeSchema = new mongoose.Schema({
 });
 
 // --- AUTO-GENERATE code and inviteToken before saving ---
-CollegeSchema.pre('validate', function (next) {
+CollegeSchema.pre('validate', function () {
     if (!this.code) {
         // Take first 5 uppercase letters from the name (strip spaces/special chars)
         const prefix = this.name.replace(/[^a-zA-Z]/g, '').substring(0, 5).toUpperCase();
@@ -24,11 +24,8 @@ CollegeSchema.pre('validate', function (next) {
     if (!this.inviteToken) {
         this.inviteToken = crypto.randomUUID();
     }
-    next();
 });
 
-// Index for fast code lookups during join
-CollegeSchema.index({ code: 1 });
-CollegeSchema.index({ inviteToken: 1 });
+
 
 module.exports = mongoose.model('College', CollegeSchema);
