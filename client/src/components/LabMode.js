@@ -4,6 +4,7 @@ import Editor from '@monaco-editor/react';
 import Terminal from './Terminal';
 import io from 'socket.io-client';
 import axios from 'axios';
+import { WebContainerBridge } from '../services/WebContainerBridge';
 
 const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
 const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
@@ -29,6 +30,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const [handRaised, setHandRaised] = useState(false);
     const [announcement, setAnnouncement] = useState(null);
     const [lastSynced, setLastSynced] = useState(null); // NEW: Visual feedback
+    const wcBridgeRef = useRef(null);
 
     const tabCountRef = useRef(0);
     const pasteCountRef = useRef(0);
@@ -180,6 +182,22 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         if (token) loadFiles();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [token]);
+
+    // NEW: Initialize WebContainerBridge when webcontainer is available
+    useEffect(() => {
+        if (webcontainer && socketRef.current && userId) {
+            wcBridgeRef.current = new WebContainerBridge(webcontainer, socketRef.current, userId);
+            console.log("[LabMode] WebContainerBridge initialized");
+
+            // If files are already loaded, mount them
+            const currentFiles = files; // Avoid closure stale state if possible
+            if (currentFiles.length > 0) {
+                wcBridgeRef.current.mountFiles(currentFiles).catch(err => {
+                    console.error("[LabMode] Failed to mount initial files:", err);
+                });
+            }
+        }
+    }, [webcontainer, userId, files.length]); // Use files.length to trigger when files arrive
 
     const loadFiles = useCallback(async () => {
         try {
@@ -481,6 +499,16 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                     fileId: activeFile._id,
                     courseId: session?.courseId
                 });
+            }
+
+            // Sync to WebContainer if bridge is ready
+            if (wcBridgeRef.current) {
+                try {
+                    await wcBridgeRef.current.writeFile(activeFile.name, code);
+                    console.log(`[LabMode] Synced ${activeFile.name} to WebContainer`);
+                } catch (wcErr) {
+                    console.error("[LabMode] WebContainer sync failed:", wcErr);
+                }
             }
 
             // Also emit to faculty

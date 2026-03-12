@@ -2739,8 +2739,8 @@ io.on('connection', (socket) => {
                 env: {
                     ...process.env,
                     TERM: 'xterm-256color',
-                    // Step 3: Explicitly inject system paths to ensure tools are found
-                    PATH: (process.env.PATH || '') + (os.platform() === 'win32' ? ';' : ':') + '/usr/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin'
+                    // FIX: Ensure correct path separator and avoid hardcoded Unix paths on Windows
+                    PATH: (process.env.PATH || '') + (os.platform() === 'win32' ? '' : ':/usr/bin:/usr/local/bin:/usr/local/sbin:/usr/sbin:/bin:/sbin')
                 },
                 handleFlowControl: true
             });
