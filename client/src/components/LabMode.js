@@ -373,7 +373,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         const commands = {
             'js': `node ${filename}`,
             'py': `python3 ${filename} || python ${filename}`,
-            'java': `javac ${filename} && java ${filename.replace('.java', '')}`,
+            'java': `javac "${filename}" && java "${filename.replace('.java', '')}"`,
             'c': `gcc ${filename} -o output && ./output`,
             'cpp': `g++ ${filename} -o output && ./output`,
             'rb': `ruby ${filename}`,
