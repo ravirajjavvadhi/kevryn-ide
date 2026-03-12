@@ -174,7 +174,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             }
             sock.disconnect();
         };
-    }, [session?.sessionId, session?._id, username, userId, language, onLogout]); // Stable dependencies
+    }, [session?.sessionId, session?._id, username, userId, onLogout]); // Stable dependencies (No 'language'!)
 
 
     // --- Load Files ---
@@ -519,20 +519,19 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
 
     // --- Run File ---
-    const handleRun = useCallback(() => {
+    const handleRun = useCallback(async () => {
         if (!activeFile || !socketRef.current) return;
 
         const fileName = activeFile.name;
         const fullPath = findFileFullPath(activeFile._id);
 
         if (fileName.endsWith('.html')) {
-            handleSave().then(() => {
-                let previewUrl = `${SERVER_URL}/preview/${userId}/${fileName}`;
-                if (session?.courseId) {
-                    previewUrl = `${SERVER_URL}/preview/${userId}/labs/${session.courseId}/${fileName}`;
-                }
-                window.open(previewUrl, '_blank');
-            });
+            await handleSave();
+            let previewUrl = `${SERVER_URL}/preview/${userId}/${fileName}`;
+            if (session?.courseId) {
+                previewUrl = `${SERVER_URL}/preview/${userId}/labs/${session.courseId}/${fileName}`;
+            }
+            window.open(previewUrl, '_blank');
             return;
         }
 
@@ -541,32 +540,40 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
         const ext = fileName.split('.').pop().toLowerCase();
         // Hybrid logic: Only C, C++, and Java use server terminal. Web and Python use local WebContainer.
-        const isServerLanguage = ['c', 'cpp', 'java'].includes(ext);
+        const isServerLang = ['c', 'cpp', 'java', 'rb', 'go', 'php'].includes(ext);
 
-        handleSave().then(() => {
-            if (isServerLanguage) {
-                // Send to Server PTY
+        await handleSave();
+        
+        setSaving(false); // Ensure saving state is cleared
+
+        if (isServerLang) {
+            // Send to Server PTY
+            socketRef.current.emit('terminal:write', {
+                termId: 1,
+                data: '\r' + cmd + '\r',
+                courseId: session?.courseId
+            });
+        } else {
+            // Send to Local WebContainer (if available)
+            const inputWriter = window.ideTerminalInputs && window.ideTerminalInputs[1];
+            if (inputWriter) {
+                // Use padding \r to ensure execution
+                try {
+                    await inputWriter.write('\r' + cmd + '\r');
+                    console.log(`[LabMode] Executed: ${cmd}`);
+                } catch (err) {
+                    console.error("[LabMode] WebContainer execution failed:", err);
+                }
+            } else {
+                // Fallback to server if local not ready
                 socketRef.current.emit('terminal:write', {
                     termId: 1,
-                    data: cmd + '\r',
+                    data: '\r' + cmd + '\r',
                     courseId: session?.courseId
                 });
-            } else {
-                // Send to Local WebContainer (if available)
-                const inputWriter = window.ideTerminalInputs && window.ideTerminalInputs[1];
-                if (inputWriter) {
-                    inputWriter.write(cmd + '\r');
-                } else {
-                    // Fallback to server if local not ready
-                    socketRef.current.emit('terminal:write', {
-                        termId: 1,
-                        data: cmd + '\r',
-                        courseId: session?.courseId
-                    });
-                }
             }
-        });
-    }, [activeFile, handleSave, session]);
+        }
+    }, [activeFile, handleSave, session, userId, findFileFullPath]);
 
     // --- Keyboard Shortcut: Ctrl+S ---
     useEffect(() => {
@@ -595,7 +602,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         }, 100);
     };
 
-    const isServerLanguage = ['c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase());
+    const isServerLanguage = useMemo(() => {
+        const ext = activeFile?.name?.split('.').pop()?.toLowerCase();
+        return ['c', 'cpp', 'java', 'rb', 'go', 'php'].includes(ext);
+    }, [activeFile?.name]);
+
+    const terminalMode = isServerLanguage ? 'server' : 'local';
+    const terminalKey = `lab-term-${terminalMode}`;
 
     return (
         <div style={{
@@ -889,6 +902,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
                             {socketRef.current && userId ? (
                                 <Terminal
+                                    key={terminalKey}
                                     socket={socketRef.current}
                                     termId={1}
                                     userId={userId}

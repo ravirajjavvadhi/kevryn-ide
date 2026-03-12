@@ -2120,6 +2120,14 @@ function App() {
                                                                 console.log(`[AUTO-SAVE] Saving ${targetName} (${targetId})...`);
                                                                 await api.put(`/files/${targetId}`, { content: v });
                                                                 safeEmit('save-file-disk', { fileName: targetName, code: v, userId, fileId: targetId });
+                                                                
+                                                                // Sync to WebContainer
+                                                                if (wcBridgeRef.current) {
+                                                                    wcBridgeRef.current.writeFile(targetName, v).catch(e => {
+                                                                        console.error('[WC-SYNC] Auto-save failed:', e);
+                                                                    });
+                                                                }
+
                                                                 console.log('[AUTO-SAVE] Success:', targetName);
                                                             } catch (err) {
                                                                 console.error('[AUTO-SAVE] Failed:', err);
