@@ -8,7 +8,7 @@ import axios from 'axios';
 const _raw = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
 const SERVER_URL = _raw.startsWith('http') ? _raw : `https://${_raw}`;
 
-const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
+const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogout }) => {
     const [timeLeft, setTimeLeft] = useState(null);
     const [files, setFiles] = useState([]);
     const [activeFile, setActiveFile] = useState(null);
@@ -512,7 +512,8 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         if (!cmd) { alert("No run command for this file type"); return; }
 
         const ext = fileName.split('.').pop().toLowerCase();
-        const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(ext);
+        // Hybrid logic: Only C, C++, and Java use server terminal. Web and Python use local WebContainer.
+        const isServerLanguage = ['c', 'cpp', 'java'].includes(ext);
 
         handleSave().then(() => {
             if (isServerLanguage) {
@@ -566,7 +567,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
         }, 100);
     };
 
-    const isServerLanguage = ['py', 'c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase());
+    const isServerLanguage = ['c', 'cpp', 'java'].includes(activeFile?.name?.split('.').pop()?.toLowerCase());
 
     return (
         <div style={{
@@ -863,7 +864,7 @@ const LabMode = ({ session, username, userId, token, theme, onLogout }) => {
                                     socket={socketRef.current}
                                     termId={1}
                                     userId={userId}
-                                    webcontainer={isServerLanguage ? null : session?.webcontainer}
+                                    webcontainer={isServerLanguage ? null : webcontainer}
                                 />
                             ) : (
                                 <div style={{ padding: '20px', color: '#475569', fontSize: '13px' }}>Connecting to secure terminal shell...</div>

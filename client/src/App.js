@@ -1601,6 +1601,7 @@ function App() {
                 userId={userId}
                 token={token}
                 theme={currentTheme}
+                webcontainer={webcontainerInstance}
                 onLogout={() => {
                     // Notify server that THIS socket (App.js) is also leaving the lab
                     if (socketRef.current && activeSessionId) {
