@@ -9,8 +9,8 @@ export class GeminiAdapter implements AgentExtension {
             id: 'google-gemini',
             name: 'Google Gemini',
             publisher: 'KevRyn',
-            version: '1.0.0',
-            description: 'Advanced AI Agent powered by Google Gemini 1.5 Pro',
+            version: '2.5.0',
+            description: 'Advanced AI Agent powered by Google Gemini 2.5 Flash',
             capabilities: ['chat', 'workspace-read', 'terminal-execute']
         };
     }
@@ -72,7 +72,7 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
                 generationConfig: { temperature: 0.7 }
             };
 
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`, {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: { 
                     'Content-Type': 'application/json'
