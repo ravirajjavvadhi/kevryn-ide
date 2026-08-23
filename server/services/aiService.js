@@ -11,7 +11,13 @@ const GROQ_KEYS = [
     process.env.GROQ_API_KEY // Fallback
 ].filter(Boolean);
 
-const GROQ_MODEL = 'llama-3.1-8b-instant'; // Using valid model
+// Groq 2026 Model Catalog Updates
+const MODELS = {
+    general: 'openai/gpt-oss-20b',
+    complex: 'openai/gpt-oss-120b',
+    vision: 'qwen/qwen3.6-27b'
+};
+
 const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 // ── CHAT ─────────────────────────────────────────────────────────
@@ -21,13 +27,15 @@ const chat = async (messages, options = {}) => {
     }
 
     let lastError = null;
+    const selectedModel = MODELS[options.modelCategory] || MODELS.general;
+    
     for (let i = 0; i < GROQ_KEYS.length; i++) {
         const key = GROQ_KEYS[i];
         try {
-            console.log(`[NeuralCore] Attempting KevRyn Neural Core with Key ${i+1}...`);
+            console.log(`[NeuralCore] Attempting KevRyn Neural Core with Key ${i+1} using ${selectedModel}...`);
 
             const payload = {
-                model: GROQ_MODEL,
+                model: selectedModel,
                 messages: messages,
                 temperature: 0.7,
                 max_tokens: 2048,

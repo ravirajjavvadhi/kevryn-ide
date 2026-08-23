@@ -155,8 +155,21 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
             ...messages.map(m => ({ role: m.role, content: m.content }))
         ];
 
+        // Determine Model Capability based on context
+        const lastUserMessage = messages[messages.length - 1].content.toLowerCase();
+        let modelCategory = 'general';
+        if (
+            lastUserMessage.includes('report') || 
+            lastUserMessage.includes('session') || 
+            lastUserMessage.includes('student') || 
+            lastUserMessage.includes('detail') ||
+            lastUserMessage.includes('analyze')
+        ) {
+            modelCategory = 'complex'; // Use 120B for complex agentic/reporting tasks
+        }
+
         // Call LLM with tools
-        let result = await aiService.chat(fullMessages, { tools: mcpTools.tools });
+        let result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory });
         
         // Handle tool calls loop
         if (result.tool_calls) {
@@ -175,7 +188,7 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
                 });
             }
             // Call LLM again to get final answer
-            result = await aiService.chat(fullMessages);
+            result = await aiService.chat(fullMessages, { modelCategory });
         }
 
         // Persist session
