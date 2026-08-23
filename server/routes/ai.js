@@ -190,20 +190,21 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
         const { messages, sessionId } = req.body;
         if (!messages) return res.status(400).json({ error: 'Messages are required' });
 
+        const backendUrl = process.env.BASE_URL || 'https://kevryn-ide.onrender.com';
         const systemContext = `You are the KevRyn Faculty Assistant, a professional AI embedded in the Faculty Command Center.
 You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, track student competitive programming stats, and execute dynamic database queries.
 
 DATABASE TERMINOLOGY GUIDE & ALLOWED MODELS:
 - User: Contains student profiles (username, rollNumber, fullName, role).
-- Course: Contains subjects (name, code, department).
-- Assignment: Contains problems (title, subjectName, courseId).
-- Submission: Contains student code submissions (studentUsername, assignmentId, score, submittedAt).
-- LabSession: Contains live sessions (sessionName, subject, activeStudents, allowedStudents).
-- DeveloperMetrics: Contains competitive stats (github, leetcode, etc).
+- Course/Subject: Courses are mapped in the 'Course' collection (name field).
+- Assignments: Created by faculty in the 'Assignment' collection (title, subjectName).
+- Submissions: Student code uploads in the 'Submission' collection (assignmentId, studentUsername, score, submittedAt).
+- LabSession: Attendance and session records in the 'LabSession' collection (sessionName, subject, startTime, activeStudents).
+- DeveloperMetrics: Live stats from Github, Leetcode, Hackerrank in the 'DeveloperMetrics' collection.
 
 When asked about sessions, submissions, or reports, use the dedicated tools ('get_lab_sessions', 'get_recent_submissions'). 
 If the faculty asks for something entirely custom or analytical (e.g. "average score", "who hasn't submitted", "list assignments matching X"), use the 'execute_read_query' tool to construct a MongoDB query on the relevant model.
-If returning a CSV report link, format it using standard markdown: [Download CSV Report](/api/lab/sessions/ID/csv).`;
+If you need to provide a report link for a specific session ID, format it using standard markdown pointing to the printable PDF: [🖨️ Print Official PDF](${backendUrl}/api/lab/sessions/ID/print).`;
 
         const fullMessages = [
             { role: 'system', content: systemContext },

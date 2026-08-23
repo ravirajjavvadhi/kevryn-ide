@@ -134,9 +134,8 @@ const executeTool = async (name, args, facultyId) => {
         case 'generate_csv_report': {
             try {
                 return {
-                    message: "CSV Report is ready for download.",
-                    downloadLink: `/lab/sessions/${args.sessionId}/csv`,
-                    action: "Tell the user to click the download link provided."
+                    message: "Report is ready. Instead of a CSV, you should provide the direct Print Official PDF link.",
+                    action: "Tell the user to click the [🖨️ Print Official PDF] link using the format provided in your system instructions."
                 };
             } catch (e) {
                 return `Error: ${e.message}`;

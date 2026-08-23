@@ -830,6 +830,143 @@ app.get('/lab/sessions/past', authenticate, async (req, res) => {
     }
 });
 
+app.get('/api/lab/sessions/:id/print', async (req, res) => {
+    try {
+        const LabSession = require('./LabSessionModel');
+        const session = await LabSession.findById(req.params.id)
+            .populate('courseId', 'name')
+            .populate('batchId', 'name');
+            
+        if (!session) return res.status(404).send('Session not found');
+
+        const attendedUsernames = session.activeStudents.map(s => s.username);
+        const offlineStudents = session.allowedStudents.filter(u => !attendedUsernames.includes(u));
+
+        const sessionDate = new Date(session.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        const startTime = new Date(session.startTime).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+        const endTime = new Date(session.endTime || new Date()).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' });
+
+        let attendedRows = session.activeStudents.map((stu, i) => {
+            const mal = stu.malpracticeWarnings > 0 ? `<span style='color:red'>Yes (${stu.malpracticeWarnings})</span>` : 'No';
+            return `<tr>
+                <td>${i + 1}</td>
+                <td>${stu.rollNumber || 'N/A'}</td>
+                <td>${stu.username}</td>
+                <td>${Math.round((stu.totalActiveTime || 0)/60)}m</td>
+                <td>${Math.round((stu.totalIdleTime || 0)/60)}m</td>
+                <td>${stu.focusScore || 0}%</td>
+                <td>${stu.tabSwitches || 0}</td>
+                <td>${mal}</td>
+                <td class='badge-clean'>ATTENDED</td>
+            </tr>`;
+        }).join('');
+
+        if (session.activeStudents.length === 0) {
+            attendedRows = `<tr><td colspan='9' style='text-align:center;'>No students attended this session</td></tr>`;
+        }
+
+        let offlineRows = offlineStudents.map((stu, i) => {
+            return `<tr>
+                <td>${i + 1}</td>
+                <td>${stu.rollNumber || 'N/A'}</td>
+                <td>${stu.username || stu}</td>
+                <td class='badge-danger'>ABSENT</td>
+            </tr>`;
+        }).join('');
+
+        if (offlineStudents.length === 0) {
+            offlineRows = `<tr><td colspan='4' style='text-align:center;'>No absentees</td></tr>`;
+        }
+
+        const html = `<!DOCTYPE html>
+        <html>
+        <head>
+            <title>Lab Report - ${session.sessionName}</title>
+            <style>
+                body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 25px; color: #0f172a; font-size: 13px; line-height: 1.4; }
+                .header { text-align: center; border-bottom: 2px solid #0284c7; padding-bottom: 15px; margin-bottom: 20px; }
+                .header h2 { margin: 0; color: #1e3a8a; font-size: 20px; text-transform: uppercase; }
+                .header h3 { margin: 4px 0 0 0; color: #0284c7; font-size: 14px; font-weight: 600; }
+                .header p { margin: 4px 0 0 0; color: #64748b; font-size: 11px; }
+                .meta-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; margin-bottom: 20px; font-size: 12px; }
+                .meta-item strong { display: block; color: #475569; font-size: 10px; text-transform: uppercase; }
+                table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 11px; }
+                th, td { border: 1px solid #cbd5e1; padding: 8px 10px; text-align: left; }
+                th { background-color: #0f172a; color: #ffffff; font-weight: 600; text-transform: uppercase; font-size: 10px; }
+                tr:nth-child(even) { background-color: #f8fafc; }
+                .badge-clean { color: #16a34a; font-weight: bold; }
+                .badge-danger { color: #dc2626; font-weight: bold; }
+                @media print {
+                    body { padding: 0; }
+                    @page { margin: 15mm; }
+                }
+            </style>
+        </head>
+        <body>
+            <div class='header'>
+                <h2>ACE ENGINEERING COLLEGE</h2>
+                <h3>DEPARTMENT OF COMPUTER SCIENCE & ENGINEERING</h3>
+                <p>OFFICIAL LAB SESSION PERFORMANCE & INTEGRITY AUDIT REPORT</p>
+            </div>
+
+            <div class='meta-grid'>
+                <div class='meta-item'><strong>Session Name</strong>${session.sessionName}</div>
+                <div class='meta-item'><strong>Course / Subject</strong>${session.courseId ? session.courseId.name : 'Computer Science Lab'}</div>
+                <div class='meta-item'><strong>Date</strong>${sessionDate}</div>
+                <div class='meta-item'><strong>Session Time</strong>${startTime} - ${endTime}</div>
+                <div class='meta-item'><strong>Total Enrolled</strong>${session.activeStudents.length + offlineStudents.length}</div>
+                <div class='meta-item'><strong>Students Attended</strong><span style='color: #16a34a;'>${session.activeStudents.length}</span></div>
+                <div class='meta-item'><strong>Students Absent</strong><span style='color: #dc2626;'>${offlineStudents.length}</span></div>
+                <div class='meta-item'><strong>Audit Result</strong><span style='color: #0284c7;'>VERIFIED BY SYSTEM</span></div>
+            </div>
+
+            <h3 style='margin-bottom: 5px; color: #0f172a; font-size: 13px; text-transform: uppercase;'>Attended Student Performance & Integrity Roster</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>S.No</th>
+                        <th>Roll Number</th>
+                        <th>Student Name</th>
+                        <th>Active Time</th>
+                        <th>Idle Time</th>
+                        <th>Focus Score</th>
+                        <th>Tab Switches</th>
+                        <th>Malpractice</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${attendedRows}
+                </tbody>
+            </table>
+
+            <h3 style='margin-top: 30px; margin-bottom: 5px; color: #dc2626; font-size: 13px; text-transform: uppercase;'>Absentee List (${offlineStudents.length} Students)</h3>
+            <table>
+                <thead>
+                    <tr>
+                        <th>S.No</th>
+                        <th>Roll Number</th>
+                        <th>Student Name</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${offlineRows}
+                </tbody>
+            </table>
+
+            <script>
+                window.onload = function() { window.print(); }
+            </script>
+        </body>
+        </html>`;
+
+        res.send(html);
+    } catch (e) {
+        res.status(500).send('Error generating report: ' + e.message);
+    }
+});
+
 app.get('/lab/sessions/:id/report', authenticate, async (req, res) => {
     try {
         const session = await LabSession.findById(req.params.id)

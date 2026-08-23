@@ -38,6 +38,9 @@ const chat = async (messages, options = {}) => {
     let lastError = null;
     const selectedModel = MODELS[options.modelCategory] || MODELS.general;
     
+    let maxGlobalRetries = 2;
+    let globalRetries = 0;
+
     for (let i = 0; i < activeKeys.length; i++) {
         const key = activeKeys[i];
         try {
@@ -75,6 +78,19 @@ const chat = async (messages, options = {}) => {
                 model: 'KevRyn Neural Core' 
             };
         } catch (e) {
+            if (e.response && e.response.status === 429 && globalRetries < maxGlobalRetries) {
+                globalRetries++;
+                const errMsg = e.response?.data?.error?.message || "";
+                let waitMs = 6000;
+                const match = errMsg.match(/try again in ([0-9.]+)s/);
+                if (match && match[1]) {
+                    waitMs = parseFloat(match[1]) * 1000 + 500;
+                }
+                console.log(`[NeuralCore] Rate limit hit. Waiting ${waitMs}ms before retrying (Retry ${globalRetries}/${maxGlobalRetries})...`);
+                await new Promise(r => setTimeout(r, waitMs));
+                i--; // Retry same key
+                continue;
+            }
             console.error(`[NeuralCore] Key ${i+1} failed: ${e.message}`);
             lastError = e;
             // Continue to next key
