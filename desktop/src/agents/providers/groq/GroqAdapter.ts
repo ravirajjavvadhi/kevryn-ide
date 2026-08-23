@@ -10,7 +10,7 @@ export class GroqAdapter implements AgentExtension {
             name: 'Groq Neural Core',
             publisher: 'KevRyn',
             version: '1.0.0',
-            description: 'Lightning-fast AI Agent powered by Groq LPU (Llama 3.3 70B)',
+            description: 'Lightning-fast AI Agent powered by GPT OSS 120B/20B & Qwen 27B',
             capabilities: ['chat', 'workspace-read', 'terminal-execute']
         };
     }
@@ -61,8 +61,14 @@ ${context?.code || 'Empty'}
 
 If the user asks for code, provide it cleanly. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
 
+            // Simple routing based on prompt complexity
+            let selectedModel = "openai/gpt-oss-20b";
+            if (message.length > 200 || message.toLowerCase().includes("analyze") || message.toLowerCase().includes("refactor")) {
+                selectedModel = "openai/gpt-oss-120b";
+            }
+
             const payload = {
-                model: "llama-3.3-70b-versatile",
+                model: selectedModel,
                 messages: [
                     { role: "system", content: systemPrompt },
                     { role: "user", content: message }
