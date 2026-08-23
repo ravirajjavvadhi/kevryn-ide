@@ -130,8 +130,8 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
             const parsedCohort = JSON.parse(selectedCohort);
             const payload = { ...formData, ...parsedCohort };
             
-            if (!payload.startTime) payload.startTime = null;
-            if (!payload.endTime) payload.endTime = null;
+            if (payload.startTime) payload.startTime = new Date(payload.startTime).toISOString();
+            if (payload.endTime) payload.endTime = new Date(payload.endTime).toISOString();
 
             if (isEditing && editingAssignmentId) {
                 await api.put(`/api/assignments/${editingAssignmentId}`, payload);
@@ -149,6 +149,14 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
         }
     };
 
+    const getLocalDatetimeLocal = (dateString) => {
+        if (!dateString) return '';
+        const d = new Date(dateString);
+        if (isNaN(d)) return '';
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 16);
+    };
+
     const handleEditClick = (assignment) => {
         setFormData({
             title: assignment.title,
@@ -157,8 +165,8 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
             starterCode: assignment.starterCode,
             testCases: assignment.testCases,
             points: assignment.maxPoints || 100,
-            startTime: assignment.startTime ? new Date(assignment.startTime).toISOString().slice(0, 16) : '',
-            endTime: assignment.endTime ? new Date(assignment.endTime).toISOString().slice(0, 16) : '',
+            startTime: getLocalDatetimeLocal(assignment.startTime),
+            endTime: getLocalDatetimeLocal(assignment.endTime),
             difficulty: assignment.difficulty || 'Medium'
         });
         setEditingAssignmentId(assignment._id);
@@ -428,7 +436,7 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
                                                 height="100%"
                                                 theme="vs-dark"
                                                 language="python"
-                                                value={selectedSubmission.code || "// No code submitted"}
+                                                value={selectedSubmission.submittedCode || "// No code submitted"}
                                                 options={{ readOnly: true, minimap: { enabled: false } }}
                                             />
                                         </div>
