@@ -71,7 +71,12 @@ CRITICAL INSTRUCTIONS:
             cleanMessages.push({ role: 'assistant', content: result.content || null, tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
-                const args = JSON.parse(toolCall.function.arguments);
+                let args = {};
+                try {
+                    args = JSON.parse(toolCall.function.arguments || '{}');
+                } catch (e) {
+                    console.log(`[AI-CHAT] Warning: JSON parse failed for tool arguments:`, toolCall.function.arguments);
+                }
                 console.log(`[AI-CHAT] Executing tool ${toolCall.function.name}...`);
                 const toolResult = await aiTools.executeTool(toolCall.function.name, args, req.user.userId);
                 
@@ -211,7 +216,12 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
             fullMessages.push({ role: 'assistant', content: result.content || null, tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
-                const args = JSON.parse(toolCall.function.arguments);
+                let args = {};
+                try {
+                    args = JSON.parse(toolCall.function.arguments || '{}');
+                } catch (e) {
+                    console.log(`[Faculty AI] Warning: JSON parse failed for tool arguments:`, toolCall.function.arguments);
+                }
                 console.log(`[Faculty AI] Executing tool ${toolCall.function.name}...`);
                 const toolResult = await mcpTools.executeTool(toolCall.function.name, args, req.user.userId);
                 
