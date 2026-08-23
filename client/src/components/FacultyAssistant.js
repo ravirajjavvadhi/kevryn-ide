@@ -1,4 +1,4 @@
-﻿import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import axios from 'axios';
 import { FaRobot, FaUser, FaPaperPlane, FaTimes, FaSpinner } from 'react-icons/fa';
 import { marked } from 'marked';
@@ -33,7 +33,7 @@ const FacultyAssistant = ({ token, serverUrl, onClose }) => {
             // Only send actual user/assistant messages to the backend to keep payload clean
             const payloadMessages = newMessages.map(m => ({ role: m.role, content: m.content }));
             
-            const res = await api.post('/api/ai/faculty-assistant', {
+            const res = await api.post('/ai/faculty-assistant', {
                 messages: payloadMessages
             });
 
