@@ -169,7 +169,7 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
         }
 
         // Call LLM with tools
-        let result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory });
+        let result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
         
         // Handle tool calls loop
         if (result.tool_calls) {
@@ -188,7 +188,7 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
                 });
             }
             // Call LLM again to get final answer
-            result = await aiService.chat(fullMessages, { modelCategory });
+            result = await aiService.chat(fullMessages, { modelCategory, role: 'faculty' });
         }
 
         // Persist session

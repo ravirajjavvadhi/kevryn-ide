@@ -5,10 +5,16 @@
  */
 const axios = require('axios');
 
-const GROQ_KEYS = [
+const STUDENT_GROQ_KEYS = [
     process.env.GROQ_API_KEY_1,
     process.env.GROQ_API_KEY_2,
     process.env.GROQ_API_KEY // Fallback
+].filter(Boolean);
+
+const FACULTY_GROQ_KEYS = [
+    process.env.FACULTY_GROQ_API_KEY_1,
+    process.env.FACULTY_GROQ_API_KEY_2,
+    process.env.FACULTY_GROQ_API_KEY_3
 ].filter(Boolean);
 
 // Groq 2026 Model Catalog Updates
@@ -22,15 +28,18 @@ const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
 
 // ── CHAT ─────────────────────────────────────────────────────────
 const chat = async (messages, options = {}) => {
-    if (GROQ_KEYS.length === 0) {
-        throw new Error('No Groq API keys found. Please check your environment variables.');
+    const isFaculty = options.role === 'faculty';
+    const activeKeys = isFaculty && FACULTY_GROQ_KEYS.length > 0 ? FACULTY_GROQ_KEYS : STUDENT_GROQ_KEYS;
+
+    if (activeKeys.length === 0) {
+        throw new Error(`No Groq API keys found for ${isFaculty ? 'faculty' : 'student'}. Please check your environment variables.`);
     }
 
     let lastError = null;
     const selectedModel = MODELS[options.modelCategory] || MODELS.general;
     
-    for (let i = 0; i < GROQ_KEYS.length; i++) {
-        const key = GROQ_KEYS[i];
+    for (let i = 0; i < activeKeys.length; i++) {
+        const key = activeKeys[i];
         try {
             console.log(`[NeuralCore] Attempting KevRyn Neural Core with Key ${i+1} using ${selectedModel}...`);
 
