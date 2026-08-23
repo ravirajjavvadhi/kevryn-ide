@@ -201,7 +201,7 @@ const StudentAssignmentView = ({
 
     // --- STYLES ---
     const cardStyle = {
-        background: 'rgba(30, 41, 59, 0.4)', // Lightened slightly (slate-800 with opacity)
+        background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)', // Solid neat card background
         backdropFilter: 'blur(16px)',
         border: '1px solid rgba(255, 255, 255, 0.1)',
         borderRadius: '24px',
@@ -227,7 +227,7 @@ const StudentAssignmentView = ({
     const rootStyle = {
         height: '100%',
         width: '100%',
-        background: 'linear-gradient(135deg, rgba(15,23,42,0.8), rgba(30,27,75,0.7))', // Less dark, more vibrant indigo/slate
+        background: 'radial-gradient(circle at top right, #1e1b4b 0%, #0a0f1c 40%, #020617 100%)', // Premium solid background to hide underlying particles
         overflowY: 'auto',
         position: 'relative',
         scrollBehavior: 'smooth'
@@ -269,15 +269,18 @@ const StudentAssignmentView = ({
                                 <FaBook color="#818cf8" size={20} />
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
                                     <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Active Subject Context</span>
-                                    <select 
-                                        value={selectedContextId} 
-                                        onChange={(e) => setSelectedContextId(e.target.value)}
-                                        style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '18px', fontWeight: '800', outline: 'none', cursor: 'pointer', appearance: 'none', paddingRight: '20px' }}
-                                    >
-                                        {courses.map(c => (
-                                            <option key={c._id} value={c._id} style={{ background: '#0f172a' }}>{c.name}</option>
-                                        ))}
-                                    </select>
+                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                                        <select 
+                                            value={selectedContextId} 
+                                            onChange={(e) => setSelectedContextId(e.target.value)}
+                                            style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '18px', fontWeight: '800', outline: 'none', cursor: 'pointer', appearance: 'none', paddingRight: '25px', zIndex: 2, position: 'relative' }}
+                                        >
+                                            {courses.map(c => (
+                                                <option key={c._id} value={c._id} style={{ background: '#0f172a' }}>{c.name}</option>
+                                            ))}
+                                        </select>
+                                        <span style={{ position: 'absolute', right: '5px', color: '#818cf8', fontSize: '12px', pointerEvents: 'none', zIndex: 1 }}>▼</span>
+                                    </div>
                                 </div>
                             </div>
                         )}
@@ -728,6 +731,7 @@ const StudentAssignmentView = ({
 };
 
 export default StudentAssignmentView;
+
 
 
 
