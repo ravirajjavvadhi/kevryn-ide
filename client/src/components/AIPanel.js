@@ -11,7 +11,7 @@ import {
 const _rawServerUrl = (process.env.REACT_APP_SERVER_URL || 'http://localhost:5000').trim();
 const SERVER_URL = _rawServerUrl.startsWith('http') ? _rawServerUrl : `https://${_rawServerUrl}`;
 
-const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
+const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId }) => {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -166,8 +166,12 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
             if (window.__KEVRYN_DESKTOP__ && window.electronAPI) {
                 // Find active agent
                 const agents = await window.electronAPI.getAgentList();
-                const activeAgent = agents.find(a => a.status === 'RUNNING') || agents.find(a => a.status === 'AUTHENTICATED');
-                const targetAgentId = activeAgent ? activeAgent.manifest.id : 'google-gemini';
+                let activeAgent = targetAgentId ? agents.find(a => a.manifest.id === targetAgentId) : null;
+                
+                if (!activeAgent) {
+                    activeAgent = agents.find(a => a.status === 'RUNNING') || agents.find(a => a.status === 'AUTHENTICATED');
+                }
+                const finalAgentId = activeAgent ? activeAgent.manifest.id : 'google-gemini';
 
                 setMessages(prev => [...prev, { role: 'assistant', content: '' }]); // placeholder
                 
@@ -182,15 +186,15 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
                     });
                 };
                 
-                window.electronAPI.onAgentChatChunk(targetAgentId, onChunk);
+                window.electronAPI.onAgentChatChunk(finalAgentId, onChunk);
                 
                 return new Promise((resolve) => {
-                    window.electronAPI.onAgentChatDone(targetAgentId, () => {
+                    window.electronAPI.onAgentChatDone(finalAgentId, () => {
                         setIsLoading(false);
                         setAgentStatus(null);
                         resolve();
                     });
-                    window.electronAPI.onAgentChatError(targetAgentId, (err) => {
+                    window.electronAPI.onAgentChatError(finalAgentId, (err) => {
                         setMessages(prev => {
                             const newMsg = [...prev];
                             newMsg[newMsg.length - 1].content = `❌ Error: ${err}`;
@@ -201,7 +205,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
                         resolve();
                     });
                     
-                    window.electronAPI.chatWithAgent(targetAgentId, userMessage, {
+                    window.electronAPI.chatWithAgent(finalAgentId, userMessage, {
                         code, fileName, language
                     }).catch(e => {
                         setMessages(prev => {
@@ -240,13 +244,17 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
         }
     };
 
-    // ── RENDER ───────────────────────────────────────────────────
+    // ── RENDER ───────────────────────────────────────────────────    // ✨ RENDER ✨
+    let headerTitle = "KevRyn AI";
+    if (targetAgentId === 'groq-assistant') headerTitle = "Groq Neural Core";
+    if (targetAgentId === 'google-gemini') headerTitle = "Google Gemini";
+
     return (
         <div className="ai-panel">
             <div className="ai-header">
                 <div className="ai-header-left">
                     <div className="ai-logo"><FaMagic size={14} /></div>
-                    <span className="ai-title">KevRyn AI</span>
+                    <span className="ai-title">{headerTitle}</span>
                     <span style={{ fontSize: '10px', color: '#10b981', marginLeft: '8px', fontWeight: 600 }}>● Online</span>
                 </div>
                 <div className="ai-header-right">

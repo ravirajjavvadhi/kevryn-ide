@@ -464,6 +464,7 @@ function App() {
 
     // --- AI PANEL STATE ---
     const [isAiPanelOpen, setIsAiPanelOpen] = useState(false);
+    const [activeAiAgent, setActiveAiAgent] = useState('groq-assistant');
     const [aiPanelWidth, setAiPanelWidth] = useState(350);
     const [isResizingAi, setIsResizingAi] = useState(false);
 
@@ -3010,6 +3011,7 @@ function App() {
                                                         code={code}
                                                         fileName={fileName}
                                                         language={getLanguage(fileName)}
+                                                        targetAgentId={activeAiAgent}
                                                         onApplyCode={(newCode, lang) => {
                                                             const terminalLangs = ['powershell', 'bash', 'shell', 'sh', 'cmd', 'zsh', 'terminal'];
                                                             if (lang && terminalLangs.includes(lang.toLowerCase())) {
@@ -3048,34 +3050,37 @@ function App() {
                                         gap: '12px'
                                     }}>
                                         <div 
-                                            onClick={() => setIsAiPanelOpen(!isAiPanelOpen)} 
-                                            style={{
-                                                padding: '10px',
-                                                cursor: 'pointer',
-                                                borderRadius: '8px',
-                                                background: isAiPanelOpen ? 'var(--accent-primary)' : 'transparent',
-                                                color: isAiPanelOpen ? '#fff' : 'var(--text-secondary)',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
-                                            }}
-                                            title="KevRyn AI (Default)"
-                                        >
-                                            <FaRobot size={18} />
-                                        </div>
-                                        <div 
                                             onClick={() => {
-                                                // Trigger Gemini Extension (Mock for now, sets AI panel open)
+                                                setActiveAiAgent('groq-assistant');
                                                 setIsAiPanelOpen(true);
                                             }} 
                                             style={{
                                                 padding: '10px',
                                                 cursor: 'pointer',
                                                 borderRadius: '8px',
-                                                color: '#10b981',
+                                                background: (isAiPanelOpen && activeAiAgent === 'groq-assistant') ? 'var(--accent-primary)' : 'transparent',
+                                                color: (isAiPanelOpen && activeAiAgent === 'groq-assistant') ? '#fff' : 'var(--text-secondary)',
                                                 display: 'flex', alignItems: 'center', justifyContent: 'center'
                                             }}
-                                            title="Google Gemini (Installed)"
+                                            title="Groq Neural Core"
                                         >
-                                            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" alt="Gemini" style={{ width: '18px', height: '18px' }} />
+                                            <span style={{ fontFamily: 'monospace', fontWeight: 900, fontSize: '15px', letterSpacing: '-1px' }}>gr</span>
+                                        </div>
+                                        <div 
+                                            onClick={() => {
+                                                setActiveAiAgent('google-gemini');
+                                                setIsAiPanelOpen(true);
+                                            }} 
+                                            style={{
+                                                padding: '10px',
+                                                cursor: 'pointer',
+                                                borderRadius: '8px',
+                                                background: (isAiPanelOpen && activeAiAgent === 'google-gemini') ? 'var(--accent-primary)' : 'transparent',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center'
+                                            }}
+                                            title="Google Gemini"
+                                        >
+                                            <img src="https://www.gstatic.com/lamda/images/gemini_sparkle_v002_d4735304ff6292a690345.svg" alt="Gemini" style={{ width: '18px', height: '18px', filter: (isAiPanelOpen && activeAiAgent === 'google-gemini') ? 'brightness(0) invert(1)' : 'none' }} />
                                         </div>
 
                                     </div>
