@@ -112,9 +112,17 @@ const AgentHubModal = ({ isOpen, onClose }) => {
                                             <FaKey size={12} /> Save Key
                                         </button>
                                     </div>
-                                    <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#8b5cf6', fontSize: '12px', textDecoration: 'none' }}>
-                                        Get a free Gemini API Key here &rarr;
-                                    </a>
+                                    
+                                    {agent.manifest.id === 'google-gemini' && (
+                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#8b5cf6', fontSize: '12px', textDecoration: 'none' }}>
+                                            Get a free Gemini API Key here &rarr;
+                                        </a>
+                                    )}
+                                    {agent.manifest.id === 'groq-assistant' && (
+                                        <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: '#8b5cf6', fontSize: '12px', textDecoration: 'none' }}>
+                                            Get a free Groq API Key here &rarr;
+                                        </a>
+                                    )}
                                 </div>
                             )}
 

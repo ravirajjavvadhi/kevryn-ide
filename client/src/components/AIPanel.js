@@ -164,7 +164,11 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
 
         try {
             if (window.__KEVRYN_DESKTOP__ && window.electronAPI) {
-                // Desktop Agent Extension Hub routing (Hardcoded to gemini for now)
+                // Find active agent
+                const agents = await window.electronAPI.getAgentList();
+                const activeAgent = agents.find(a => a.status === 'RUNNING') || agents.find(a => a.status === 'AUTHENTICATED');
+                const targetAgentId = activeAgent ? activeAgent.manifest.id : 'google-gemini';
+
                 setMessages(prev => [...prev, { role: 'assistant', content: '' }]); // placeholder
                 
                 // Set up chunk listener BEFORE sending request
@@ -178,15 +182,15 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
                     });
                 };
                 
-                window.electronAPI.onAgentChatChunk('google-gemini', onChunk);
+                window.electronAPI.onAgentChatChunk(targetAgentId, onChunk);
                 
                 return new Promise((resolve) => {
-                    window.electronAPI.onAgentChatDone('google-gemini', () => {
+                    window.electronAPI.onAgentChatDone(targetAgentId, () => {
                         setIsLoading(false);
                         setAgentStatus(null);
                         resolve();
                     });
-                    window.electronAPI.onAgentChatError('google-gemini', (err) => {
+                    window.electronAPI.onAgentChatError(targetAgentId, (err) => {
                         setMessages(prev => {
                             const newMsg = [...prev];
                             newMsg[newMsg.length - 1].content = `❌ Error: ${err}`;
@@ -197,12 +201,12 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode }) => {
                         resolve();
                     });
                     
-                    window.electronAPI.chatWithAgent('google-gemini', userMessage, {
+                    window.electronAPI.chatWithAgent(targetAgentId, userMessage, {
                         code, fileName, language
                     }).catch(e => {
                         setMessages(prev => {
                             const newMsg = [...prev];
-                            newMsg[newMsg.length - 1].content = `❌ Failed to start chat: ${e.message}`;
+                            newMsg[newMsg.length - 1].content = `❌ Error initializing agent: ${e.message}`;
                             return newMsg;
                         });
                         setIsLoading(false);

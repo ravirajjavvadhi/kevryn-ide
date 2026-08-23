@@ -29,9 +29,11 @@ async function createWindow() {
     // Setup Agent Hub
     const { AgentManager } = require('../agents/core/AgentManager');
     const { GeminiAdapter } = require('../agents/providers/gemini/GeminiAdapter');
+    const { GroqAdapter } = require('../agents/providers/groq/GroqAdapter');
     
     const agentManager = new AgentManager(win);
     agentManager.registerAgent(new GeminiAdapter());
+    agentManager.registerAgent(new GroqAdapter());
     agentManager.setupIpc();
     agentManager.initializeAgents().catch(console.error);
 
