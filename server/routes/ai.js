@@ -83,7 +83,7 @@ CRITICAL INSTRUCTIONS:
                 });
             }
             // Call LLM again to get final answer
-            result = await aiService.chat(cleanMessages);
+            result = await aiService.chat(cleanMessages, { tools });
         }
 
         // Persist session
@@ -223,7 +223,7 @@ When asked about sessions or reports, ALWAYS use your tools. If returning a CSV 
                 });
             }
             // Call LLM again to get final answer
-            result = await aiService.chat(fullMessages, { modelCategory, role: 'faculty' });
+            result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
         }
 
         // Persist session
