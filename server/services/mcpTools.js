@@ -76,6 +76,35 @@ const tools = [
                 }
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "execute_read_query",
+            description: "Executes a flexible read-only MongoDB query to answer custom/complex faculty requests (e.g. 'average scores', 'students who failed', 'assignments matching criteria').",
+            parameters: {
+                type: "object",
+                properties: {
+                    collection: {
+                        type: "string",
+                        description: "The mongoose model to query. Allowed: User, LabSession, DeveloperMetrics, Submission, Assignment, Course"
+                    },
+                    query: {
+                        type: "object",
+                        description: "The MongoDB filter object (e.g. { score: { $gt: 80 } }). Use valid MongoDB query syntax."
+                    },
+                    sort: {
+                        type: "object",
+                        description: "Optional sort object (e.g. { createdAt: -1 })"
+                    },
+                    limit: {
+                        type: "number",
+                        description: "Max results to return (max 100). Default 50."
+                    }
+                },
+                required: ["collection", "query"]
+            }
+        }
     }
 ];
 
@@ -186,6 +215,27 @@ const executeTool = async (name, args, facultyId) => {
                 });
             } catch (e) {
                 return `Error: ${e.message}`;
+            }
+        }
+
+        case 'execute_read_query': {
+            try {
+                const models = { User, LabSession, DeveloperMetrics, Submission, Assignment, Course };
+                const Model = models[args.collection];
+                if (!Model) return `Error: Collection ${args.collection} not found or not permitted. Allowed models: ${Object.keys(models).join(', ')}`;
+                
+                let limit = args.limit || 50;
+                if (limit > 100) limit = 100;
+
+                let dbQuery = Model.find(args.query);
+                if (args.sort) dbQuery = dbQuery.sort(args.sort);
+                
+                const results = await dbQuery.limit(limit).lean();
+                
+                if (results.length === 0) return "Query returned 0 results.";
+                return results;
+            } catch (e) {
+                return `Error executing query: ${e.message}`;
             }
         }
 

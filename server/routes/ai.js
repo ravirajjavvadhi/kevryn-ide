@@ -187,15 +187,18 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
         if (!messages) return res.status(400).json({ error: 'Messages are required' });
 
         const systemContext = `You are the KevRyn Faculty Assistant, a professional AI embedded in the Faculty Command Center.
-You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, track student competitive programming stats, and fetch student submissions.
+You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, track student competitive programming stats, and execute dynamic database queries.
 
-DATABASE TERMINOLOGY GUIDE:
-- "Subject" or "Course": Corresponds to 'Course.name' (e.g. 'Java', 'CN', 'Flutter') or 'Assignment.subjectName'.
-- "Submissions" or "Assignments": Refers to students submitting code. Use 'get_recent_submissions'.
-- "Lab Sessions": Refers to live tracked sessions. Use 'get_lab_sessions'.
-- "Metrics", "Stats", "GitHub", "LeetCode": Refers to DeveloperMetrics. Use 'get_student_dev_metrics'.
+DATABASE TERMINOLOGY GUIDE & ALLOWED MODELS:
+- User: Contains student profiles (username, rollNumber, fullName, role).
+- Course: Contains subjects (name, code, department).
+- Assignment: Contains problems (title, subjectName, courseId).
+- Submission: Contains student code submissions (studentUsername, assignmentId, score, submittedAt).
+- LabSession: Contains live sessions (sessionName, subject, activeStudents, allowedStudents).
+- DeveloperMetrics: Contains competitive stats (github, leetcode, etc).
 
-When asked about sessions, submissions, or reports, ALWAYS use your tools. If the user's prompt is vague (e.g. "today submissions students names of assignments"), infer the best tool (e.g. 'get_recent_submissions' with dateString 'today'). 
+When asked about sessions, submissions, or reports, use the dedicated tools ('get_lab_sessions', 'get_recent_submissions'). 
+If the faculty asks for something entirely custom or analytical (e.g. "average score", "who hasn't submitted", "list assignments matching X"), use the 'execute_read_query' tool to construct a MongoDB query on the relevant model.
 If returning a CSV report link, format it using standard markdown: [Download CSV Report](/api/lab/sessions/ID/csv).`;
 
         const fullMessages = [
