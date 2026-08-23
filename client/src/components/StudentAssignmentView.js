@@ -28,6 +28,7 @@ const StudentAssignmentView = ({
     const [activeAssignments, setActiveAssignments] = useState([]);
     const [aptitudeHistory, setAptitudeHistory] = useState([]);
     const [userStats, setUserStats] = useState({ completed: 0, points: 0, rank: 'Novice' });
+    const [selectedAnalyticsSubmission, setSelectedAnalyticsSubmission] = useState(null);
 
     // NEW: Developer Identity
     const [devProfiles, setDevProfiles] = useState({ github: '', leetcode: '', hackerrank: '', codechef: '' });
@@ -386,7 +387,10 @@ const StudentAssignmentView = ({
                             desc="Review your past submissions, feedback, and grade progressions for this subject."
                             icon={<FaHistory size={24} />}
                             color="#10b981"
-                            onClick={() => { alert("History module coming soon!"); }}
+                            onClick={() => {
+                                setSelectedAnalyticsSubmission(null);
+                                setViewMode('analytics');
+                            }}
                         />
                     </div>
                 )}
@@ -685,18 +689,95 @@ const StudentAssignmentView = ({
         );
     };
 
+    const renderAnalytics = () => {
+        const selectedCourse = courses.find(c => c._id === selectedContextId);
+        
+        const contextualAssignments = activeAssignments.filter(a => {
+            if (a.courseId) return (a.courseId?._id || a.courseId) === selectedContextId;
+            if (selectedCourse && a.subjectName) return a.subjectName.toLowerCase() === selectedCourse.name.toLowerCase();
+            return false;
+        });
+        
+        const assignmentIds = contextualAssignments.map(a => a._id);
+        const contextSubmissions = submissions.filter(sub => assignmentIds.includes(sub.assignmentId?._id || sub.assignmentId));
+
+        return (
+            <div style={rootStyle}>
+                <div style={watermarkStyle}>ANALYTICS</div>
+                <div style={containerStyle}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px', marginBottom: '40px' }}>
+                        <h2 style={{ fontSize: '32px', fontWeight: '800', margin: 0 }}>Subject Performance Analytics</h2>
+                    </div>
+                    
+                    <div style={{ display: 'flex', height: '600px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', overflow: 'hidden', background: 'rgba(15,23,42,0.6)', backdropFilter: 'blur(16px)' }}>
+                        <div style={{ width: '300px', borderRight: '1px solid rgba(255,255,255,0.1)', overflowY: 'auto' }}>
+                            {contextSubmissions.length === 0 ? (
+                                <div style={{ padding: '24px', color: '#64748b', textAlign: 'center' }}>No submissions found for this subject.</div>
+                            ) : (
+                                contextSubmissions.map(sub => (
+                                    <div 
+                                        key={sub._id}
+                                        onClick={() => setSelectedAnalyticsSubmission(sub)}
+                                        style={{ 
+                                            padding: '20px', 
+                                            cursor: 'pointer', 
+                                            borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                            background: selectedAnalyticsSubmission?._id === sub._id ? 'rgba(99,102,241,0.1)' : 'transparent',
+                                            transition: 'background 0.2s',
+                                            borderLeft: selectedAnalyticsSubmission?._id === sub._id ? '4px solid #6366f1' : '4px solid transparent'
+                                        }}
+                                    >
+                                        <div style={{ fontWeight: 'bold', color: '#f8fafc', marginBottom: '4px' }}>{sub.assignmentId?.title || 'Unknown Assignment'}</div>
+                                        <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '8px' }}>Submitted: {new Date(sub.submittedAt).toLocaleDateString()}</div>
+                                        <div style={{ fontSize: '14px', color: sub.score > 0 ? '#10b981' : '#ef4444', fontWeight: '700' }}>Score: {sub.score} / {sub.assignmentId?.maxPoints || 100}</div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: 'rgba(2,6,23,0.4)' }}>
+                            {selectedAnalyticsSubmission ? (
+                                <>
+                                    <div style={{ padding: '20px', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                        <div>
+                                            <h3 style={{ margin: '0 0 4px 0', color: '#f8fafc' }}>{selectedAnalyticsSubmission.assignmentId?.title} Code Review</h3>
+                                            <div style={{ fontSize: '13px', color: '#94a3b8' }}>View your submitted code and test case results.</div>
+                                        </div>
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <Editor
+                                            height="100%"
+                                            theme="vs-dark"
+                                            language="python"
+                                            value={selectedAnalyticsSubmission.submittedCode || "// No code submitted"}
+                                            options={{ readOnly: true, minimap: { enabled: false } }}
+                                        />
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
+                                    Select a past submission to view your code.
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        );
+    };
+
     const renderActiveOverlay = () => {
         if (viewMode === 'aptitude-list') return renderAptitudeList();
         if (viewMode === 'solve' && selectedAssignment) return renderSolve();
         if (viewMode === 'assignments') return renderAssignmentsList();
         if (viewMode === 'courses') return renderCourseList();
+        if (viewMode === 'analytics') return renderAnalytics();
         return null;
     };
 
     return (
         <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
             {/* BACKGROUND COMMAND CENTER (Always visible) */}
-            <div style={{ width: '100%', height: '100%', overflowY: 'auto' }}>
+            <div style={{ position: 'absolute', inset: 0, opacity: viewMode === 'hub' ? 1 : 0.3, filter: viewMode === 'hub' ? 'none' : 'blur(4px)', transition: 'all 0.3s ease-in-out', zIndex: 1 }}>
                 {renderHub()}
             </div>
             
@@ -713,7 +794,7 @@ const StudentAssignmentView = ({
                         {viewMode !== 'solve' && (
                             <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10, backdropFilter: 'blur(10px)' }}>
                                 <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#818cf8', textTransform: 'uppercase', letterSpacing: '1px' }}>
-                                    {viewMode === 'aptitude-list' ? 'Aptitude Test Center' : viewMode === 'assignments' ? 'Assignment Depot' : 'Academy Vault'}
+                                    {viewMode === 'aptitude-list' ? 'Aptitude Test Center' : viewMode === 'assignments' ? 'Assignment Depot' : viewMode === 'analytics' ? 'Performance Analytics' : 'Academy Vault'}
                                 </div>
                                 <button onClick={() => setViewMode('hub')} style={{ background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444', padding: '6px 16px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', transition: 'all 0.2s' }}>
                                     <FaTimesCircle /> Close Overlay
