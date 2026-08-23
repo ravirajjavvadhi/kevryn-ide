@@ -67,7 +67,8 @@ CRITICAL INSTRUCTIONS:
         console.log(`[AI-CHAT] Result received`);
 
         // Handle tool calls loop
-        if (result.tool_calls) {
+        let loopCount = 0;
+        while (result.tool_calls && loopCount < 5) {
             cleanMessages.push({ role: 'assistant', content: result.content || "", tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
@@ -89,7 +90,10 @@ CRITICAL INSTRUCTIONS:
             }
             // Call LLM again to get final answer
             result = await aiService.chat(cleanMessages, { tools });
+            loopCount++;
         }
+
+        const safeContent = result.content || "[Tool execution completed successfully]";
 
         // Persist session
         let session;
@@ -100,18 +104,18 @@ CRITICAL INSTRUCTIONS:
             session = new ChatSession({
                 userId: req.user.userId,
                 title: messages[messages.length - 1].content.substring(0, 40),
-                messages: [...messages, { role: 'assistant', content: result.content }]
+                messages: [...messages, { role: 'assistant', content: safeContent }]
             });
         } else {
             session.messages.push(messages[messages.length - 1]);
-            session.messages.push({ role: 'assistant', content: result.content });
+            session.messages.push({ role: 'assistant', content: safeContent });
         }
         console.log(`[AI-CHAT] Saving session...`);
         await session.save();
         console.log(`[AI-CHAT] Session saved: ${session._id}`);
 
         res.json({
-            response: result.content,
+            response: safeContent,
             model: result.model,
             sessionId: session._id
         });
@@ -223,7 +227,8 @@ If returning a CSV report link, format it using standard markdown: [Download CSV
         let result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
         
         // Handle tool calls loop
-        if (result.tool_calls) {
+        let loopCount = 0;
+        while (result.tool_calls && loopCount < 5) {
             fullMessages.push({ role: 'assistant', content: result.content || "", tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
@@ -245,7 +250,10 @@ If returning a CSV report link, format it using standard markdown: [Download CSV
             }
             // Call LLM again to get final answer
             result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
+            loopCount++;
         }
+
+        const safeContent = result.content || "[Tool execution completed successfully]";
 
         // Persist session
         let session;
@@ -256,19 +264,16 @@ If returning a CSV report link, format it using standard markdown: [Download CSV
             session = new ChatSession({
                 userId: req.user.userId,
                 title: `[Faculty] ${messages[messages.length - 1].content.substring(0, 40)}`,
-                messages: [
-                    ...messages,
-                    { role: 'assistant', content: result.content }
-                ]
+                messages: [...messages, { role: 'assistant', content: safeContent }]
             });
         } else {
             session.messages.push(messages[messages.length - 1]);
-            session.messages.push({ role: 'assistant', content: result.content });
+            session.messages.push({ role: 'assistant', content: safeContent });
         }
         await session.save();
 
         res.json({
-            response: result.content,
+            response: safeContent,
             model: result.model,
             sessionId: session._id
         });
