@@ -45,7 +45,7 @@ export class GroqAdapter implements AgentExtension {
         }
     }
 
-    async *chat(message: string, context?: any): AsyncGenerator<string, void, unknown> {
+    async *sendChat(message: string, context?: any): AsyncGenerator<string, void, unknown> {
         if (this.status !== 'RUNNING' || !this.apiKey) {
             yield "❌ Agent is not authenticated or running.";
             return;
