@@ -2993,7 +2993,7 @@ function App() {
                                 </div> {/* End center-workspace */}
 
                                 {/* --- RIGHT SIDEBAR (AI) --- */}
-                                <div style={{ display: 'flex', height: '100%' }}>
+                                <div style={{ display: 'flex', height: '100%', minHeight: 0, minWidth: 0 }}>
                                     <AnimatePresence>
                                         {isAiPanelOpen && (
                                             <motion.div
@@ -3001,10 +3001,10 @@ function App() {
                                                 animate={{ width: aiPanelWidth, opacity: 1 }}
                                                 exit={{ width: 0, opacity: 0 }}
                                                 transition={{ type: 'spring', damping: 30, stiffness: 300 }}
-                                                style={{ display: 'flex', overflow: 'hidden', height: '100%', flexShrink: 0, borderRight: '1px solid var(--border-color)' }}
+                                                style={{ display: 'flex', overflow: 'hidden', height: '100%', minHeight: 0, minWidth: 0, flexShrink: 0, borderRight: '1px solid var(--border-color)' }}
                                             >
                                                 <div className="resize-handle" onMouseDown={startResizingAi} style={{ width: '4px', cursor: 'col-resize', background: 'transparent', zIndex: 100 }} />
-                                                <div className="right-sidebar" style={{ width: '100%', height: '100%' }}>
+                                                <div className="right-sidebar" style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0 }}>
                                                     <AIPanel
                                                         token={token}
                                                         code={code}
