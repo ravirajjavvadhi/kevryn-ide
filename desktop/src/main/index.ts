@@ -19,6 +19,15 @@ async function createWindow() {
         }
     });
 
+    // Fix: Open external links in default OS browser (Chrome/Edge) instead of internal Electron window.
+    // This prevents Google Login from crashing with a blank screen or 'disallowed_useragent'.
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        if (url.startsWith('http') || url.startsWith('https')) {
+            require('electron').shell.openExternal(url);
+        }
+        return { action: 'deny' };
+    });
+
     // Detect environment on startup
     await EnvironmentManager.detectAll();
 
