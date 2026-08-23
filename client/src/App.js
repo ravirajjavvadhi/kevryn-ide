@@ -630,37 +630,42 @@ function App() {
     const fetchFiles = useCallback(async (silent = false) => {
         if (!userId) return;
         
-        // Native Local Folder Mode
-        if (localWorkspacePath && window.electronAPI) {
-            try {
-                if (!silent) setIsAppLoading(true);
-                const localFiles = await window.electronAPI.readLocalDir(localWorkspacePath);
-                
-                // Flatten the tree for the existing files state structure, since the legacy tree expects flat arrays with parentId
-                const flattenTree = (nodes, parentId = 'root') => {
-                    let flat = [];
-                    nodes.forEach(node => {
-                        const { children, ...rest } = node;
-                        flat.push({ ...rest, parentId });
-                        if (children && children.length > 0) {
-                            flat = flat.concat(flattenTree(children, node._id));
-                        }
-                    });
-                    return flat;
-                };
-                
-                const flatFiles = flattenTree(localFiles);
-                setFiles(flatFiles);
-                return;
-            } catch (err) {
-                console.error("Failed to read local dir:", err);
-                alert("Could not load local directory");
-            } finally {
-                if (!silent) setIsAppLoading(false);
+        // Native Local Folder Mode (Desktop)
+        if (window.__KEVRYN_DESKTOP__) {
+            if (localWorkspacePath && window.electronAPI) {
+                try {
+                    if (!silent) setIsAppLoading(true);
+                    const localFiles = await window.electronAPI.readLocalDir(localWorkspacePath);
+                    
+                    // Flatten the tree for the existing files state structure, since the legacy tree expects flat arrays with parentId
+                    const flattenTree = (nodes, parentId = 'root') => {
+                        let flat = [];
+                        nodes.forEach(node => {
+                            const { children, ...rest } = node;
+                            flat.push({ ...rest, parentId });
+                            if (children && children.length > 0) {
+                                flat = flat.concat(flattenTree(children, node._id));
+                            }
+                        });
+                        return flat;
+                    };
+                    
+                    const flatFiles = flattenTree(localFiles);
+                    setFiles(flatFiles);
+                } catch (err) {
+                    console.error("Failed to read local dir:", err);
+                    alert("Could not load local directory");
+                } finally {
+                    if (!silent) setIsAppLoading(false);
+                }
+            } else {
+                // If desktop but no local folder opened, don't fetch cloud files, just empty
+                setFiles([]);
             }
             return;
         }
 
+        // Web IDE Cloud Mode
         // Debounce logic: cancel existing timer
         if (window.fetchFilesTimer) clearTimeout(window.fetchFilesTimer);
 
@@ -2280,8 +2285,11 @@ function App() {
                                             <div className="dropdown-separator"></div>
                                             <div className="dropdown-option" onClick={async () => {
                                                 if (window.__KEVRYN_DESKTOP__ && window.electronAPI) {
-                                                    const res = await window.electronAPI.selectWorkspace();
-                                                    if (res.success && res.path) await window.electronAPI.openWorkspace(res.path);
+                                                    const folderPath = await window.electronAPI.selectFolder();
+                                                    if (folderPath) {
+                                                        await window.electronAPI.saveWorkspacePath(folderPath);
+                                                        setLocalWorkspacePath(folderPath);
+                                                    }
                                                 } else {
                                                     folderInputRef.current.click();
                                                 }
