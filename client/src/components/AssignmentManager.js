@@ -11,6 +11,11 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editingAssignmentId, setEditingAssignmentId] = useState(null);
 
+    // Submissions State
+    const [showSubmissionsModal, setShowSubmissionsModal] = useState(false);
+    const [selectedAssignmentSubmissions, setSelectedAssignmentSubmissions] = useState([]);
+    const [selectedSubmission, setSelectedSubmission] = useState(null);
+
     // Form State
     const [formData, setFormData] = useState({
         title: '',
@@ -106,8 +111,20 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
         setFormData({ ...formData, testCases: newCases });
     };
 
+    const fetchSubmissions = async (assignmentId) => {
+        try {
+            const res = await api.get(`/api/assignments/${assignmentId}/submissions`);
+            setSelectedAssignmentSubmissions(res.data);
+            setSelectedSubmission(null);
+            setShowSubmissionsModal(true);
+        } catch (e) {
+            alert("Failed to load submissions: " + (e.response?.data?.error || e.message));
+        }
+    };
+
     const handleSubmit = async () => {
         if (!formData.title) return alert("Title is required");
+        if (!formData.startTime || !formData.endTime) return alert("Start Time and End Time are strictly required before publishing.");
         if (!selectedCohort) return alert("Please select a cohort");
         try {
             const parsedCohort = JSON.parse(selectedCohort);
@@ -195,15 +212,25 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
                     return (
                     <div key={a._id} style={{ background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)', padding: '24px', borderRadius: '16px', border: '1px solid #334155', position: 'relative', boxShadow: '0 4px 20px rgba(0,0,0,0.2)' }}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '15px' }}>
-                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#f8fafc', paddingRight: '60px' }}>{a.title}</h3>
-                            <button 
-                                onClick={() => handleEditClick(a)}
-                                style={{ position: 'absolute', top: '20px', right: '20px', background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}
-                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'}
-                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
-                            >
-                                EDIT
-                            </button>
+                            <h3 style={{ margin: 0, fontSize: '18px', fontWeight: '800', color: '#f8fafc', paddingRight: '160px' }}>{a.title}</h3>
+                            <div style={{ position: 'absolute', top: '20px', right: '20px', display: 'flex', gap: '10px' }}>
+                                <button 
+                                    onClick={() => fetchSubmissions(a._id)}
+                                    style={{ background: 'rgba(59, 130, 246, 0.1)', color: '#60a5fa', border: '1px solid rgba(59,130,246,0.3)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.2)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(59, 130, 246, 0.1)'}
+                                >
+                                    SUBMISSIONS
+                                </button>
+                                <button 
+                                    onClick={() => handleEditClick(a)}
+                                    style={{ background: 'rgba(99, 102, 241, 0.1)', color: '#818cf8', border: '1px solid rgba(99,102,241,0.3)', borderRadius: '8px', padding: '6px 14px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold', transition: 'all 0.2s' }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.2)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(99, 102, 241, 0.1)'}
+                                >
+                                    EDIT
+                                </button>
+                            </div>
                         </div>
                         
                         <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', flexWrap: 'wrap' }}>
@@ -250,7 +277,6 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
                                     <option value="javascript">JavaScript</option>
                                     <option value="c">C</option>
                                     <option value="cpp">C++</option>
-                                    <option value="java">Java</option>
                                 </select>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
@@ -260,14 +286,14 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
                                     onChange={e => setFormData({ ...formData, difficulty: e.target.value })}
                                     style={{ padding: '12px', background: '#1e293b', border: '1px solid #334155', color: '#fff', borderRadius: '8px', outline: 'none' }}
                                 >
-                                    <option value="Easy">🟢 Easy</option>
-                                    <option value="Medium">🟡 Medium</option>
-                                    <option value="Hard">🔴 Hard</option>
+                                    <option value="Easy">Easy</option>
+                                    <option value="Medium">Medium</option>
+                                    <option value="Hard">Hard</option>
                                 </select>
                             </div>
                         </div>
 
-                        <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr 1fr', gap: '20px', marginBottom: '20px' }}>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '20px' }}>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '5px' }}>
                                 <label style={{ color: '#94a3b8', fontSize: '13px', fontWeight: '600' }}>Title</label>
                                 <input
@@ -349,6 +375,70 @@ const AssignmentManager = ({ token, serverUrl, userId, preSelectedCohort }) => {
                         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
                             <button onClick={() => setShowCreateModal(false)} style={{ padding: '10px 20px', background: 'transparent', color: '#94a3b8', border: '1px solid #475569', borderRadius: '6px', cursor: 'pointer' }}>Cancel</button>
                             <button onClick={handleSubmit} style={{ padding: '10px 20px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}><FaSave /> {isEditing ? 'Update Assignment' : 'Save Assignment'}</button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Submissions Modal */}
+            {showSubmissionsModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 2000 }}>
+                    <div style={{ background: '#0f172a', width: '900px', height: '80vh', display: 'flex', flexDirection: 'column', borderRadius: '12px', border: '1px solid #334155', overflow: 'hidden' }}>
+                        
+                        <div style={{ padding: '20px', borderBottom: '1px solid #1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ margin: 0, color: '#f8fafc', fontSize: '20px' }}>Assignment Submissions</h2>
+                            <button onClick={() => setShowSubmissionsModal(false)} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', fontSize: '16px' }}>✕</button>
+                        </div>
+
+                        <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
+                            {/* Left Side: Student List */}
+                            <div style={{ width: '250px', borderRight: '1px solid #1e293b', overflowY: 'auto', background: '#0f172a' }}>
+                                {selectedAssignmentSubmissions.length === 0 ? (
+                                    <div style={{ padding: '20px', color: '#64748b', textAlign: 'center' }}>No submissions yet.</div>
+                                ) : (
+                                    selectedAssignmentSubmissions.map(sub => (
+                                        <div 
+                                            key={sub._id}
+                                            onClick={() => setSelectedSubmission(sub)}
+                                            style={{ 
+                                                padding: '15px', 
+                                                cursor: 'pointer', 
+                                                borderBottom: '1px solid #1e293b',
+                                                background: selectedSubmission?._id === sub._id ? '#1e293b' : 'transparent',
+                                                transition: 'background 0.2s'
+                                            }}
+                                        >
+                                            <div style={{ fontWeight: 'bold', color: '#f8fafc' }}>{sub.studentUsername}</div>
+                                            <div style={{ fontSize: '12px', color: sub.score > 0 ? '#4ade80' : '#ef4444', marginTop: '4px' }}>Score: {sub.score} / {sub.assignmentId?.maxPoints || 100}</div>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+
+                            {/* Right Side: Code Viewer */}
+                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', background: '#1e293b' }}>
+                                {selectedSubmission ? (
+                                    <>
+                                        <div style={{ padding: '15px', background: '#0f172a', borderBottom: '1px solid #334155', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                            <strong style={{ color: '#e2e8f0' }}>Code by {selectedSubmission.studentUsername}</strong>
+                                            <span style={{ fontSize: '13px', color: '#94a3b8' }}>Submitted at: {new Date(selectedSubmission.submittedAt).toLocaleString()}</span>
+                                        </div>
+                                        <div style={{ flex: 1 }}>
+                                            <Editor
+                                                height="100%"
+                                                theme="vs-dark"
+                                                language="python"
+                                                value={selectedSubmission.code || "// No code submitted"}
+                                                options={{ readOnly: true, minimap: { enabled: false } }}
+                                            />
+                                        </div>
+                                    </>
+                                ) : (
+                                    <div style={{ flex: 1, display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#64748b' }}>
+                                        Select a student to view their perfect code.
+                                    </div>
+                                )}
+                            </div>
                         </div>
                     </div>
                 </div>

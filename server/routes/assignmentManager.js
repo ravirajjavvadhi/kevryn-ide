@@ -131,6 +131,21 @@ router.get('/cohort', authenticate, async (req, res) => {
     }
 });
 
+// 9.5 Get Submissions for a specific assignment
+router.get('/:id/submissions', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'faculty') return res.status(403).json({ error: "Only faculty can view assignment submissions" });
+        
+        const submissions = await Submission.find({ assignmentId: req.params.id })
+            .populate('assignmentId', 'title maxPoints')
+            .sort({ submittedAt: -1 });
+
+        res.json(submissions);
+    } catch (e) {
+        res.status(500).json({ error: e.message });
+    }
+});
+
 // 3. Get Specific Assignment
 router.get('/:id', authenticate, async (req, res) => {
     try {
