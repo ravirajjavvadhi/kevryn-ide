@@ -68,7 +68,7 @@ CRITICAL INSTRUCTIONS:
 
         // Handle tool calls loop
         if (result.tool_calls) {
-            cleanMessages.push({ role: 'assistant', content: result.content || null, tool_calls: result.tool_calls });
+            cleanMessages.push({ role: 'assistant', content: result.content || "", tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
                 let args = {};
@@ -224,7 +224,7 @@ If returning a CSV report link, format it using standard markdown: [Download CSV
         
         // Handle tool calls loop
         if (result.tool_calls) {
-            fullMessages.push({ role: 'assistant', content: result.content || null, tool_calls: result.tool_calls });
+            fullMessages.push({ role: 'assistant', content: result.content || "", tool_calls: result.tool_calls });
             
             for (const toolCall of result.tool_calls) {
                 let args = {};
