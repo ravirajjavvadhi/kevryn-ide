@@ -7,15 +7,15 @@ const fs = require('fs');
 const os = require('os');
 
 // Returns the Gemini SDK formatted tool declarations
-const getGeminiToolDeclarations = () => {
-    return [
+const getOpenAIToolDeclarations = () => {
+    const rawTools = [
         {
             name: "readFile",
             description: "Reads the contents of a file inside the user's workspace based on the fileName path. Use this to understand existing code before modifying.",
             parameters: {
-                type: "OBJECT",
+                type: "object",
                 properties: {
-                    fileName: { type: "STRING", description: "The exact path or name of the file (e.g. client/src/App.js)." }
+                    fileName: { type: "string", description: "The exact path or name of the file (e.g. client/src/App.js)." }
                 },
                 required: ["fileName"]
             }
@@ -24,10 +24,10 @@ const getGeminiToolDeclarations = () => {
             name: "writeFile",
             description: "Creates a new file or completely overwrites an existing file with new content. Use this to write code for the user.",
             parameters: {
-                type: "OBJECT",
+                type: "object",
                 properties: {
-                    fileName: { type: "STRING", description: "The path or name of the file to create or update." },
-                    content: { type: "STRING", description: "The full source code content to write." }
+                    fileName: { type: "string", description: "The path or name of the file to create or update." },
+                    content: { type: "string", description: "The full source code content to write." }
                 },
                 required: ["fileName", "content"]
             }
@@ -36,9 +36,9 @@ const getGeminiToolDeclarations = () => {
             name: "listFiles",
             description: "Lists all files and directories in the user's workspace. Use this to understand the project structure.",
             parameters: {
-                type: "OBJECT",
+                type: "object",
                 properties: {
-                    searchQuery: { type: "STRING", description: "Optional filter string." }
+                    searchQuery: { type: "string", description: "Optional filter string." }
                 }
             }
         },
@@ -46,14 +46,19 @@ const getGeminiToolDeclarations = () => {
             name: "runCommand",
             description: "Executes a shell command in the user's workspace on the server terminal. Use this to install dependencies, run tests, or execute scripts. Output will be returned.",
             parameters: {
-                type: "OBJECT",
+                type: "object",
                 properties: {
-                    command: { type: "STRING", description: "The shell command to run (e.g. 'ls -la', 'npm install', 'python script.py')." }
+                    command: { type: "string", description: "The shell command to run (e.g. 'ls -la', 'npm install', 'python script.py')." }
                 },
                 required: ["command"]
             }
         }
     ];
+
+    return rawTools.map(t => ({
+        type: 'function',
+        function: t
+    }));
 };
 
 // Execute the requested tool from the AI
@@ -129,6 +134,6 @@ const executeTool = async (functionName, args, userId) => {
 };
 
 module.exports = {
-    getGeminiToolDeclarations,
+    getOpenAIToolDeclarations,
     executeTool
 };

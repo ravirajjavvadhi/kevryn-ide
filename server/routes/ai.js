@@ -45,11 +45,46 @@ router.post('/chat', authenticate, async (req, res, next) => {
         const { messages, sessionId } = req.body;
         console.log(`[AI-CHAT] Messages:`, messages ? messages.length : 0);
         
+        const systemContext = `You are KevRyn AI, a highly capable coding assistant with access to the user's workspace, files, and terminal.
+CRITICAL INSTRUCTIONS:
+- If the user asks for code (e.g. "code for hello world") without specifying a language, provide ONLY ONE language (e.g. Python). DO NOT provide multiple languages.
+- When generating code, output ONLY the code in a markdown block. Do not include introductory filler or explanatory text unless explicitly requested.
+- Keep your answers extremely concise to save context window.
+- Use your tools to read files or run terminal commands if the user asks you to interact with their workspace.`;
+
         // Strip out MongoDB _id or other internal properties before sending to Groq API
         const cleanMessages = messages.map(m => ({ role: m.role, content: m.content }));
         
-        const result = await aiService.chat(cleanMessages);
+        // Ensure system prompt is injected
+        if (cleanMessages[0]?.role !== 'system') {
+            cleanMessages.unshift({ role: 'system', content: systemContext });
+        } else {
+            cleanMessages[0].content = systemContext;
+        }
+
+        const tools = aiTools.getOpenAIToolDeclarations();
+        let result = await aiService.chat(cleanMessages, { tools });
         console.log(`[AI-CHAT] Result received`);
+
+        // Handle tool calls loop
+        if (result.tool_calls) {
+            cleanMessages.push({ role: 'assistant', content: result.content || null, tool_calls: result.tool_calls });
+            
+            for (const toolCall of result.tool_calls) {
+                const args = JSON.parse(toolCall.function.arguments);
+                console.log(`[AI-CHAT] Executing tool ${toolCall.function.name}...`);
+                const toolResult = await aiTools.executeTool(toolCall.function.name, args, req.user.userId);
+                
+                cleanMessages.push({
+                    role: 'tool',
+                    tool_call_id: toolCall.id,
+                    name: toolCall.function.name,
+                    content: JSON.stringify(toolResult)
+                });
+            }
+            // Call LLM again to get final answer
+            result = await aiService.chat(cleanMessages);
+        }
 
         // Persist session
         let session;
@@ -59,7 +94,7 @@ router.post('/chat', authenticate, async (req, res, next) => {
         if (!session) {
             session = new ChatSession({
                 userId: req.user.userId,
-                title: messages[0].content.substring(0, 40),
+                title: messages[messages.length - 1].content.substring(0, 40),
                 messages: [...messages, { role: 'assistant', content: result.content }]
             });
         } else {
