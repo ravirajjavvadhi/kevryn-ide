@@ -274,7 +274,7 @@ If returning a CSV report link, format it using standard markdown: [Download CSV
         });
     } catch (error) {
         console.error('[Faculty Assistant Error]', error.message);
-        res.status(500).json({ error: error.message });
+        res.json({ response: `[DEBUG REAL ERROR] ${error.message} - Stack: ${error.stack}` });
     }
 });
 
