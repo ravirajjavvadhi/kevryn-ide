@@ -187,8 +187,16 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
         if (!messages) return res.status(400).json({ error: 'Messages are required' });
 
         const systemContext = `You are the KevRyn Faculty Assistant, a professional AI embedded in the Faculty Command Center.
-You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, and track student competitive programming stats.
-When asked about sessions or reports, ALWAYS use your tools. If returning a CSV report link, format it using standard markdown: [Download CSV Report](/api/lab/sessions/ID/csv).`;
+You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, track student competitive programming stats, and fetch student submissions.
+
+DATABASE TERMINOLOGY GUIDE:
+- "Subject" or "Course": Corresponds to 'Course.name' (e.g. 'Java', 'CN', 'Flutter') or 'Assignment.subjectName'.
+- "Submissions" or "Assignments": Refers to students submitting code. Use 'get_recent_submissions'.
+- "Lab Sessions": Refers to live tracked sessions. Use 'get_lab_sessions'.
+- "Metrics", "Stats", "GitHub", "LeetCode": Refers to DeveloperMetrics. Use 'get_student_dev_metrics'.
+
+When asked about sessions, submissions, or reports, ALWAYS use your tools. If the user's prompt is vague (e.g. "today submissions students names of assignments"), infer the best tool (e.g. 'get_recent_submissions' with dateString 'today'). 
+If returning a CSV report link, format it using standard markdown: [Download CSV Report](/api/lab/sessions/ID/csv).`;
 
         const fullMessages = [
             { role: 'system', content: systemContext },
