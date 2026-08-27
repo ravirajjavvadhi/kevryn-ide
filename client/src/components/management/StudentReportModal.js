@@ -15,8 +15,7 @@ const StudentReportModal = ({ identifier, onClose, token }) => {
     useEffect(() => {
         const fetchReport = async () => {
             try {
-                // Fetch external dev tracking
-                const devRes = await api.get(`/developer-tracking/metrics/${identifier}`);
+                const devRes = await api.get(`/tracking/${identifier}`);
                 const devData = devRes.data;
 
                 // Optionally, we could fetch internal stats here if there's an endpoint.
