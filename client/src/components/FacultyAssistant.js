@@ -40,7 +40,8 @@ const FacultyAssistant = ({ token, serverUrl, onClose }) => {
             setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
         } catch (error) {
             console.error("Assistant Error:", error);
-            setMessages(prev => [...prev, { role: 'assistant', content: 'Sorry, I encountered an error communicating with the neural core.' }]);
+            const errMsg = error.response?.data?.error || error.message || 'Unknown error';
+            setMessages(prev => [...prev, { role: 'assistant', content: `Sorry, I encountered an error: ${errMsg}` }]);
         } finally {
             setIsLoading(false);
         }
