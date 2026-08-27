@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FaBuilding, FaUserGraduate, FaChalkboardTeacher, FaPlus, FaCheck, FaTimes, FaUsers } from 'react-icons/fa';
-import DeveloperProfileModal from './DeveloperProfileModal';
+import StudentReportModal from './StudentReportModal';
 
 const InstitutionSetup = ({ token }) => {
     const [innerTab, setInnerTab] = useState('structure');
@@ -408,11 +408,10 @@ const InstitutionSetup = ({ token }) => {
             </AnimatePresence>
 
             {selectedDevProfile && (
-                <DeveloperProfileModal 
+                <StudentReportModal 
                     identifier={selectedDevProfile} 
                     onClose={() => setSelectedDevProfile(null)} 
                     token={token} 
-                    serverUrl={process.env.REACT_APP_SERVER_URL || ''}
                 />
             )}
         </div>

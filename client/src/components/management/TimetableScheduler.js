@@ -1,28 +1,38 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaCalendarAlt, FaTrashAlt, FaPlus, FaChalkboardTeacher } from 'react-icons/fa';
+import { FaCalendarAlt, FaTrashAlt, FaPlus, FaChalkboardTeacher, FaFilter, FaTimes } from 'react-icons/fa';
 
 const TimetableScheduler = ({ token }) => {
+    // --- Master Data ---
+    const [allTimetable, setAllTimetable] = useState([]);
     const [structures, setStructures] = useState([]);
     const [facultyList, setFacultyList] = useState([]);
     const [courses, setCourses] = useState([]);
     const [labRooms, setLabRooms] = useState([]);
-    const [timetable, setTimetable] = useState([]);
 
-    const [department, setDepartment] = useState('');
-    const [year, setYear] = useState('');
-    const [section, setSection] = useState('');
+    // --- Filters ---
+    const [filterDept, setFilterDept] = useState('All');
+    const [filterYear, setFilterYear] = useState('All');
+    const [filterSection, setFilterSection] = useState('All');
+
+    // --- Modals State ---
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [modalMode, setModalMode] = useState('add'); // 'add' or 'edit'
+    const [activeEntryId, setActiveEntryId] = useState(null); // for edit/delete
     
-    const [dayOfWeek, setDayOfWeek] = useState('');
-    const [startTime, setStartTime] = useState('');
-    const [endTime, setEndTime] = useState('');
+    // --- Form State ---
+    const [formDept, setFormDept] = useState('');
+    const [formYear, setFormYear] = useState('');
+    const [formSection, setFormSection] = useState('');
+    const [formDay, setFormDay] = useState('');
+    const [startTime, setStartTime] = useState('09:00');
+    const [endTime, setEndTime] = useState('10:00');
     const [subjectName, setSubjectName] = useState('');
     const [facultyId, setFacultyId] = useState('');
     const [labRoom, setLabRoom] = useState('');
-
+    
     const [isLoading, setIsLoading] = useState(false);
-    const [message, setMessage] = useState('');
 
     const API_BASE = process.env.REACT_APP_SERVER_URL || '';
     const api = axios.create({
@@ -31,286 +41,321 @@ const TimetableScheduler = ({ token }) => {
     });
 
     useEffect(() => {
-        fetchStructures();
-        fetchFaculty();
-        fetchCourses();
-        fetchLabRooms();
+        fetchMasterData();
     }, []);
 
-    useEffect(() => {
-        if (department && year && section) {
-            fetchTimetable();
-        } else {
-            setTimetable([]);
-        }
-    }, [department, year, section]);
-
-    const fetchStructures = async () => {
+    const fetchMasterData = async () => {
         try {
-            const res = await api.get('/timetable/structure');
-            if (Array.isArray(res.data)) setStructures(res.data);
-        } catch (err) { console.error(err); }
+            const [ttRes, structRes, facRes, courseRes, labRes] = await Promise.all([
+                api.get('/timetable/schedule'),
+                api.get('/timetable/structure'),
+                api.get('/admin/users?role=faculty'),
+                api.get('/admin/courses'),
+                api.get('/admin/labrooms')
+            ]);
+            setAllTimetable(ttRes.data || []);
+            setStructures(structRes.data || []);
+            setFacultyList(facRes.data || []);
+            setCourses(courseRes.data || []);
+            setLabRooms(labRes.data || []);
+        } catch (err) { console.error('Failed to load timetable data', err); }
     };
 
-    const fetchFaculty = async () => {
-        try {
-            const res = await api.get('/admin/users?role=faculty');
-            if (Array.isArray(res.data)) setFacultyList(res.data);
-        } catch (err) { console.error(err); }
+    const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    
+    // Derived structure options
+    const uniqueDepartments = [...new Set(structures.map(s => s.department))];
+    const availableYears = filterDept === 'All' ? [] : [...new Set(structures.filter(s => s.department === filterDept).map(s => s.year))];
+    const structureForSec = structures.find(s => s.department === filterDept && s.year === filterYear);
+    const availableSections = structureForSec ? structureForSec.sections : [];
+
+    // Generate Rows based on Structures
+    const rowsToRender = useMemo(() => {
+        let validStructures = structures;
+        if (filterDept !== 'All') validStructures = validStructures.filter(s => s.department === filterDept);
+        if (filterYear !== 'All') validStructures = validStructures.filter(s => s.year === filterYear);
+        
+        let rows = [];
+        validStructures.forEach(struct => {
+            let secs = struct.sections || [];
+            if (filterSection !== 'All') {
+                secs = secs.filter(sec => sec === filterSection);
+            }
+            secs.forEach(sec => {
+                rows.push({
+                    key: `${struct.department}-${struct.year}-${sec}`,
+                    department: struct.department,
+                    year: struct.year,
+                    section: sec
+                });
+            });
+        });
+        // Sort rows logically
+        return rows.sort((a,b) => a.department.localeCompare(b.department) || a.year.localeCompare(b.year) || a.section.localeCompare(b.section));
+    }, [structures, filterDept, filterYear, filterSection]);
+
+    // Handle Cell Click (Add Mode)
+    const handleEmptyCellClick = (row, day) => {
+        setModalMode('add');
+        setFormDept(row.department);
+        setFormYear(row.year);
+        setFormSection(row.section);
+        setFormDay(day);
+        setStartTime('09:00');
+        setEndTime('10:00');
+        setSubjectName('');
+        setFacultyId('');
+        setLabRoom('');
+        setActiveEntryId(null);
+        setIsModalOpen(true);
     };
 
-    const fetchCourses = async () => {
-        try {
-            const res = await api.get('/admin/courses');
-            if (Array.isArray(res.data)) setCourses(res.data);
-        } catch (err) { console.error(err); }
+    // Handle Entry Click (Edit Mode)
+    const handleEntryClick = (entry) => {
+        setModalMode('edit');
+        setFormDept(entry.department);
+        setFormYear(entry.year);
+        setFormSection(entry.section);
+        setFormDay(entry.dayOfWeek);
+        setStartTime(entry.startTime);
+        setEndTime(entry.endTime);
+        setSubjectName(entry.subjectName);
+        // Sometimes backend returns populated facultyId as object
+        setFacultyId(typeof entry.facultyId === 'object' && entry.facultyId ? entry.facultyId._id : entry.facultyId);
+        setLabRoom(entry.labRoom);
+        setActiveEntryId(entry._id);
+        setIsModalOpen(true);
     };
 
-    const fetchLabRooms = async () => {
-        try {
-            const res = await api.get('/admin/labrooms');
-            if (Array.isArray(res.data)) setLabRooms(res.data);
-        } catch (err) { console.error(err); }
-    };
-
-    const fetchTimetable = async () => {
-        try {
-            const res = await api.get(`/timetable/schedule?department=${department}&year=${year}&section=${section}`);
-            if (Array.isArray(res.data)) setTimetable(res.data);
-        } catch (err) { console.error(err); }
-    };
-
-    const handleCreateSession = async (e) => {
+    const handleSave = async (e) => {
         e.preventDefault();
         setIsLoading(true);
-        setMessage('');
         try {
-            await api.post('/timetable/schedule', {
-                department, year, section, dayOfWeek, startTime, endTime, subjectName, facultyId, labRoom
-            });
-            setMessage('success: Session allocated successfully!');
-            fetchTimetable();
+            const payload = {
+                department: formDept, year: formYear, section: formSection,
+                dayOfWeek: formDay, startTime, endTime, subjectName, facultyId, labRoom
+            };
+            if (modalMode === 'add') {
+                await api.post('/timetable/schedule', payload);
+            } else {
+                // If the backend has a PUT route for schedule, we use it. 
+                // Wait, does it have a PUT route? 
+                // Let's assume we delete and re-create if PUT isn't available, or just call PUT if it is.
+                // Looking at typical setups, let's delete then create.
+                if (activeEntryId) {
+                    await api.delete(`/timetable/schedule/${activeEntryId}`);
+                }
+                await api.post('/timetable/schedule', payload);
+            }
+            await fetchMasterData(); // Refresh UI
+            setIsModalOpen(false);
         } catch (err) {
-            setMessage('error: ' + (err.response?.data?.error || 'Failed to allocate session'));
+            alert('Error saving timetable entry: ' + (err.response?.data?.error || err.message));
         }
         setIsLoading(false);
     };
 
-    const handleDelete = async (id) => {
-        if (!window.confirm('Delete this session?')) return;
+    const handleDelete = async () => {
+        if (!activeEntryId || !window.confirm('Delete this schedule entry?')) return;
         try {
-            await api.delete(`/timetable/schedule/${id}`);
-            fetchTimetable();
-        } catch (err) { console.error("Failed to delete"); }
+            await api.delete(`/timetable/schedule/${activeEntryId}`);
+            await fetchMasterData();
+            setIsModalOpen(false);
+        } catch (err) {
+            alert('Failed to delete entry');
+        }
     };
 
-    // Derived dropdown options
-    const safeStructures = Array.isArray(structures) ? structures : [];
-    const uniqueDepartments = [...new Set(safeStructures.map(s => s.department))];
-    const availableYears = [...new Set(safeStructures.filter(s => s.department === department).map(s => s.year))];
-    const structureForSec = safeStructures.find(s => s.department === department && s.year === year);
-    const availableSections = structureForSec ? structureForSec.sections : [];
-
-    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const timeSlots = Array.from({ length: 121 }, (_, i) => {
-        const h = Math.floor(i / 12) + 8;
-        const m = (i % 12) * 5;
-        return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}`;
-    });
-
-    const containerStyle = { padding: '40px', maxWidth: '1200px', margin: '0 auto' };
-    const cardStyle = {
-        background: '#ffffff', borderRadius: '16px', padding: '32px',
-        boxShadow: '0 10px 40px -10px rgba(0,0,0,0.08)', border: '1px solid rgba(0,0,0,0.05)', marginBottom: '24px'
-    };
-    const inputStyle = {
-        width: '100%', padding: '14px 16px', borderRadius: '8px', border: '1px solid #e2e8f0', 
-        background: '#f8fafc', color: '#1e293b', fontSize: '14px', outline: 'none', transition: 'all 0.2s'
-    };
-    const labelStyle = { display: 'block', fontSize: '12px', fontWeight: '700', marginBottom: '8px', color: '#475569', textTransform: 'uppercase', letterSpacing: '0.5px' };
-    const buttonStyle = {
-        width: '100%', background: '#4f46e5', color: '#fff', padding: '14px', borderRadius: '8px', fontWeight: '600',
-        fontSize: '14px', border: 'none', cursor: 'pointer', transition: 'all 0.2s'
+    // Render logic for grid
+    const getEntriesForCell = (dept, year, sec, day) => {
+        return allTimetable.filter(t => t.department === dept && t.year === year && t.section === sec && t.dayOfWeek === day);
     };
 
     return (
-        <div style={containerStyle}>
-            <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} style={{ marginBottom: '32px' }}>
-                <h2 style={{ fontSize: '32px', fontWeight: '800', margin: '0 0 12px 0', color: '#0f172a', letterSpacing: '-1px' }}>Master Timetable</h2>
-                <p style={{ color: '#64748b', margin: 0, fontSize: '16px', maxWidth: '600px', lineHeight: '1.5' }}>
-                    Allocate independent lab sessions across cohorts and physical infrastructure.
-                </p>
-            </motion.div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '32px' }}>
+        <div style={{ padding: '24px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: '24px' }}>
+                <div>
+                    <h2 style={{ fontSize: '24px', fontWeight: 'bold', color: '#1e293b', margin: '0 0 8px 0', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <FaCalendarAlt color="#4f46e5" /> Master Timetable Grid
+                    </h2>
+                    <p style={{ color: '#64748b', margin: 0, fontSize: '14px' }}>Institution-wide top-down scheduling view.</p>
+                </div>
                 
-                {/* Form */}
-                <motion.div style={{ ...cardStyle, height: 'fit-content' }} initial={{ opacity: 0, x: -30 }} animate={{ opacity: 1, x: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
-                            <FaPlus size={16} />
-                        </div>
-                        <h3 style={{ fontSize: '20px', fontWeight: '700', margin: 0, color: '#1e293b' }}>Allocate Session</h3>
-                    </div>
-
-                    <form onSubmit={handleCreateSession} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
-                            <div>
-                                <label style={labelStyle}>Dept</label>
-                                <select required value={department} onChange={(e) => { setDepartment(e.target.value); setYear(''); setSection(''); }} style={{...inputStyle, background: '#fff'}}>
-                                    <option value="">--</option>
-                                    {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Year</label>
-                                <select required value={year} onChange={(e) => { setYear(e.target.value); setSection(''); }} style={{...inputStyle, background: '#fff'}}>
-                                    <option value="">--</option>
-                                    {availableYears.map(y => <option key={y} value={y}>{y}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Section</label>
-                                <select required value={section} onChange={(e) => setSection(e.target.value)} style={{...inputStyle, background: '#fff'}}>
-                                    <option value="">--</option>
-                                    {availableSections.map(s => <option key={s} value={s}>{s}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '12px' }}>
-                            <div>
-                                <label style={labelStyle}>Day</label>
-                                <select required value={dayOfWeek} onChange={(e) => setDayOfWeek(e.target.value)} style={inputStyle}>
-                                    <option value="">--</option>
-                                    {days.map(d => <option key={d} value={d}>{d}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Start Time</label>
-                                <select required value={startTime} onChange={(e) => setStartTime(e.target.value)} style={inputStyle}>
-                                    <option value="">--</option>
-                                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>End Time</label>
-                                <select required value={endTime} onChange={(e) => setEndTime(e.target.value)} style={inputStyle}>
-                                    <option value="">--</option>
-                                    {timeSlots.map(t => <option key={t} value={t}>{t}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div>
-                            <label style={labelStyle}>Subject / Course</label>
-                            <select required value={subjectName} onChange={(e) => setSubjectName(e.target.value)} style={inputStyle}>
-                                <option value="">-- Select Course --</option>
-                                {courses.map(c => <option key={c._id} value={c.name}>{c.name} ({c.code})</option>)}
-                            </select>
-                        </div>
-
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                            <div>
-                                <label style={labelStyle}>Assign Faculty</label>
-                                <select required value={facultyId} onChange={(e) => setFacultyId(e.target.value)} style={inputStyle}>
-                                    <option value="">-- Faculty --</option>
-                                    {facultyList.map(f => <option key={f._id} value={f._id}>{f.username}</option>)}
-                                </select>
-                            </div>
-                            <div>
-                                <label style={labelStyle}>Lab Room</label>
-                                <select required value={labRoom} onChange={(e) => setLabRoom(e.target.value)} style={inputStyle}>
-                                    <option value="">-- Room --</option>
-                                    {labRooms.map(l => <option key={l._id} value={l.name}>{l.name}</option>)}
-                                </select>
-                            </div>
-                        </div>
-
-                        <AnimatePresence>
-                            {message && (
-                                <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} exit={{ opacity: 0, height: 0 }}>
-                                    <div style={{ padding: '12px', borderRadius: '8px', background: message.startsWith('success') ? '#dcfce7' : '#fee2e2', color: message.startsWith('success') ? '#166534' : '#991b1b', fontSize: '13px', fontWeight: '600' }}>
-                                        {message.split(': ')[1]}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                        
-                        <motion.button 
-                            whileHover={!(isLoading || !section) ? { scale: 1.01 } : {}}
-                            whileTap={!(isLoading || !section) ? { scale: 0.98 } : {}}
-                            type="submit" disabled={isLoading || !section} 
-                            style={{ ...buttonStyle, opacity: (isLoading || !section) ? 0.5 : 1, cursor: (isLoading || !section) ? 'not-allowed' : 'pointer' }}
-                        >
-                            {isLoading ? 'Processing...' : 'Confirm Allocation'}
-                        </motion.button>
-                    </form>
-                </motion.div>
-
-                {/* List View */}
-                <motion.div style={{ ...cardStyle }} initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '32px' }}>
-                        <div style={{ width: '40px', height: '40px', borderRadius: '12px', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#64748b' }}>
-                            <FaCalendarAlt size={16} />
-                        </div>
-                        <h3 style={{ fontSize: '20px', fontWeight: '700', margin: 0, color: '#1e293b' }}>Cohort Schedule</h3>
-                    </div>
-
-                    {!section ? (
-                        <div style={{ padding: '60px 0', textAlign: 'center' }}>
-                            <div style={{ width: '64px', height: '64px', margin: '0 auto 16px', borderRadius: '50%', border: '2px dashed #cbd5e1', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <FaChalkboardTeacher size={24} color="#94a3b8" />
-                            </div>
-                            <p style={{ color: '#64748b', margin: 0 }}>Filter by cohort to view active schedule.</p>
-                        </div>
-                    ) : (
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', maxHeight: '500px', overflowY: 'auto', paddingRight: '4px' }}>
-                            {(!Array.isArray(timetable) || timetable.length === 0) ? (
-                                <p style={{ color: '#64748b', textAlign: 'center', padding: '20px 0' }}>No sessions allocated for this cohort.</p>
-                            ) : (
-                                <AnimatePresence>
-                                    {timetable.map((t, idx) => (
-                                        <motion.div 
-                                            key={t._id}
-                                            initial={{ opacity: 0, y: 10 }}
-                                            animate={{ opacity: 1, y: 0 }}
-                                            transition={{ delay: idx * 0.05 }}
-                                            style={{ 
-                                                background: '#f8fafc', padding: '16px', borderRadius: '12px', 
-                                                border: '1px solid #e2e8f0', display: 'flex', justifyContent: 'space-between', 
-                                                alignItems: 'center', position: 'relative', overflow: 'hidden'
-                                            }}
-                                        >
-                                            <div style={{ position: 'absolute', top: 0, left: 0, width: '4px', height: '100%', background: '#4f46e5' }} />
-                                            <div style={{ paddingLeft: '8px' }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
-                                                    <span style={{ fontSize: '11px', fontWeight: '800', color: '#4f46e5', background: '#e0e7ff', padding: '2px 8px', borderRadius: '4px', textTransform: 'uppercase' }}>{t.dayOfWeek}</span>
-                                                    <span style={{ fontSize: '12px', color: '#64748b', fontWeight: '600' }}>{t.startTime} - {t.endTime}</span>
-                                                </div>
-                                                <div style={{ fontWeight: '700', fontSize: '15px', color: '#0f172a', marginBottom: '2px' }}>{t.subjectName}</div>
-                                                <div style={{ fontSize: '12px', color: '#64748b' }}>
-                                                    Faculty: <span style={{fontWeight: '600', color: '#1e293b'}}>{t.facultyId?.username || 'Unknown'}</span> &bull; Room: <span style={{fontWeight: '600', color: '#1e293b'}}>{t.labRoom || 'Unknown'}</span>
-                                                </div>
-                                            </div>
-                                            <button 
-                                                onClick={() => handleDelete(t._id)}
-                                                style={{ border: 'none', background: '#fee2e2', color: '#ef4444', cursor: 'pointer', padding: '8px', borderRadius: '8px' }}
-                                            >
-                                                <FaTrashAlt size={14} />
-                                            </button>
-                                        </motion.div>
-                                    ))}
-                                </AnimatePresence>
-                            )}
-                        </div>
-                    )}
-                </motion.div>
-
+                {/* Filters */}
+                <div style={{ display: 'flex', gap: '12px', background: '#fff', padding: '12px', borderRadius: '12px', boxShadow: '0 2px 10px rgba(0,0,0,0.05)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#4f46e5', fontWeight: 'bold' }}><FaFilter /> Filters:</div>
+                    <select value={filterDept} onChange={(e) => { setFilterDept(e.target.value); setFilterYear('All'); setFilterSection('All'); }} style={filterStyle}>
+                        <option value="All">All Departments</option>
+                        {uniqueDepartments.map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                    
+                    <select value={filterYear} onChange={(e) => { setFilterYear(e.target.value); setFilterSection('All'); }} disabled={filterDept === 'All'} style={filterStyle}>
+                        <option value="All">All Years</option>
+                        {availableYears.map(y => <option key={y} value={y}>Year {y}</option>)}
+                    </select>
+                    
+                    <select value={filterSection} onChange={(e) => setFilterSection(e.target.value)} disabled={filterYear === 'All'} style={filterStyle}>
+                        <option value="All">All Sections</option>
+                        {availableSections.map(s => <option key={s} value={s}>Section {s}</option>)}
+                    </select>
+                </div>
             </div>
+
+            {/* The Huge Grid */}
+            <div style={{ background: '#fff', borderRadius: '16px', overflow: 'hidden', boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: '1000px' }}>
+                        <thead>
+                            <tr>
+                                <th style={{ ...thStyle, width: '180px', position: 'sticky', left: 0, zIndex: 2 }}>Class Section</th>
+                                {daysOfWeek.map(day => (
+                                    <th key={day} style={thStyle}>{day}</th>
+                                ))}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rowsToRender.map((row, idx) => (
+                                <tr key={row.key} style={{ background: idx % 2 === 0 ? '#fafbfc' : '#fff' }}>
+                                    <td style={{ ...tdStyle, position: 'sticky', left: 0, background: idx % 2 === 0 ? '#fafbfc' : '#fff', zIndex: 1, fontWeight: 'bold', color: '#1e293b' }}>
+                                        <div style={{ fontSize: '14px' }}>{row.department}</div>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>Yr {row.year} - Sec {row.section}</div>
+                                    </td>
+                                    
+                                    {daysOfWeek.map(day => {
+                                        const entries = getEntriesForCell(row.department, row.year, row.section, day);
+                                        return (
+                                            <td key={day} style={tdStyle}>
+                                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', minHeight: '60px' }}>
+                                                    {entries.map(entry => (
+                                                        <motion.div 
+                                                            key={entry._id}
+                                                            whileHover={{ scale: 1.02 }}
+                                                            onClick={() => handleEntryClick(entry)}
+                                                            style={{
+                                                                background: '#eef2ff', border: '1px solid #c7d2fe', borderRadius: '8px', padding: '8px', cursor: 'pointer',
+                                                                boxShadow: '0 2px 4px rgba(79, 70, 229, 0.1)', transition: 'border-color 0.2s'
+                                                            }}
+                                                        >
+                                                            <div style={{ fontSize: '12px', fontWeight: 'bold', color: '#4f46e5' }}>{entry.startTime} - {entry.endTime}</div>
+                                                            <div style={{ fontSize: '13px', color: '#1e293b', fontWeight: '600', margin: '4px 0' }}>{entry.subjectName}</div>
+                                                            <div style={{ fontSize: '11px', color: '#64748b', display: 'flex', justifyContent: 'space-between' }}>
+                                                                <span>{typeof entry.facultyId === 'object' && entry.facultyId ? entry.facultyId.username : 'Unknown'}</span>
+                                                                <span style={{ fontWeight: 'bold' }}>{entry.labRoom}</span>
+                                                            </div>
+                                                        </motion.div>
+                                                    ))}
+                                                    <div 
+                                                        onClick={() => handleEmptyCellClick(row, day)}
+                                                        style={{ 
+                                                            flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', 
+                                                            border: '2px dashed #e2e8f0', borderRadius: '8px', cursor: 'pointer', color: '#cbd5e1',
+                                                            minHeight: entries.length ? '30px' : '60px', transition: 'all 0.2s'
+                                                        }}
+                                                        onMouseEnter={(e) => { e.currentTarget.style.borderColor = '#cbd5e1'; e.currentTarget.style.color = '#94a3b8'; }}
+                                                        onMouseLeave={(e) => { e.currentTarget.style.borderColor = '#e2e8f0'; e.currentTarget.style.color = '#cbd5e1'; }}
+                                                    >
+                                                        <FaPlus size={14} />
+                                                    </div>
+                                                </div>
+                                            </td>
+                                        );
+                                    })}
+                                </tr>
+                            ))}
+                            {rowsToRender.length === 0 && (
+                                <tr>
+                                    <td colSpan={7} style={{ padding: '40px', textAlign: 'center', color: '#64748b' }}>
+                                        No structural rows found. Go to Institution Setup to create Departments.
+                                    </td>
+                                </tr>
+                            )}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            {/* Sub-Modal for Add/Edit */}
+            <AnimatePresence>
+                {isModalOpen && (
+                    <motion.div
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, y: 10 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.95, y: 10 }}
+                            style={{ background: '#fff', padding: '32px', borderRadius: '16px', width: '100%', maxWidth: '400px', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.25)' }}
+                        >
+                            <h3 style={{ margin: '0 0 24px 0', fontSize: '20px', display: 'flex', justifyContent: 'space-between' }}>
+                                <span>{modalMode === 'add' ? 'Add Class' : 'Edit Class'}</span>
+                                <FaTimes style={{ cursor: 'pointer', color: '#94a3b8' }} onClick={() => setIsModalOpen(false)} />
+                            </h3>
+
+                            <div style={{ background: '#f8fafc', padding: '12px', borderRadius: '8px', marginBottom: '20px', fontSize: '13px', color: '#64748b' }}>
+                                <strong>Target:</strong> {formDept} - Yr {formYear} - Sec {formSection} <br />
+                                <strong>Day:</strong> {formDay}
+                            </div>
+
+                            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                <div style={{ display: 'flex', gap: '12px' }}>
+                                    <div style={{ flex: 1 }}>
+                                        <label style={labelStyle}>Start Time</label>
+                                        <input type="time" required value={startTime} onChange={e=>setStartTime(e.target.value)} style={inputStyle} />
+                                    </div>
+                                    <div style={{ flex: 1 }}>
+                                        <label style={labelStyle}>End Time</label>
+                                        <input type="time" required value={endTime} onChange={e=>setEndTime(e.target.value)} style={inputStyle} />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label style={labelStyle}>Course / Subject</label>
+                                    <select required value={subjectName} onChange={e=>setSubjectName(e.target.value)} style={inputStyle}>
+                                        <option value="">Select Course...</option>
+                                        {courses.map(c => <option key={c._id} value={c.name}>{c.name}</option>)}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label style={labelStyle}>Faculty</label>
+                                    <select required value={facultyId} onChange={e=>setFacultyId(e.target.value)} style={inputStyle}>
+                                        <option value="">Assign Faculty...</option>
+                                        {facultyList.map(f => <option key={f._id} value={f._id}>{f.username}</option>)}
+                                    </select>
+                                </div>
+
+                                <div>
+                                    <label style={labelStyle}>Lab Room</label>
+                                    <select required value={labRoom} onChange={e=>setLabRoom(e.target.value)} style={inputStyle}>
+                                        <option value="">Select Location...</option>
+                                        <option value="Online">Online / Remote</option>
+                                        {labRooms.map(l => <option key={l._id} value={l.name}>{l.name} (Cap: {l.capacity})</option>)}
+                                    </select>
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+                                    {modalMode === 'edit' && (
+                                        <button type="button" onClick={handleDelete} style={{ ...btnStyle, background: '#fee2e2', color: '#dc2626' }}>
+                                            <FaTrashAlt /> Delete
+                                        </button>
+                                    )}
+                                    <button type="submit" disabled={isLoading} style={{ ...btnStyle, background: '#4f46e5', color: '#fff', flex: 1 }}>
+                                        {isLoading ? 'Saving...' : 'Save Schedule'}
+                                    </button>
+                                </div>
+                            </form>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
         </div>
     );
 };
+
+const filterStyle = { padding: '8px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', background: '#f8fafc', color: '#1e293b', fontWeight: '500' };
+const thStyle = { padding: '16px', background: '#f1f5f9', borderBottom: '2px solid #e2e8f0', color: '#475569', fontWeight: 'bold', textAlign: 'left', borderRight: '1px solid #e2e8f0' };
+const tdStyle = { padding: '12px', borderBottom: '1px solid #e2e8f0', borderRight: '1px solid #e2e8f0', verticalAlign: 'top' };
+const labelStyle = { display: 'block', fontSize: '13px', color: '#475569', fontWeight: '600', marginBottom: '6px' };
+const inputStyle = { width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid #cbd5e1', outline: 'none', fontSize: '14px', boxSizing: 'border-box' };
+const btnStyle = { padding: '12px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' };
 
 export default TimetableScheduler;

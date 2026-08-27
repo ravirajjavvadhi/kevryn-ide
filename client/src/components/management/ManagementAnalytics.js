@@ -1,9 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FaChartLine, FaUsers, FaChalkboardTeacher, FaDesktop, FaFilter, FaHistory, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import StudentReportModal from './StudentReportModal';
 
 const ManagementAnalytics = ({ token }) => {
+    const [selectedStudentId, setSelectedStudentId] = useState(null);
+
     const [stats, setStats] = useState({
         totalStudents: '...',
         totalFaculty: '...',
@@ -196,7 +199,15 @@ const ManagementAnalytics = ({ token }) => {
                                     </thead>
                                     <tbody>
                                         {studentData.map((student, idx) => (
-                                            <motion.tr key={student.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.02 }} style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fff' : '#fafbfc' }}>
+                                            <motion.tr 
+                                                key={student.id} 
+                                                initial={{ opacity: 0 }} 
+                                                animate={{ opacity: 1 }} 
+                                                transition={{ delay: idx * 0.02 }} 
+                                                onClick={() => setSelectedStudentId(student.rollNumber || student.username)}
+                                                style={{ borderBottom: '1px solid #f1f5f9', background: idx % 2 === 0 ? '#fff' : '#fafbfc', cursor: 'pointer' }}
+                                                whileHover={{ background: '#eef2ff' }}
+                                            >
                                                 <td style={{ padding: '16px 20px' }}>
                                                     <div style={{ fontWeight: '600', color: '#1e293b' }}>{student.rollNumber || student.username}</div>
                                                     <div style={{ fontSize: '12px', color: '#94a3b8' }}>{student.name || 'Student'}</div>
@@ -262,6 +273,15 @@ const ManagementAnalytics = ({ token }) => {
                 </div>
 
             </div>
+            <AnimatePresence>
+                {selectedStudentId && (
+                    <StudentReportModal 
+                        identifier={selectedStudentId} 
+                        onClose={() => setSelectedStudentId(null)} 
+                        token={token} 
+                    />
+                )}
+            </AnimatePresence>
         </div>
     );
 };
