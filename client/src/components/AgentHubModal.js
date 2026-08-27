@@ -69,14 +69,14 @@ const AgentHubModal = ({ isOpen, onClose }) => {
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border-color)' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         <FaRobot size={20} color="#8b5cf6" />
-                        <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'white' }}>KevRyn Agent Extension Hub</span>
+                        <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'white' }}>KevRyn Core Settings</span>
                     </div>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', display: 'flex' }}><FaTimes size={16} /></button>
                 </div>
                 
                 <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', maxHeight: '60vh', overflowY: 'auto' }}>
                     <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
-                        Install and configure third-party AI agents. KevRyn runs these agents entirely locally and securely uses your personal API keys (which are never sent to KevRyn Cloud).
+                        Configure your Edge AI environment for KevRyn IDE. (Authorized Personnel Only)
                     </p>
 
                     {agents.map((agent) => (
@@ -100,7 +100,7 @@ const AgentHubModal = ({ isOpen, onClose }) => {
                                     <div style={{ display: 'flex', gap: '10px' }}>
                                         <input 
                                             type="password"
-                                            placeholder="Paste Google AI Studio API Key..."
+                                            placeholder="Enter KevRyn Edge Core License Key..."
                                             value={authKey[agent.manifest.id] || ''}
                                             onChange={(e) => setAuthKey(prev => ({...prev, [agent.manifest.id]: e.target.value}))}
                                             style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', color: 'white', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
@@ -113,16 +113,7 @@ const AgentHubModal = ({ isOpen, onClose }) => {
                                         </button>
                                     </div>
                                     
-                                    {agent.manifest.id === 'google-gemini' && (
-                                        <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" style={{ color: '#8b5cf6', fontSize: '12px', textDecoration: 'none' }}>
-                                            Get a free Gemini API Key here &rarr;
-                                        </a>
-                                    )}
-                                    {agent.manifest.id === 'groq-assistant' && (
-                                        <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer" style={{ color: '#8b5cf6', fontSize: '12px', textDecoration: 'none' }}>
-                                            Get a free Groq API Key here &rarr;
-                                        </a>
-                                    )}
+
                                 </div>
                             )}
 
@@ -154,3 +145,4 @@ const AgentHubModal = ({ isOpen, onClose }) => {
 };
 
 export default AgentHubModal;
+

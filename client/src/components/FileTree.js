@@ -1,16 +1,17 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { FaFolder, FaFolderOpen, FaJs, FaPython, FaCode, FaFile } from 'react-icons/fa';
+import { FaFolder, FaFolderOpen, FaJs, FaPython, FaCode, FaFile, FaHtml5, FaCss3Alt, FaReact, FaCodeBranch } from 'react-icons/fa';
 import { FiFilePlus, FiFolderPlus } from 'react-icons/fi';
 import { SiCplusplus } from 'react-icons/si';
 
 const getFileIcon = (name) => {
-  if (name.endsWith('.js') || name.endsWith('.jsx')) return <FaJs color="#f7df1e" />;
+  if (name.endsWith('.js')) return <FaJs color="#f7df1e" />;
+  if (name.endsWith('.jsx')) return <FaReact color="#61dafb" />;
   if (name.endsWith('.ts') || name.endsWith('.tsx')) return <FaJs color="#3178c6" />;
   if (name.endsWith('.py')) return <FaPython color="#3776ab" />;
   if (name.endsWith('.cpp') || name.endsWith('.c') || name.endsWith('.h')) return <SiCplusplus color="#00599c" />;
-  if (name.endsWith('.html')) return <FaCode color="#e34c26" />;
-  if (name.endsWith('.css')) return <FaCode color="#264de4" />;
-  if (name.endsWith('.json')) return <FaFile color="#fbc02d" />;
+  if (name.endsWith('.html')) return <FaHtml5 color="#e34c26" />;
+  if (name.endsWith('.css')) return <FaCss3Alt color="#264de4" />;
+  if (name.endsWith('.json')) return <FaCodeBranch color="#fbc02d" />;
   if (name.endsWith('.md')) return <FaFile color="#42a5f5" />;
   return <FaFile color="#9e9e9e" />;
 };
@@ -194,7 +195,11 @@ const FileTree = React.memo(({
   };
 
   return (
-    <div style={{ marginLeft: level === 0 ? '0' : '12px', position: 'relative' }}>
+    <div style={{ 
+      marginLeft: level === 0 ? '0' : '14px', 
+      borderLeft: level > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
+      position: 'relative' 
+    }}>
       {/* ── Node Row ── */}
       <div
         ref={nodeRef}

@@ -1636,6 +1636,9 @@ app.use('/preview/:userId', (req, res, next) => {
     express.static(dir)(req, res, next);
 });
 
+// Serve Worldwide Deployed static sites
+app.use('/sites', express.static(baseSitesDir));
+
 // --- GLOBAL ERROR HANDLER ---
 app.use((err, req, res, next) => {
     console.error('!!! UNHANDLED ERROR !!!', err.stack);
@@ -1770,9 +1773,20 @@ app.post('/deploy/frontend', authenticate, async (req, res) => {
     const deployPath = path.join(userSitesDir, safeSiteName);
 
     try {
+        if (!fs.existsSync(userSitesDir)) {
+            fs.mkdirSync(userSitesDir, { recursive: true });
+        }
+
+        // Check current deployed sites limit
+        const existingSites = fs.readdirSync(userSitesDir).filter(f => fs.statSync(path.join(userSitesDir, f)).isDirectory());
+        if (!existingSites.includes(safeSiteName) && existingSites.length >= 3) {
+            return res.status(400).json({ error: "Maximum of 3 static sites allowed. Please unpublish one first." });
+        }
+
         if (fs.existsSync(deployPath)) {
             fs.rmSync(deployPath, { recursive: true, force: true });
         }
+        fs.mkdirSync(deployPath, { recursive: true });
 
         let sourceDir = userDir;
 
@@ -1797,7 +1811,7 @@ app.post('/deploy/frontend', authenticate, async (req, res) => {
                 const fullPath = path.join(userDir, relPath);
                 if (file.type === 'folder') {
                     if (!fs.existsSync(fullPath)) fs.mkdirSync(fullPath, { recursive: true });
-                } else if (!fs.existsSync(fullPath)) {
+                } else {
                     const dir = path.dirname(fullPath);
                     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
                     fs.writeFileSync(fullPath, file.content || "");
@@ -1918,7 +1932,19 @@ app.post('/deploy/frontend', authenticate, async (req, res) => {
             }
         }
 
-        const liveUrl = `/sites/${userId}/${safeSiteName}/index.html`;
+        let serveFile = 'index.html';
+        const indexPath = path.join(deployPath, 'index.html');
+        if (!fs.existsSync(indexPath)) {
+            try {
+                const files = fs.readdirSync(deployPath);
+                const htmlFile = files.find(f => f.endsWith('.html'));
+                if (htmlFile) serveFile = htmlFile;
+            } catch (e) {
+                console.warn("[Deploy] Could not read deploy path for html fallback", e);
+            }
+        }
+
+        const liveUrl = `/sites/${userId}/${safeSiteName}/${serveFile}`;
         res.json({ message: "Frontend Deployed!", url: liveUrl });
     } catch (err) {
         console.error("Deploy Error:", err);
@@ -2021,12 +2047,35 @@ app.post('/deploy/stop', authenticate, async (req, res) => {
 
 app.get('/deploy/status', authenticate, (req, res) => {
     const userId = req.user.userId;
-    const username = req.user.username;
     const projectId = userId.toString();
     const deployment = DeployManager.getDeployment(projectId);
+    const userSitesDir = getUserSitesDir(userId);
+
+    let frontends = [];
+
+    if (fs.existsSync(userSitesDir)) {
+        try {
+            const sites = fs.readdirSync(userSitesDir).filter(f => fs.statSync(path.join(userSitesDir, f)).isDirectory());
+            for (const siteName of sites) {
+                const siteDir = path.join(userSitesDir, siteName);
+                let serveFile = 'index.html';
+                const files = fs.readdirSync(siteDir);
+                if (!files.includes('index.html')) {
+                    const htmlFile = files.find(f => f.endsWith('.html'));
+                    if (htmlFile) serveFile = htmlFile;
+                }
+                frontends.push({
+                    siteName,
+                    url: `/sites/${userId}/${siteName}/${serveFile}`
+                });
+            }
+        } catch (e) {
+            console.error("Status check error", e);
+        }
+    }
 
     res.json({
-        frontend: `/sites/${userId}/${username}/index.html`,
+        frontends,
         backend: deployment && deployment.status === 'running' ? {
             url: `/deployed/${projectId}`,
             status: "Running",
@@ -2043,6 +2092,38 @@ app.get('/deploy/logs', authenticate, (req, res) => {
         res.json({ logs: deployment.logs });
     } else {
         res.json({ logs: [] });
+    }
+});
+
+// Unpublish / Take Down a deployed static frontend site
+app.post('/deploy/unpublish', authenticate, (req, res) => {
+    const userId = req.user.userId;
+    const { siteName } = req.body;
+    
+    // Default to the first site they have if not provided (for backward compatibility)
+    let targetSite = siteName;
+    const userSitesDir = getUserSitesDir(userId);
+
+    if (!targetSite && fs.existsSync(userSitesDir)) {
+        const sites = fs.readdirSync(userSitesDir).filter(f => fs.statSync(path.join(userSitesDir, f)).isDirectory());
+        if (sites.length > 0) targetSite = sites[0];
+    }
+    
+    if (!targetSite) return res.json({ message: 'No published site found.' });
+
+    const siteDir = path.join(userSitesDir, targetSite);
+
+    try {
+        if (fs.existsSync(siteDir)) {
+            fs.rmSync(siteDir, { recursive: true, force: true });
+            console.log(`[Deploy] Unpublished site ${targetSite} for user ${userId}`);
+            res.json({ message: 'Site unpublished successfully.' });
+        } else {
+            res.json({ message: 'No published site found.' });
+        }
+    } catch (err) {
+        console.error('[Deploy] Unpublish error:', err);
+        res.status(500).json({ error: 'Failed to unpublish site.' });
     }
 });
 
@@ -2759,6 +2840,25 @@ app.put('/files/:id', authenticate, async (req, res) => {
 
                 await fs.promises.writeFile(filePath, content);
                 console.log(`[FILE SYNC] Synced ${relativePath || file.name} to disk at ${filePath}`);
+
+                // --- AUTO-UPDATE LIVE DEPLOYMENTS ("Hot Reload" for the World) ---
+                if (!file.courseId) { // Apply to portfolio projects
+                    const userSitesDir = getUserSitesDir(file.owner || req.user.userId);
+                    if (fs.existsSync(userSitesDir)) {
+                        const sites = fs.readdirSync(userSitesDir).filter(f => fs.statSync(path.join(userSitesDir, f)).isDirectory());
+                        for (const siteName of sites) {
+                            const deployFilePath = path.join(userSitesDir, siteName, relativePath || file.name);
+                            // Ensure the folder structure exists in the deployed site
+                            const deployDir = path.dirname(deployFilePath);
+                            if (!fs.existsSync(deployDir)) {
+                                fs.mkdirSync(deployDir, { recursive: true });
+                            }
+                            await fs.promises.writeFile(deployFilePath, content);
+                            console.log(`[FILE SYNC] Auto-synced to live deployment '${siteName}' -> ${relativePath || file.name}`);
+                        }
+                    }
+                }
+
             } catch (syncErr) {
                 console.error(`[FILE SYNC] Async disk write failed for ${file?.name}:`, syncErr.message);
             }

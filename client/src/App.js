@@ -456,6 +456,7 @@ function App() {
 
     // --- BOTTOM PANEL STATE ---
     const [bottomPanelTab, setBottomPanelTab] = useState('terminal');
+    const [deployMode, setDeployMode] = useState('local');
     const [isBottomPanelOpen, setIsBottomPanelOpen] = useState(true);
     const [bottomPanelHeight, setBottomPanelHeight] = useState(200); // Compact default — user can resize up
     const [isResizingPanel, setIsResizingPanel] = useState(false);
@@ -2272,7 +2273,7 @@ function App() {
                         <div className="ide-container" style={{ position: 'relative', zIndex: 10 }}>
                             <div className="menubar">
                                 <div className="beast-logo-wrap" onClick={() => setActiveMenu(null)} style={{ padding: '0 10px 0 6px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <img src="/logo.png?v=4" alt="KevRyn Logo" style={{ height: '22px', width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 0 6px rgba(6, 182, 212, 0.6))' }} />
+                                    <img src="./logo.png?v=4" alt="KevRyn Logo" style={{ height: '22px', width: 'auto', objectFit: 'contain', filter: 'drop-shadow(0 0 6px rgba(6, 182, 212, 0.6))' }} />
                                     <span style={{ fontWeight: 700, fontSize: '13px', color: '#ffffff', letterSpacing: '0.5px', fontFamily: "'Inter', sans-serif", display: 'flex', alignItems: 'center', gap: '3px' }}>KevRyn <span style={{ color: '#06b6d4' }}>IDE</span></span>
                                 </div>
 
@@ -2456,35 +2457,17 @@ function App() {
                                     )}
                                 </div>
 
-                                {/* Help Menu */}
-                                <div className="menu-item" onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === 'help' ? null : 'help'); }}>
-                                    Help
-                                    {activeMenu === 'help' && (
-                                        <div className="dropdown-menu">
-                                            <div className="dropdown-option" onClick={() => window.open('https://code.visualstudio.com/docs', '_blank')}>Documentation</div>
-                                            <div className="dropdown-separator"></div>
-                                            <div className="dropdown-option" onClick={() => showDialog({ type: 'alert', title: 'KevRyn IDE', message: 'KevRyn IDE v2.0\nA premium Cloud IDE built with React & Node.js' })}>About</div>
-                                        </div>
-                                    )}
-                                </div>
-
                                 {/* Deploy Menu */}
                                 <div className="menu-item" onClick={(e) => { e.stopPropagation(); setActiveMenu(activeMenu === 'deploy' ? null : 'deploy'); }}>
                                     Deploy
                                     {activeMenu === 'deploy' && (
-                                        <div className="dropdown-menu">
-                                            <div className="dropdown-option" onClick={deployFrontend}><FaCloudUploadAlt /> Frontend (Netlify)</div>
-                                            <div className="dropdown-option" onClick={deployBackend}><FaServer /> Backend (Native)</div>
-                                            <div className="dropdown-separator"></div>
-                                            <div className="dropdown-header">Active Deployments</div>
-                                            {deployStatus?.backend ? (
-                                                <div className="dropdown-item-status">
-                                                    <span style={{ color: '#4caf50' }}>● Live</span> Port: {deployStatus.backend.port}
-                                                    <button className="btn-small-danger" onClick={stopBackend}>Stop</button>
-                                                </div>
-                                            ) : (
-                                                <div className="dropdown-item-status" style={{ color: '#666' }}>No Active Backend</div>
-                                            )}
+                                        <div className="dropdown-menu" style={{ width: '280px' }}>
+                                            <div className="dropdown-option" onClick={() => { setDeployMode('local'); setBottomPanelTab('deployment'); setActiveMenu(null); }}>
+                                                <span style={{ marginRight: '8px' }}>🟢</span> Local LAN Testing (Multi-screen)
+                                            </div>
+                                            <div className="dropdown-option" onClick={() => { setDeployMode('world'); setBottomPanelTab('deployment'); setActiveMenu(null); }}>
+                                                <span style={{ marginRight: '8px' }}>🌐</span> Deploy to World (Static / Portfolio)
+                                            </div>
                                         </div>
                                     )}
                                 </div>
@@ -2555,9 +2538,7 @@ function App() {
                                         <FaCog size={14} />
                                         {activeMenu === 'settings' && (
                                             <div className="dropdown-menu" style={{ right: 0, left: 'auto' }}>
-                                                {window.__KEVRYN_DESKTOP__ && (
-                                                    <div className="dropdown-option" onClick={() => { setIsAgentHubOpen(true); setActiveMenu(null); }}><FaRobot size={11} /> Agent Extension Hub</div>
-                                                )}
+                                                
                                                 <div className="dropdown-option" onClick={handleLogout}><FaSignOutAlt size={11} /> Sign Out ({username})</div>
                                             </div>
                                         )}
@@ -2579,11 +2560,7 @@ function App() {
                                         <div onClick={() => setShowStudentAssignments(true)} className={`sidebar-icon-container ${showStudentAssignments ? 'active' : ''}`} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}>
                                             <FaClipboardList title="My Learning (Assignments & Courses)" />
                                         </div>
-                                        {typeof window !== 'undefined' && window.__KEVRYN_DESKTOP__ && (
-                                            <div onClick={() => setIsAgentHubOpen(true)} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}>
-                                                <FaPuzzlePiece title="AI Agent Extensions" />
-                                            </div>
-                                        )}
+                                        
                                         <button className="icon-btn" title="New Template" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '0 10px', cursor: 'pointer' }}><FaMagic size={11} /></button>
                                     </div>
                                     {/* Sidebar Tab Content Area (Ensure it takes space to push logout down) */}
@@ -2835,7 +2812,6 @@ function App() {
                                                         { id: 'output', label: 'Output', icon: null },
                                                         { id: 'debug-console', label: 'Debug Console', icon: null },
                                                         { id: 'terminal', label: 'Terminal', icon: <FaTerminal size={11} /> },
-                                                        { id: 'preview', label: 'Preview', icon: <FaEye size={11} /> },
                                                         { id: 'ports', label: 'Ports', icon: <FaNetworkWired size={11} /> },
                                                         { id: 'deployment', label: 'Deployment', icon: <FaServer size={11} /> },
                                                     ].map(tab => (
@@ -2938,23 +2914,6 @@ function App() {
                                                         </div>
                                                     </div>
                                                 )}
-                                                {bottomPanelTab === 'preview' && (
-                                                    <div style={{ height: '100%', background: '#fff', borderRadius: '4px', overflow: 'hidden' }}>
-                                                        {fileName.endsWith('.html') ? (
-                                                            <iframe
-                                                                key={previewKey}
-                                                                title="HTML Preview"
-                                                                src={`${SERVER_URL}/preview/${userId}/${fileName}?t=${previewKey}`}
-                                                                style={{ width: '100%', height: '100%', border: 'none' }}
-                                                            />
-                                                        ) : (
-                                                            <div className="panel-placeholder" style={{ color: '#000' }}>
-                                                                <FaEye size={20} style={{ opacity: 0.3, marginBottom: '8px' }} />
-                                                                <div>Select an HTML file to see a preview.</div>
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                )}
                                                 {bottomPanelTab === 'ports' && (
                                                     <div style={{ padding: '15px', color: 'var(--text-primary)' }}>
                                                         {activePorts.length === 0 ? (
@@ -2985,7 +2944,7 @@ function App() {
                                                 )}
                                                 {bottomPanelTab === 'deployment' && (
                                                     <div style={{ height: '100%', overflow: 'hidden' }}>
-                                                        <DeploymentPanel token={token} />
+                                                        <DeploymentPanel token={token} activeMode={deployMode} />
                                                     </div>
                                                 )}
                                             </div>
@@ -3115,21 +3074,6 @@ function App() {
                                         <span>Ln {editorRef.current?.getPosition()?.lineNumber || 1}, Col {editorRef.current?.getPosition()?.column || 1}</span>
                                         <span>UTF-8</span>
                                     </div>
-                                    <button
-                                        onClick={async () => { 
-                                            const ok = await showDialog({ type: 'confirm', title: 'Sign Out', message: 'Are you sure you want to sign out?' }); 
-                                            if (ok) handleLogout(); 
-                                        }}
-                                        style={{
-                                            background: 'rgba(239, 68, 68, 0.15)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)',
-                                            padding: '1px 8px', borderRadius: '4px', cursor: 'pointer',
-                                            fontSize: '10px', fontWeight: 'bold', transition: 'all 0.2s'
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.3)'}
-                                        onMouseLeave={(e) => e.target.style.background = 'rgba(239, 68, 68, 0.15)'}
-                                    >
-                                        EXIT IDE
-                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -3137,13 +3081,6 @@ function App() {
                         {/* --- GLOBAL RESIZE OVERLAY --- */}
                         {(isResizingAi || isResizingPanel) && (
                             <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 9999, cursor: isResizingPanel ? 'row-resize' : 'col-resize', background: 'transparent' }} />
-                        )}
-
-                        {/* --- FLOATING AI BUTTON (Only for Cloud Web IDE) --- */}
-                        {(!window.__KEVRYN_DESKTOP__) && (
-                            <button className={`ai-fab ${isAiPanelOpen ? 'active' : ''}`} onClick={() => setIsAiPanelOpen(!isAiPanelOpen)} title="Toggle AI Assistant">
-                                <FaRobot size={20} />
-                            </button>
                         )}
 
                         <AnimatePresence>
@@ -3214,6 +3151,13 @@ function App() {
 }
 
 export default App;
+
+
+
+
+
+
+
 
 
 
