@@ -11,7 +11,7 @@ export class GeminiAdapter implements AgentExtension {
             name: 'Google Gemini',
             publisher: 'KevRyn',
             version: '2.5.0',
-            description: 'Advanced AI Agent powered by Google Gemini 2.5 Flash',
+            description: 'Advanced AI Agent powered by Google Gemini',
             capabilities: ['chat', 'workspace-read', 'terminal-execute']
         };
     }
@@ -52,7 +52,7 @@ export class GeminiAdapter implements AgentExtension {
         }
 
         if (!this.apiKey) {
-            yield "? Core License Key missing. Please authenticate via KevRyn Settings.";
+            yield '? Core License Key missing. Please authenticate via KevRyn Settings.';
             return;
         }
 
@@ -68,21 +68,19 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
 
             const payload = {
                 contents: [
-                    { role: "user", parts: [{ text: systemPrompt + "\n\nUser: " + message }] }
+                    { role: 'user', parts: [{ text: systemPrompt + '\n\nUser: ' + message }] }
                 ],
                 generationConfig: { temperature: 0.7 }
             };
 
-
-=======
+            const selectedModel = context?.model || 'gemini-3.7-flash';
             const response = await axios.post(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`,
+                `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${this.apiKey}`,
                 payload,
                 { headers: { 'Content-Type': 'application/json' } }
             );
->>>>>>> theirs
 
-            const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || "No response generated.";
+            const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
             
             // Stream it back to the UI in chunks for a smooth effect
             const chunkSize = 20;
@@ -102,4 +100,3 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
         this.status = 'NOT_INSTALLED';
     }
 }
-

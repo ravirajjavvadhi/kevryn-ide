@@ -20,6 +20,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId, 
     const [sessions, setSessions] = useState([]);
     const [currentSessionId, setCurrentSessionId] = useState(null);
     const [showHistory, setShowHistory] = useState(false);
+    const [selectedModel, setSelectedModel] = useState('gemini-3.7-flash');
 
     const chatEndRef = useRef(null);
     const api = useMemo(() => axios.create({ baseURL: SERVER_URL, headers: { Authorization: token } }), [token]);
@@ -206,7 +207,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId, 
                     });
                     
                     window.electronAPI.chatWithAgent(finalAgentId, userMessage, {
-                        code, fileName, language
+                        code, fileName, language, model: selectedModel
                     }).catch(e => {
                         setMessages(prev => {
                             const newMsg = [...prev];
@@ -256,6 +257,25 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId, 
                     <div className="ai-logo"><FaMagic size={14} /></div>
                     <span className="ai-title">{headerTitle}</span>
                     <span style={{ fontSize: '10px', color: '#10b981', marginLeft: '8px', fontWeight: 600 }}>● Online</span>
+                    {(!targetAgentId || targetAgentId === 'google-gemini') && (
+                        <select 
+                            value={selectedModel}
+                            onChange={(e) => setSelectedModel(e.target.value)}
+                            style={{ 
+                                marginLeft: '12px', background: 'var(--bg-tertiary)', color: 'var(--text-primary)', 
+                                border: '1px solid var(--border-color)', borderRadius: '4px', fontSize: '11px', 
+                                padding: '3px 8px', outline: 'none', cursor: 'pointer' 
+                            }}
+                            title="Select AI Model"
+                        >
+                            <option value="gemini-3.7-flash">Gemini 3.7 Flash</option>
+                            <option value="gemini-3.6-flash">Gemini 3.6 Flash</option>
+                            <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value="gemini-3.5-flash-lite">Gemini 3.5 Flash Lite</option>
+                            <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash Lite</option>
+                        </select>
+                    )}
                 </div>
                 <div className="ai-header-right">
                     {window.__KEVRYN_DESKTOP__ && <button onClick={onOpenSettings} className="ai-header-btn" title="Core Settings"><FaKey size={12} /></button>}

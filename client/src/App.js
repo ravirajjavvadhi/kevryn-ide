@@ -2560,6 +2560,9 @@ function App() {
                                         <div onClick={() => setShowStudentAssignments(true)} className={`sidebar-icon-container ${showStudentAssignments ? 'active' : ''}`} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}>
                                             <FaClipboardList title="My Learning (Assignments & Courses)" />
                                         </div>
+                                        <div onClick={() => setIsAgentHubOpen(true)} className={`sidebar-icon-container ${isAgentHubOpen ? 'active' : ''}`} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', color: 'var(--text-secondary)' }}>
+                                            <FaPuzzlePiece title="Extensions & AI Agents" />
+                                        </div>
                                         
                                         <button className="icon-btn" title="New Template" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '0 10px', cursor: 'pointer' }}><FaMagic size={11} /></button>
                                     </div>
@@ -2971,6 +2974,7 @@ function App() {
                                                         fileName={fileName}
                                                         language={getLanguage(fileName)}
                                                         targetAgentId={activeAiAgent}
+                                                        onOpenSettings={() => setIsAgentHubOpen(true)}
                                                         onApplyCode={(newCode, lang) => {
                                                             const terminalLangs = ['powershell', 'bash', 'shell', 'sh', 'cmd', 'zsh', 'terminal'];
                                                             if (lang && terminalLangs.includes(lang.toLowerCase())) {
