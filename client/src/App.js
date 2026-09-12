@@ -2972,30 +2972,43 @@ function App() {
                                                     <AIPanel
                                                         token={token}
                                                         userId={userId}
+                                                        activeFileId={activeFileId}
                                                         code={code}
                                                         fileName={fileName}
                                                         language={getLanguage(fileName)}
+                                                        editorContext={(() => {
+                                                            const editor = editorRef.current;
+                                                            const position = editor?.getPosition?.();
+                                                            const selection = editor?.getSelection?.();
+                                                            const selectedText = selection && !selection.isEmpty?.() ? editor?.getModel?.()?.getValueInRange(selection).slice(0, 12000) : '';
+                                                            return position ? { cursor: { line: position.lineNumber, column: position.column }, selectedText } : null;
+                                                        })()}
                                                         targetAgentId={activeAiAgent}
                                                         onOpenSettings={() => setIsAgentHubOpen(true)}
+                                                        onRunCommand={(command) => {
+                                                            setIsBottomPanelOpen(true);
+                                                            setBottomPanelTab('terminal');
+                                                            if (window.electronAPI && localWorkspacePath) window.electronAPI.terminalWrite(command + '\r');
+                                                            else safeEmit('terminal:write', { termId: activeTermId, data: command + '\r' });
+                                                        }}
                                                         onApplyCode={(newCode, lang) => {
-                                                            const terminalLangs = ['powershell', 'bash', 'shell', 'sh', 'cmd', 'zsh', 'terminal'];
-                                                            if (lang && terminalLangs.includes(lang.toLowerCase())) {
-                                                                const commands = newCode.split('\n').filter(line => line.trim());
-                                                                const runCommands = async () => {
-                                                                    for (const cmd of commands) {
-                                                                        safeEmit('terminal:write', { termId: activeTermId, data: cmd + '\r' });
-                                                                        await new Promise(r => setTimeout(r, 50));
+                                                            // AI changes are always reviewed as a diff before they
+                                                            // reach the editor or local workspace.
+                                                            setDiffData({
+                                                                oldCode: code,
+                                                                newCode,
+                                                                fileName: fileName || 'untitled',
+                                                                language: lang || getLanguage(fileName),
+                                                                onApply: async (approvedCode) => {
+                                                                    setCode(approvedCode);
+                                                                    if (activeFileId && localWorkspacePath && window.electronAPI) {
+                                                                        await window.electronAPI.writeLocalFile(activeFileId, approvedCode);
+                                                                    } else if (activeFileId) {
+                                                                        await api.put(`/files/${activeFileId}`, { content: approvedCode });
                                                                     }
-                                                                };
-                                                                runCommands();
-                                                                setIsBottomPanelOpen(true);
-                                                                setBottomPanelTab('terminal');
-                                                            } else {
-                                                                setCode(newCode);
-                                                                if (editorRef.current) {
-                                                                    editorRef.current.setValue(newCode);
                                                                 }
-                                                            }
+                                                            });
+                                                            setIsDiffModalOpen(true);
                                                         }}
                                                     />
                                                 </div>

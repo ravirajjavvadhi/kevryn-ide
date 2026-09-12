@@ -69,14 +69,22 @@ export class GroqAdapter implements AgentExtension {
         }
 
         try {
-            const systemPrompt = `You are an advanced AI Agent in the KevRyn Desktop IDE. 
-You have access to the user's workspace context.
+            const workspace = context?.workspace ? `Workspace: ${context.workspace.name}\nFiles: ${(context.workspace.files || []).join(', ')}` : 'No local workspace is open.';
+            const relatedFiles = (context?.relatedFiles || []).map((file: any) => `\nReferenced file: ${file.path}\n${file.content}`).join('\n');
+            const searchResults = (context?.searchResults || []).map((result: any) => `${result.path}${result.line ? `:${result.line}` : ''} ${result.text || ''}`).join('\n');
+            const editorContext = context?.editorContext ? `Cursor: line ${context.editorContext.cursor?.line || 1}, column ${context.editorContext.cursor?.column || 1}\nSelected text:\n${context.editorContext.selectedText || 'None'}` : 'No editor selection.';
+            const systemPrompt = `You are an advanced AI Agent in the KevRyn Desktop IDE.
+You are workspace-aware. Use the active file and workspace inventory below; do not claim a file is closed when it is listed.
+${workspace}
 Current File: ${context?.fileName || 'None'}
 Language: ${context?.language || 'None'}
 Code Context:
 ${context?.code || 'Empty'}
+${editorContext}
+${relatedFiles}
+Search results: ${searchResults || 'None'}
 
-If the user asks for code, provide it cleanly. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
+If the user asks for code, put every complete code suggestion in a fenced Markdown code block with its language. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
 
             // The user explicitly chooses the model in the desktop AI workspace.
             const selectedModel = context?.model || 'openai/gpt-oss-120b';

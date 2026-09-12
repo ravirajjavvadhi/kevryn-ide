@@ -89,6 +89,66 @@ export class WorkspaceManager {
         return this.activeWorkspace;
     }
 
+    private resolveAgentPath(relativePath: string): string {
+        if (!this.activeWorkspace) throw new Error('No workspace is open.');
+        const root = path.resolve(this.activeWorkspace.rootPath);
+        const target = path.resolve(root, relativePath || '.');
+        if (target !== root && !target.startsWith(root + path.sep)) throw new Error('Workspace boundary violation.');
+        return target;
+    }
+
+    public async getAgentContext() {
+        if (!this.activeWorkspace) return null;
+        const files: string[] = [];
+        const collect = async (dir: string, depth: number): Promise<void> => {
+            if (depth > 2 || files.length >= 120) return;
+            const entries = await fs.promises.readdir(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.name.startsWith('.') || ['node_modules', 'dist', 'build'].includes(entry.name)) continue;
+                const full = path.join(dir, entry.name);
+                const rel = path.relative(this.activeWorkspace!.rootPath, full).replace(/\\/g, '/');
+                if (entry.isDirectory()) await collect(full, depth + 1); else files.push(rel);
+            }
+        };
+        await collect(this.activeWorkspace.rootPath, 0);
+        return { name: this.activeWorkspace.name, files };
+    }
+
+    public async readAgentFile(relativePath: string): Promise<string> {
+        const target = this.resolveAgentPath(relativePath);
+        const stat = await fs.promises.stat(target);
+        if (!stat.isFile()) throw new Error('Agent can only read workspace files.');
+        if (stat.size > 512 * 1024) throw new Error('File is too large to include in agent context.');
+        return fs.promises.readFile(target, 'utf8');
+    }
+
+    public async searchAgentWorkspace(query: string): Promise<Array<{ path: string; line: number; text: string }>> {
+        const context = await this.getAgentContext();
+        if (!context || !query.trim()) return [];
+        const needle = query.toLowerCase();
+        const results: Array<{ path: string; line: number; text: string }> = [];
+        for (const relativePath of context.files) {
+            if (results.length >= 50) break;
+            if (relativePath.toLowerCase().includes(needle)) results.push({ path: relativePath, line: 0, text: 'Filename match' });
+            if (results.length >= 50) break;
+            try {
+                const content = await this.readAgentFile(relativePath);
+                // Ignore binary data and cap the scan per file so a workspace search
+                // remains responsive and never leaks an entire large file into context.
+                if (content.includes('\0')) continue;
+                const lines = content.slice(0, 128 * 1024).split(/\r?\n/);
+                for (let index = 0; index < lines.length && results.length < 50; index += 1) {
+                    if (lines[index].toLowerCase().includes(needle)) {
+                        results.push({ path: relativePath, line: index + 1, text: lines[index].trim().slice(0, 240) });
+                    }
+                }
+            } catch (_) {
+                // An unreadable or binary workspace item should not stop a search.
+            }
+        }
+        return results;
+    }
+
     public async readDirectory(dirPath: string) {
         if (!this.activeWorkspace) throw new Error("No active workspace");
         if (!dirPath.startsWith(this.activeWorkspace.rootPath)) {

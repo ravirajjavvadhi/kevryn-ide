@@ -44,6 +44,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         return ctx ? ctx.rootPath : null;
     });
 
+    // Read-only agent context. The renderer/provider never receives an unrestricted
+    // filesystem handle; every later tool is constrained by WorkspaceManager.
+    ipcMain.handle('agent-workspace-context', async () => workspaceManager.getAgentContext());
+    ipcMain.handle('agent-read-workspace-file', async (_event, relativePath: string) => workspaceManager.readAgentFile(relativePath));
+    ipcMain.handle('agent-search-workspace', async (_event, query: string) => workspaceManager.searchAgentWorkspace(query));
+
     ipcMain.handle('save-workspace-path', async (event, workspacePath: string) => {
         const ctx = await workspaceManager.openFolder(workspacePath);
         return !!ctx;

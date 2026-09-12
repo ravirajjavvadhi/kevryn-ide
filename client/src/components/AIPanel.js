@@ -23,8 +23,9 @@ const PROVIDERS = {
 
 const makeId = () => (typeof window !== 'undefined' && window.crypto?.randomUUID ? window.crypto.randomUUID() : `${Date.now()}-${Math.random().toString(16).slice(2)}`);
 const makeThread = () => ({ id: makeId(), title: 'New conversation', messages: [], updatedAt: Date.now() });
+const codeBlocks = content => [...String(content || '').matchAll(/```([^\n]*)\n([\s\S]*?)```/g)].map(match => ({ language: match[1].trim(), code: match[2].trim() }));
 
-const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId = 'groq-assistant', onOpenSettings, userId }) => {
+const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, onRunCommand, targetAgentId = 'groq-assistant', onOpenSettings, userId }) => {
     const provider = PROVIDERS[targetAgentId] ? targetAgentId : 'groq-assistant';
     const storageKey = `kevryn.desktop.ai.threads.${userId || 'local'}`;
     const modelKey = `kevryn.desktop.ai.models.${userId || 'local'}`;
@@ -35,6 +36,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId =
     const [includeFile, setIncludeFile] = useState(false);
     const [loading, setLoading] = useState({});
     const [status, setStatus] = useState({});
+    const [activity, setActivity] = useState([]);
     const [historyOpen, setHistoryOpen] = useState(false);
     const [modelOpen, setModelOpen] = useState(false);
     const [atBottom, setAtBottom] = useState(true);
@@ -93,6 +95,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId =
         const threadId = thread.id;
         const requestId = makeId();
         setInput(''); setLoading(previous => ({ ...previous, [providerId]: true })); setStatus(previous => ({ ...previous, [providerId]: 'Connecting…' }));
+        setActivity(['Preparing workspace context']);
         addMessage(providerId, threadId, { id: makeId(), role: 'user', content: text, createdAt: Date.now() });
         const assistantId = makeId();
         addMessage(providerId, threadId, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now(), streaming: true });
@@ -104,7 +107,7 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId =
                     messages: [...messages, { role: 'user', content: text }]
                 }, { headers: { Authorization: token } });
                 updateThread(providerId, threadId, current => ({ messages: current.messages.map(message => message.id === assistantId ? { ...message, content: response.data.response || 'No response generated.', streaming: false } : message) }));
-                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null }));
+                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null })); setActivity(previous => [...previous, 'Response ready']);
                 return;
             }
             const agentList = await window.electronAPI.getAgentList();
@@ -117,16 +120,38 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId =
             });
             window.electronAPI.onAgentChatDone(providerId, () => {
                 updateThread(providerId, threadId, current => ({ messages: current.messages.map(message => message.id === assistantId ? { ...message, streaming: false } : message) }));
-                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null }));
+                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null })); setActivity(previous => [...previous, 'Response ready']);
             });
             window.electronAPI.onAgentChatError(providerId, error => {
                 updateThread(providerId, threadId, current => ({ messages: current.messages.map(message => message.id === assistantId ? { ...message, content: `❌ ${error}`, streaming: false } : message) }));
-                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null }));
+                setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null })); setActivity(previous => [...previous, 'Request failed']);
             });
-            await window.electronAPI.chatWithAgent(providerId, text, includeFile ? { code, fileName, language, model: models[providerId], requestId } : { model: models[providerId], requestId });
+            const workspace = await window.electronAPI.getAgentWorkspaceContext().catch(() => null);
+            setActivity(previous => [...previous, 'Inspecting workspace']);
+            const searchMatch = text.match(/(?:find|search|locate)\s+(?:for\s+)?["'`]?([^"'`\n]+)["'`]?/i);
+            const searchResults = searchMatch ? await window.electronAPI.searchAgentWorkspace(searchMatch[1].trim()).catch(() => []) : [];
+            if (searchMatch) setActivity(previous => [...previous, `Searched workspace for “${searchMatch[1].trim().slice(0, 42)}”`]);
+            const relatedFiles = [];
+            // Resolve only files explicitly mentioned by the user, and only from the
+            // workspace inventory returned by Electron. This keeps context focused.
+            for (const relativePath of (workspace?.files || [])) {
+                const baseName = relativePath.split('/').pop();
+                if ((text.includes(relativePath) || (baseName && text.includes(baseName))) && relativePath !== fileName) {
+                    const content = await window.electronAPI.readAgentWorkspaceFile(relativePath).catch(() => null);
+                    if (typeof content === 'string') relatedFiles.push({ path: relativePath, content: content.slice(0, 16000) });
+                    if (relatedFiles.length >= 3) break;
+                }
+            }
+            if (relatedFiles.length) setActivity(previous => [...previous, `Read ${relatedFiles.map(file => file.path).join(', ')}`]);
+            // Desktop agents are workspace-aware by default. The checkbox is now an
+            // explicit "include full file" override for very large/unsaved buffers.
+            const context = { model: models[providerId], requestId, workspace, relatedFiles, searchResults, fileName, language, editorContext,
+                code: code || '', includeFullFile: includeFile };
+            setActivity(previous => [...previous, `Asking ${PROVIDERS[providerId].name}`]);
+            await window.electronAPI.chatWithAgent(providerId, text, context);
         } catch (error) {
             updateThread(providerId, threadId, current => ({ messages: current.messages.map(message => message.id === assistantId ? { ...message, content: `❌ ${error.message}`, streaming: false } : message) }));
-            setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null }));
+            setLoading(previous => ({ ...previous, [providerId]: false })); setStatus(previous => ({ ...previous, [providerId]: null })); setActivity(previous => [...previous, 'Request failed']);
         }
     };
 
@@ -146,10 +171,15 @@ const AIPanel = ({ token, code, fileName, language, onApplyCode, targetAgentId =
             <div className="ai-provider-identity"><span className="ai-provider-mark">✦</span><div><strong>{PROVIDERS[provider].name}</strong><span>{isLoading ? 'Working' : 'Personal workspace'}</span></div></div>
             <div className="ai-header-actions"><button className="ai-icon-button" onClick={() => createThread()} title="New conversation"><FaPlus /></button><button className="ai-icon-button" onClick={() => setHistoryOpen(open => !open)} title="Conversation history"><FaHistory /></button><button className="ai-icon-button" onClick={onOpenSettings} title="AI provider settings"><FaKey /></button></div>
         </header>
+        {activity.length > 0 && <div className="ai-activity-strip">{activity.slice(-2).join(' · ')}</div>}
+        <div className="ai-permission-strip" title="Workspace files can be read. Edits require diff review. Commands require confirmation."><span>Workspace aware</span><span>Edits reviewed</span><span>Commands confirm</span></div>
         <div className="ai-model-bar"><span>Model</span><div className="ai-model-menu"><button onClick={() => setModelOpen(open => !open)} aria-expanded={modelOpen}>{modelLabel}<FaChevronDown /></button>{modelOpen && <div className="ai-model-options" role="listbox">{PROVIDERS[provider].models.map(([id, label]) => <button role="option" aria-selected={id === selectedModel} key={id} onClick={() => { setModels(previous => ({ ...previous, [provider]: id })); setModelOpen(false); }}><span>{label}</span>{id === selectedModel && <FaCheck />}</button>)}</div>}</div></div>
         {historyOpen && <div className="ai-history-drawer"><div><strong>{PROVIDERS[provider].name} conversations</strong><button onClick={() => setHistoryOpen(false)}><FaTimes /></button></div>{providerThreads.length === 0 ? <p>No saved conversations yet.</p> : providerThreads.map(thread => <button key={thread.id} className={thread.id === activeThread?.id ? 'selected' : ''} onClick={() => { setActiveIds(previous => ({ ...previous, [provider]: thread.id })); setHistoryOpen(false); }}>{thread.title}<small>{new Date(thread.updatedAt).toLocaleDateString()}</small></button>)}</div>}
         <div className="ai-conversation" ref={messagesRef} onScroll={onScroll}>
-            {messages.length === 0 ? <div className="ai-empty-state"><div className="ai-empty-icon"><FaRobot /></div><h2>Start a conversation</h2><p>Choose a model, ask for help, or attach the current file when you want coding context.</p><button onClick={onOpenSettings}><FaKey /> Manage personal API keys</button></div> : messages.map(message => <article className={`ai-chat-message ${message.role}`} key={message.id}><div className="ai-chat-avatar">{message.role === 'user' ? 'You' : <FaRobot />}</div><div className="ai-chat-content">{message.role === 'assistant' ? renderAssistant(message) : message.content}{message.streaming && <span className="ai-streaming-dot"><FaSpinner className="spinning" /></span>}{message.role === 'assistant' && message.content && <div className="ai-message-actions"><button onClick={() => navigator.clipboard.writeText(message.content)}><FaCopy /> Copy</button>{onApplyCode && <button onClick={() => onApplyCode(message.content, language)}><FaCode /> Apply</button>}</div>}</div></article>)}
+            {messages.length === 0 ? <div className="ai-empty-state"><div className="ai-empty-icon"><FaRobot /></div><h2>Start a conversation</h2><p>Choose a model, ask for help, or attach the current file when you want coding context.</p><button onClick={onOpenSettings}><FaKey /> Manage personal API keys</button></div> : messages.map(message => {
+                const blocks = codeBlocks(message.content); const primary = blocks[0]; const command = ['bash', 'shell', 'powershell', 'cmd'].includes(primary?.language?.toLowerCase());
+                return <article className={`ai-chat-message ${message.role}`} key={message.id}><div className="ai-chat-avatar">{message.role === 'user' ? 'You' : <FaRobot />}</div><div className="ai-chat-content">{message.role === 'assistant' ? renderAssistant(message) : message.content}{message.streaming && <span className="ai-streaming-dot"><FaSpinner className="spinning" /></span>}{message.role === 'assistant' && message.content && <div className="ai-message-actions"><button onClick={() => navigator.clipboard.writeText(primary?.code || message.content)}><FaCopy /> {primary ? (command ? 'Copy command' : 'Copy code') : 'Copy'}</button>{primary && command && onRunCommand && <button onClick={() => { if (window.confirm(`Run this command in the active terminal?\n\n${primary.code}`)) onRunCommand(primary.code); }}><FaCode /> Run command</button>}{primary && !command && onApplyCode && <button onClick={() => onApplyCode(primary.code, primary.language || language)}><FaCode /> Review & apply</button>}</div>}</div></article>;
+            })}
             {status[provider] && <div className="ai-connection-state"><FaBolt /> {status[provider]}</div>}
         </div>
         {!atBottom && messages.length > 0 && <button className="ai-jump-latest" onClick={() => { messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }); setAtBottom(true); }}>Jump to latest</button>}
