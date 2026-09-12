@@ -806,6 +806,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         // Ensure the active file is saved before the student exits
         try {
             await handleSave();
+            // Typing mirrors are deliberately debounced.  Flush the final
+            // saved local file before leaving so this session's report has the
+            // exact last version the student saw in the editor.
+            if (isDesktopLab && activeFileRef.current) {
+                const current = activeFileRef.current;
+                syncLabArtifact(current.path || current._id, codeRef.current || '', detectLanguage(current.name), 'update', true);
+            }
         } catch (e) {
             console.error("[LabMode] Failed to save before logout:", e);
         }
