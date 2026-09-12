@@ -11,6 +11,28 @@ let previewRoot = '';
 let previewPort = 0;
 let previewWindow: BrowserWindow | null = null;
 
+type LabWorkspaceScope = { collegeId?: string; studentId?: string; courseId?: string; subject?: string };
+
+// Lab workspaces must never be derived from a user supplied absolute path.
+// Electron owns the root under per-user application data, making the layout
+// portable across accounts and preventing a lab session from escaping into a
+// personal workspace.
+const safeLabSegment = (value: unknown, fallback: string) => {
+    const cleaned = String(value || fallback).trim().replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
+    return cleaned || fallback;
+};
+const labRootFor = (scope: LabWorkspaceScope) => path.join(
+    app.getPath('userData'), 'Labs',
+    safeLabSegment(scope.collegeId, 'local-institution'),
+    safeLabSegment(scope.studentId, 'student'),
+    safeLabSegment(scope.courseId || scope.subject, 'general-lab')
+);
+const resolveLabPath = (root: string, relativePath = '.') => {
+    const target = path.resolve(root, relativePath || '.');
+    if (target !== root && !target.startsWith(root + path.sep)) throw new Error('Lab workspace boundary violation.');
+    return target;
+};
+
 const MIME_TYPES: Record<string, string> = {
     '.html': 'text/html; charset=utf-8', '.htm': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8',
     '.js': 'text/javascript; charset=utf-8', '.mjs': 'text/javascript; charset=utf-8', '.json': 'application/json; charset=utf-8',
@@ -200,6 +222,68 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
     ipcMain.handle('save-workspace-path', async (event, workspacePath: string) => {
         const ctx = await workspaceManager.openFolder(workspacePath);
         return !!ctx;
+    });
+
+    // Strict local Lab Mode APIs.  These do not contact KevRyn's server and do
+    // not reuse the personal workspace APIs below.  The only usable paths are
+    // relative to a deterministic per-student, per-course lab root.
+    ipcMain.handle('get-lab-workspace', async (_event, scope: LabWorkspaceScope) => {
+        const root = labRootFor(scope || {});
+        await fs.promises.mkdir(root, { recursive: true });
+        return { root, name: path.basename(root) };
+    });
+    ipcMain.handle('lab-read-dir', async (_event, scope: LabWorkspaceScope) => {
+        const root = labRootFor(scope || {});
+        await fs.promises.mkdir(root, { recursive: true });
+        const walk = async (directory: string, relative = '', depth = 0): Promise<any[]> => {
+            if (depth > 8) return [];
+            const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+            const nodes = await Promise.all(entries
+                .filter(entry => !entry.name.startsWith('.') && !['node_modules', 'dist', 'build'].includes(entry.name))
+                .map(async entry => {
+                    const childRelative = relative ? path.posix.join(relative, entry.name) : entry.name;
+                    const full = resolveLabPath(root, childRelative);
+                    if (entry.isDirectory()) return { _id: childRelative, path: childRelative, name: entry.name, type: 'folder', children: await walk(full, childRelative, depth + 1) };
+                    return { _id: childRelative, path: childRelative, name: entry.name, type: 'file' };
+                }));
+            return nodes.sort((a, b) => a.type === b.type ? a.name.localeCompare(b.name) : a.type === 'folder' ? -1 : 1);
+        };
+        return walk(root);
+    });
+    ipcMain.handle('lab-read-file', async (_event, scope: LabWorkspaceScope, relativePath: string) => {
+        const root = labRootFor(scope || {});
+        const target = resolveLabPath(root, relativePath);
+        const stat = await fs.promises.stat(target);
+        if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error('Only text files up to 2 MB can be opened in Lab Mode.');
+        return fs.promises.readFile(target, 'utf8');
+    });
+    ipcMain.handle('lab-write-file', async (_event, scope: LabWorkspaceScope, relativePath: string, content: string) => {
+        if (typeof content !== 'string' || content.length > 2 * 1024 * 1024) throw new Error('Lab file content must be text and no larger than 2 MB.');
+        const root = labRootFor(scope || {});
+        const target = resolveLabPath(root, relativePath);
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.writeFile(target, content, 'utf8');
+        return { success: true, path: relativePath };
+    });
+    ipcMain.handle('lab-create-item', async (_event, scope: LabWorkspaceScope, relativePath: string, type: 'file' | 'folder') => {
+        const root = labRootFor(scope || {});
+        const target = resolveLabPath(root, relativePath);
+        if (type === 'folder') await fs.promises.mkdir(target, { recursive: true });
+        else { await fs.promises.mkdir(path.dirname(target), { recursive: true }); await fs.promises.writeFile(target, '', { flag: 'wx' }); }
+        return { success: true, path: relativePath };
+    });
+    ipcMain.handle('lab-rename-item', async (_event, scope: LabWorkspaceScope, from: string, to: string) => {
+        const root = labRootFor(scope || {});
+        const source = resolveLabPath(root, from); const target = resolveLabPath(root, to);
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.rename(source, target);
+        return { success: true, path: to };
+    });
+    ipcMain.handle('lab-delete-item', async (_event, scope: LabWorkspaceScope, relativePath: string) => {
+        const root = labRootFor(scope || {});
+        const target = resolveLabPath(root, relativePath);
+        await fs.promises.rm(target, { recursive: true, force: true });
+        return { success: true };
     });
 
     ipcMain.handle('read-local-dir', async (event, dirPath: string) => {

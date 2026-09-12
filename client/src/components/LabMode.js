@@ -34,6 +34,14 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const [isFullscreen, setIsFullscreen] = useState(false); // NEW: Fullscreen strict mode
     const [lastSynced, setLastSynced] = useState(null); // NEW: Visual feedback
     const wcBridgeRef = useRef(null);
+    const isDesktopLab = typeof window !== 'undefined' && Boolean(window.electronAPI?.getLabWorkspace);
+    const labScope = useMemo(() => ({
+        collegeId: session?.collegeId || session?.college?._id,
+        studentId: userId || username,
+        courseId: session?.courseId?._id || session?.courseId,
+        subject: session?.subject || session?.subjectName
+    }), [session?.collegeId, session?.college?._id, session?.courseId, session?.subject, session?.subjectName, userId, username]);
+    const [localLabRoot, setLocalLabRoot] = useState(null);
 
     const tabCountRef = useRef(0);
     const pasteCountRef = useRef(0);
@@ -41,6 +49,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     // Keep refs in sync
     useEffect(() => { codeRef.current = code; }, [code]);
     useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
+
+    useEffect(() => {
+        if (!isDesktopLab) return;
+        window.electronAPI.getLabWorkspace(labScope)
+            .then(workspace => setLocalLabRoot(workspace?.root || null))
+            .catch(error => console.error('[LabMode] Could not initialize local lab workspace:', error));
+    }, [isDesktopLab, labScope]);
 
     const api = useMemo(() => axios.create({
         baseURL: SERVER_URL,
@@ -205,12 +220,18 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
     const loadFiles = useCallback(async () => {
         try {
+            if (isDesktopLab) {
+                const flatten = nodes => (nodes || []).flatMap(node => node.type === 'folder' ? flatten(node.children) : [node]);
+                const localFiles = await window.electronAPI.readLabDir(labScope);
+                setFiles(flatten(localFiles));
+                return;
+            }
             // NEW: Fetch files filtered by lab courseId if present
             const url = session?.courseId ? `/files?courseId=${session.courseId}` : '/files';
             const res = await api.get(url);
             setFiles(res.data || []);
         } catch (e) { console.error("Failed to load files:", e); }
-    }, [api, session]); // Added api, session
+    }, [api, session, isDesktopLab, labScope]); // Added api, session
 
     // --- Heartbeat & Status ---
     const updateStatus = useCallback((newStatus) => {
@@ -403,6 +424,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             const currentFile = activeFileRef.current;
             if (!currentFile || !currentFile._id) return;
             try {
+                if (isDesktopLab) {
+                    await window.electronAPI.writeLabFile(labScope, currentFile.path || currentFile._id, newValue || '');
+                    setFiles(prev => prev.map(f => f._id === currentFile._id ? { ...f, content: newValue } : f));
+                    setLastSynced(new Date().toLocaleTimeString());
+                    return;
+                }
                 // Background quiet save - passing autoSave=true skips timeline history clutter
                 await api.put(`/files/${currentFile._id}?autoSave=true`, { content: newValue });
                 // Update local files state without causing full re-renders
@@ -465,6 +492,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
     // --- File Operations ---
     const handleFileClick = async (file) => {
+        if (isDesktopLab) {
+            try {
+                const content = await window.electronAPI.readLabFile(labScope, file.path || file._id);
+                setActiveFile(file); setCode(content || ''); setLanguage(detectLanguage(file.name));
+            } catch (error) { console.error('[LabMode] Could not open local lab file:', error); }
+            return;
+        }
         // STEP 1: SAVE PREVIOUS FILE
         if (activeFile && activeFile._id !== file._id) {
             console.log(`[LAB-SWITCH] Saving ${activeFile.name}...`);
@@ -506,6 +540,14 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         const name = newFileName.trim();
         if (!name) return;
         try {
+            if (isDesktopLab) {
+                await window.electronAPI.createLabItem(labScope, name, 'file');
+                await loadFiles();
+                const created = { _id: name, path: name, name, type: 'file' };
+                setActiveFile(created); setCode(''); setLanguage(detectLanguage(name));
+                setNewFileName(''); setShowNewFile(false);
+                return;
+            }
             const res = await api.post('/files', {
                 name,
                 content: '',
@@ -527,6 +569,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         e.stopPropagation();
         if (!window.confirm("Are you sure you want to delete this file?")) return;
         try {
+            if (isDesktopLab) {
+                await window.electronAPI.deleteLabItem(labScope, fileId);
+                setFiles(prev => prev.filter(file => file._id !== fileId));
+                if (activeFile?._id === fileId) { setActiveFile(null); setCode('// Select or create a file to start coding...'); }
+                return;
+            }
             await api.delete(`/files/${fileId}`);
             setFiles(prev => prev.filter(f => f._id !== fileId));
             if (activeFile?._id === fileId) {
@@ -549,6 +597,16 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         const newName = tempFileName.trim();
         if (!newName) { setEditingFileId(null); return; }
         try {
+            if (isDesktopLab) {
+                const file = files.find(item => item._id === fileId);
+                if (!file) throw new Error('Lab file no longer exists.');
+                const parent = (file.path || '').includes('/') ? file.path.slice(0, file.path.lastIndexOf('/') + 1) : '';
+                const nextPath = `${parent}${newName}`;
+                await window.electronAPI.renameLabItem(labScope, file.path || fileId, nextPath);
+                setFiles(prev => prev.map(item => item._id === fileId ? { ...item, _id: nextPath, path: nextPath, name: newName } : item));
+                if (activeFile?._id === fileId) { setActiveFile({ ...activeFile, _id: nextPath, path: nextPath, name: newName }); setLanguage(detectLanguage(newName)); }
+                setEditingFileId(null); return;
+            }
             await api.put(`/files/${fileId}`, { newName });
             setFiles(prev => prev.map(f => f._id === fileId ? { ...f, name: newName } : f));
             if (activeFile?._id === fileId) {
@@ -575,6 +633,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         setSaving(true);
         const fullPath = findFileFullPath(activeFile._id);
         try {
+            if (isDesktopLab) {
+                await window.electronAPI.writeLabFile(labScope, activeFile.path || fullPath, code);
+                setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code } : file));
+                setLastSynced(new Date().toLocaleTimeString());
+                return;
+            }
             await api.put(`/files/${activeFile._id}`, { content: code });
             setFiles(prev => prev.map(f => f._id === activeFile._id ? { ...f, content: code } : f));
 
@@ -613,7 +677,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             emitCodeUpdate();
         } catch (e) { console.error("Save failed", e); }
         setSaving(false);
-    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath]);
+    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, labScope]);
 
     // Keyboard shortcuts are handled in the main shortcut block below
 
@@ -635,6 +699,15 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
     const handleRun = useCallback(async () => {
         if (!activeFile || !socketRef.current) return;
+
+        if (isDesktopLab && localLabRoot) {
+            await handleSave();
+            const localPath = activeFile.path || activeFile.name;
+            const command = getRunCommand(localPath);
+            if (!command) { alert('This file can be opened in the local terminal from its dedicated lab folder.'); return; }
+            window.electronAPI.terminalWrite(command + '\r');
+            return;
+        }
 
         const fileName = activeFile.name;
         let fullPath = findFileFullPath(activeFile._id);
@@ -670,7 +743,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             api,
             termId: 1
         });
-    }, [activeFile, handleSave, session, userId, findFileFullPath]);
+    }, [activeFile, handleSave, session, userId, findFileFullPath, isDesktopLab, localLabRoot]);
 
     // --- Keyboard Shortcuts ---
     useEffect(() => {
@@ -1122,7 +1195,8 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                                     userId={userId}
                                     courseId={session?.courseId}
                                     webcontainer={isServerLanguage ? null : webcontainer}
-                                    localWorkspacePath={localWorkspacePath}
+                                    localWorkspacePath={isDesktopLab ? localLabRoot : localWorkspacePath}
+                                    labMode={isDesktopLab}
                                 />
                             ) : (
                                 <div style={{ padding: '20px', color: '#475569', fontSize: '13px' }}>Connecting to secure terminal shell...</div>

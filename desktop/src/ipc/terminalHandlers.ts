@@ -1,11 +1,12 @@
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, app } from 'electron';
 import * as pty from 'node-pty';
 import * as os from 'os';
+import * as path from 'path';
 
 let ptyProcess: pty.IPty | null = null;
 
 export function setupTerminalHandlers(mainWindow: BrowserWindow) {
-    ipcMain.handle('spawn-terminal', (event, cwd: string, cols?: number, rows?: number) => {
+    const spawn = (cwd: string, cols?: number, rows?: number) => {
         if (ptyProcess) {
             ptyProcess.kill();
         }
@@ -32,6 +33,14 @@ export function setupTerminalHandlers(mainWindow: BrowserWindow) {
             console.error('Failed to spawn terminal:', error);
             return { success: false, error: error.message };
         }
+    };
+
+    ipcMain.handle('spawn-terminal', (_event, cwd: string, cols?: number, rows?: number) => spawn(cwd, cols, rows));
+    ipcMain.handle('spawn-lab-terminal', (_event, cwd: string, cols?: number, rows?: number) => {
+        const labsRoot = path.resolve(app.getPath('userData'), 'Labs');
+        const target = path.resolve(cwd || '');
+        if (target !== labsRoot && !target.startsWith(labsRoot + path.sep)) return { success: false, error: 'Lab terminal must stay inside its dedicated local lab folder.' };
+        return spawn(target, cols, rows);
     });
 
     ipcMain.handle('terminal-write', (event, data: string) => {

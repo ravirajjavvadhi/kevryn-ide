@@ -8,11 +8,25 @@ const CollegeStructure = require('../models/CollegeStructure');
 const ManagementActionAudit = require('../models/ManagementActionAudit');
 const Timetable = require('../models/Timetable');
 const LabRoom = require('../models/LabRoom');
+const LabSession = require('../LabSessionModel');
 const Assignment = require('../models/Assignment');
 const Submission = require('../models/Submission');
 const Broadcast = require('../models/Broadcast');
 const College = require('../models/College');
 const bcrypt = require('bcryptjs');
+
+const attendanceFor = session => {
+    const attendees = new Set((session.activeStudents || []).map(item => item.username).filter(Boolean));
+    (session.activityLog || []).forEach(log => {
+        if (log.event?.type === 'login' && log.username) attendees.add(log.username);
+    });
+    return { attended: attendees.size, expected: (session.allowedStudents || []).length };
+};
+
+const durationMinutes = session => {
+    if (session.endTime && session.startTime) return Math.max(0, Math.round((new Date(session.endTime) - new Date(session.startTime)) / 60000));
+    return Number(session.duration) || 0;
+};
 
 const ensureManagement = (req, res, next) => {
     if (!['admin', 'college_admin'].includes(req.user.role)) return res.status(403).json({ error: 'Management access required.' });
@@ -68,7 +82,12 @@ router.get('/student/:identifier', authenticate, ensureManagement, async (req, r
     try {
         const scope = req.user.collegeId ? { collegeId: req.user.collegeId } : {};
         const identifier = String(req.params.identifier || '').trim();
-        const student = await User.findOne({ ...scope, role: 'student', $or: [{ username: identifier }, { rollNumber: identifier }] }).select('-password').lean();
+        const escaped = identifier.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const student = await User.findOne({ ...scope, role: 'student', $or: [
+            { username: { $regex: `^${escaped}$`, $options: 'i' } },
+            { rollNumber: { $regex: `^${escaped}$`, $options: 'i' } },
+            { name: { $regex: escaped, $options: 'i' } }
+        ] }).select('-password -githubToken').lean();
         if (!student) return res.status(404).json({ error: 'Student not found in this institution.' });
         const studentId = student.rollNumber || student.username;
         const [sessions, submissions, assignments] = await Promise.all([

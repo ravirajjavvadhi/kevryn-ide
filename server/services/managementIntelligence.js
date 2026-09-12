@@ -66,10 +66,14 @@ async function getInstitutionSnapshot(collegeId, { studentQuery } = {}) {
     let student = null;
     if (studentQuery && studentQuery.trim()) {
         const escaped = studentQuery.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // A management question is normally expressed with a name, roll number,
+        // or username.  Resolve all three inside the institution boundary so the
+        // model never needs to guess which student the manager meant.
         student = await User.findOne({ ...scope, role: 'student', $or: [
             { rollNumber: { $regex: escaped, $options: 'i' } },
-            { username: { $regex: escaped, $options: 'i' } }
-        ] }).select('username rollNumber department year section isActiveStudent createdAt').lean();
+            { username: { $regex: escaped, $options: 'i' } },
+            { name: { $regex: escaped, $options: 'i' } }
+        ] }).select('username name rollNumber email department year section isActiveStudent createdAt').lean();
         if (student) {
             const identifier = student.rollNumber || student.username;
             const history = await LabSession.find({ ...scope, allowedStudents: identifier }).select('sessionName subject startTime isActive activityLog activeStudents allowedStudents duration endTime').lean();

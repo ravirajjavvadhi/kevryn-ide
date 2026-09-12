@@ -14,6 +14,23 @@ const DEFAULT_MODELS = [
     ['gemini-2.5-flash', 'Gemini 2.5 Flash']
 ];
 
+const ManagementAnswer = ({ content }) => {
+    const blocks = String(content || '').trim().split(/\n{2,}/).filter(Boolean);
+    return <div className="management-ai-answer">{blocks.map((block, index) => {
+        const lines = block.split('\n').filter(Boolean);
+        const heading = lines.length === 1 && /^#{1,6}\s+/.test(lines[0]);
+        const table = lines.length >= 2 && lines.every(line => /^\s*\|.*\|\s*$/.test(line));
+        if (heading) return <h3 key={index}>{lines[0].replace(/^#{1,6}\s+/, '')}</h3>;
+        if (table) {
+            const rows = lines.filter(line => !/^\s*\|?\s*:?-{3,}/.test(line)).map(line => line.trim().split('|').slice(1, -1).map(cell => cell.trim()));
+            const [head, ...body] = rows;
+            return <div className="management-ai-table-wrap" key={index}><table><thead><tr>{head.map((cell, cellIndex) => <th key={cellIndex}>{cell}</th>)}</tr></thead><tbody>{body.map((row, rowIndex) => <tr key={rowIndex}>{row.map((cell, cellIndex) => <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>;
+        }
+        if (lines.every(line => /^[-*•]\s+/.test(line))) return <ul key={index}>{lines.map((line, lineIndex) => <li key={lineIndex}>{line.replace(/^[-*•]\s+/, '')}</li>)}</ul>;
+        return <p key={index}>{block.replace(/^#{1,6}\s+/, '')}</p>;
+    })}</div>;
+};
+
 const ManagementAssistantModal = ({ token, onClose }) => {
     const rawBase = (process.env.REACT_APP_SERVER_URL || '').trim();
     const api = useMemo(() => axios.create({ baseURL: rawBase, headers: { Authorization: `Bearer ${token}` } }), [rawBase, token]);
@@ -34,6 +51,7 @@ const ManagementAssistantModal = ({ token, onClose }) => {
     const [showBroadcastComposer, setShowBroadcastComposer] = useState(false);
     const [showAuditHistory, setShowAuditHistory] = useState(false);
     const messagesEndRef = useRef(null);
+    const requestInFlightRef = useRef(false);
 
     const refresh = async () => {
         try {
@@ -59,6 +77,7 @@ const ManagementAssistantModal = ({ token, onClose }) => {
     }, [isDesktop]);
 
     const addMessage = message => setMessages(previous => [...previous, { id: `${Date.now()}-${Math.random()}`, ...message }]);
+    const completePending = content => setMessages(previous => previous.map(item => item.pending ? { ...item, content, pending: false } : item));
     const attachFile = file => {
         if (!file || !/^image\/(png|jpeg|webp)$/.test(file.type)) { setError('Attach a PNG, JPEG, or WebP image.'); return; }
         if (file.size > 5 * 1024 * 1024) { setError('Use an image smaller than 5 MB.'); return; }
@@ -134,40 +153,42 @@ const ManagementAssistantModal = ({ token, onClose }) => {
     };
     const ask = async preset => {
         const text = (preset || input).trim();
-        if ((!text && !image) || loading) return;
+        if ((!text && !image) || requestInFlightRef.current) return;
+        requestInFlightRef.current = true;
         const normalized = text.toLowerCase();
         const wantsBroadcast = /\b(send|draft|create|publish)\b[\s\S]{0,40}\b(announcement|broadcast|notice)\b|\b(announcement|broadcast|notice)\b[\s\S]{0,40}\b(send|draft|create|publish)\b/.test(normalized);
         const wantsTimetable = /\b(create|plan|build|add)\b[\s\S]{0,40}\b(timetable|schedule|lab slot)\b|\b(timetable|schedule|lab slot)\b[\s\S]{0,40}\b(create|plan|build|add)\b/.test(normalized);
         const wantsOnboarding = /\b(onboard|onboarding|enrol|enroll|register)\b[\s\S]{0,50}\b(student|roster|roll)\b/.test(normalized);
-        if (wantsOnboarding && image) { addMessage({ role: 'user', content: text || 'Prepare onboarding from this roster image.', image: image.data }); prepareOnboarding(); return; }
-        if (wantsBroadcast) { setInput(''); addMessage({ role: 'user', content: text }); addMessage({ role: 'assistant', content: 'I opened a reviewed announcement draft. Choose the audience and priority, then confirm delivery after checking the recipient count.' }); setShowBroadcastComposer(true); return; }
-        if (wantsTimetable) { setInput(''); addMessage({ role: 'user', content: text }); addMessage({ role: 'assistant', content: 'I opened the conflict-free timetable planner. Fill in the requested slot and I will validate faculty, room, and cohort availability before confirmation.' }); setShowTimetablePlanner(true); return; }
+        if (wantsOnboarding && image) { addMessage({ role: 'user', content: text || 'Prepare onboarding from this roster image.', image: image.data }); await prepareOnboarding(); requestInFlightRef.current = false; return; }
+        if (wantsBroadcast) { setInput(''); addMessage({ role: 'user', content: text }); addMessage({ role: 'assistant', content: 'I opened a reviewed announcement draft. Choose the audience and priority, then confirm delivery after checking the recipient count.' }); setShowBroadcastComposer(true); requestInFlightRef.current = false; return; }
+        if (wantsTimetable) { setInput(''); addMessage({ role: 'user', content: text }); addMessage({ role: 'assistant', content: 'I opened the conflict-free timetable planner. Fill in the requested slot and I will validate faculty, room, and cohort availability before confirmation.' }); setShowTimetablePlanner(true); requestInFlightRef.current = false; return; }
         setError(''); setLoading(true); setInput('');
         addMessage({ role: 'user', content: text || 'Analyse this institution document.', image: image?.data });
+        addMessage({ role: 'assistant', content: '', pending: true, activity: 'Checking live institution records…' });
         const outgoingImage = image?.data;
         setImage(null);
         try {
             const insight = outgoingImage ? null : await instantInsight(text);
-            if (insight) { addMessage({ role: 'assistant', content: insight }); setLoading(false); return; }
+            if (insight) { completePending(insight); return; }
             if (isDesktop && !agentReady) throw new Error('Add and verify your personal Gemini key before using Management Intelligence.');
             if (isDesktop) {
                 const live = await api.get('/api/management-ai/overview');
                 let response = '';
-                window.electronAPI.onAgentChatChunk('google-gemini', chunk => { response += chunk; setMessages(previous => previous.map(item => item.pending ? { ...item, content: response } : item)); });
-                window.electronAPI.onAgentChatDone('google-gemini', () => { setMessages(previous => previous.map(item => item.pending ? { ...item, pending: false } : item)); setLoading(false); });
+                window.electronAPI.onAgentChatChunk('google-gemini', chunk => { response += chunk; setMessages(previous => previous.map(item => item.pending ? { ...item, content: response, activity: 'Writing a grounded response…' } : item)); });
+                window.electronAPI.onAgentChatDone('google-gemini', () => { setMessages(previous => previous.map(item => item.pending ? { ...item, pending: false } : item)); setLoading(false); requestInFlightRef.current = false; });
                 window.electronAPI.onAgentChatError('google-gemini', message => { throw new Error(message); });
-                addMessage({ role: 'assistant', content: '', pending: true });
                 await window.electronAPI.chatWithAgent('google-gemini', text || 'Analyse this institution image.', { model, managementSnapshot: live.data, code: JSON.stringify(live.data), image: outgoingImage });
             } else {
                 const result = await api.post('/api/management-ai/chat', { message: text, model, image: outgoingImage });
                 setOverview(result.data.snapshot || overview);
-                addMessage({ role: 'assistant', content: result.data.response });
-                setLoading(false);
+                completePending(result.data.response);
             }
         } catch (requestError) {
             setError(requestError.response?.data?.error || requestError.message || 'Management Intelligence could not complete the request.');
             setMessages(previous => previous.filter(item => !item.pending));
-            setLoading(false);
+        } finally {
+            if (!isDesktop) requestInFlightRef.current = false;
+            if (!isDesktop) setLoading(false);
         }
     };
     const summary = overview?.summary;
@@ -184,7 +205,7 @@ const ManagementAssistantModal = ({ token, onClose }) => {
             {isDesktop && !agentReady && <div className="management-ai-keybar"><FaKey /><span>Desktop mode uses your personal Gemini key, stored only in encrypted local storage.</span><button onClick={() => window.electronAPI.openProviderKeyPage('google-gemini')}>Get key</button><input type="password" value={apiKey} onChange={event => setApiKey(event.target.value)} placeholder="Paste Gemini API key" /><button className="primary" disabled={!apiKey.trim() || loading} onClick={saveDesktopKey}>Save & verify</button></div>}
             <div className="management-ai-body"><main className="management-ai-chat"><div className="management-ai-intro"><div><p>Institution command centre</p><h2>Ask anything. Get live answers.</h2><span>Labs, attendance, students, faculty, schedules, reports, and onboarding preparation — scoped to your institution.</span></div>{summary && <div className="management-ai-mini-summary"><b>{summary.labsToday}</b><span>labs today</span><b>{summary.attendance.attended}/{summary.attendance.expected || 0}</b><span>attendance</span></div>}</div>
                 {messages.length === 0 && <div className="management-ai-suggestions">{suggestions.map(([prompt, icon]) => <button key={prompt} onClick={() => ask(prompt)} disabled={loading}>{icon}<span>{prompt}</span><FaArrowUp /></button>)}<button onClick={() => setShowTimetablePlanner(true)}><FaCalendarAlt /><span>Plan a conflict-free timetable</span><FaArrowUp /></button><button onClick={() => setShowBroadcastComposer(true)}><FaBolt /><span>Draft an institution announcement</span><FaArrowUp /></button><button onClick={() => setShowAuditHistory(true)}><FaHistory /><span>View confirmed action history</span><FaArrowUp /></button></div>}
-                <div className="management-ai-messages">{messages.map(message => <article className={`management-ai-message ${message.role}`} key={message.id}>{message.role === 'assistant' && <span className="management-ai-avatar"><FaRobot /></span>}<div>{message.image && <img src={message.image} alt="Attached for management analysis" />}{message.content ? <pre>{message.content}</pre> : <span className="management-ai-thinking"><FaSpinner className="spin" /> Analysing live institution data…</span>}</div></article>)}<div ref={messagesEndRef} /></div></main>
+                <div className="management-ai-messages">{messages.map(message => <article className={`management-ai-message ${message.role}`} key={message.id}>{message.role === 'assistant' && <span className="management-ai-avatar"><FaRobot /></span>}<div>{message.image && <img src={message.image} alt="Attached for management analysis" />}{message.content ? (message.role === 'assistant' ? <ManagementAnswer content={message.content} /> : <p>{message.content}</p>) : <span className="management-ai-thinking"><FaSpinner className="spin" /> {message.activity || 'Analysing live institution data…'}</span>}</div></article>)}<div ref={messagesEndRef} /></div></main>
                 <aside className="management-ai-sidebar"><div className="management-ai-side-title"><FaBuilding /> Today at a glance</div>{summary ? <><div className="management-ai-kpis"><div><strong>{summary.scheduledToday}</strong><span>Scheduled</span></div><div><strong>{summary.completedLabs}</strong><span>Completed</span></div><div><strong>{summary.liveLabs}</strong><span>Live now</span></div></div><div className="management-ai-attendance"><span>Institution attendance</span><strong>{summary.attendance.percentage}%</strong><small>{summary.attendance.attended} of {summary.attendance.expected || 0} expected students</small><i><b style={{ width: `${summary.attendance.percentage}%` }} /></i></div><div className="management-ai-labs"><span>Today’s labs</span>{(overview.todayLabs || []).slice(0, 5).map(lab => <button key={lab.id} onClick={() => ask(`Give the detailed report for ${lab.name}`)}><i className={lab.status} /><div><strong>{lab.subject}</strong><small>{lab.faculty} · {lab.durationMinutes || '—'} min</small></div><em>{lab.attendance.attended}/{lab.attendance.expected}</em></button>)}{!overview.todayLabs?.length && <p>No live or recorded labs found today.</p>}</div><button onClick={downloadDailyReport} style={{ width: '100%', marginTop: 14, border: '1px solid #d7d0fa', borderRadius: 7, padding: 8, color: '#5b50bf', background: '#f4f2ff', fontSize: 10, fontWeight: 750, cursor: 'pointer' }}>Download today’s lab report (CSV)</button></> : <div className="management-ai-loading"><FaSpinner className="spin" /> Loading secure institution data…</div>}</aside></div>
             <footer className="management-ai-composer">{onboardingPreview && <section className="management-ai-onboarding"><div><FaCheckCircle /><span><strong>Onboarding review ready</strong><small>{onboardingPreview.cohort.department} · Year {onboardingPreview.cohort.year} · Section {onboardingPreview.cohort.section}</small></span><b>{onboardingPreview.valid.length} valid</b><b className="warn">{onboardingPreview.duplicates.length} duplicates</b></div>{onboardingPreview.cohortWarning ? <p>{onboardingPreview.cohortWarning}</p> : <button onClick={confirmOnboarding} disabled={onboardingBusy || !onboardingPreview.valid.length}>{onboardingBusy ? <FaSpinner className="spin" /> : 'Confirm & create student accounts'}</button>}</section>}<div className="management-ai-attachment">{image ? <><img src={image.data} alt="Ready for analysis" /><span>{image.name}</span><button onClick={() => { setImage(null); setOnboardingPreview(null); }}><FaTimes /></button><button className="management-ai-prepare" onClick={prepareOnboarding} disabled={onboardingBusy}>{onboardingBusy ? <FaSpinner className="spin" /> : <FaCloudUploadAlt />} Prepare onboarding</button></> : <label><FaPaperclip /> Attach or paste an image<input type="file" accept="image/png,image/jpeg,image/webp" onChange={event => attachFile(event.target.files?.[0])} /></label>}</div><textarea value={input} onPaste={event => { const file = [...event.clipboardData.files][0]; if (file) { event.preventDefault(); attachFile(file); } }} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); ask(); } }} placeholder="Ask about today’s labs, a student, attendance, faculty, timetable, or paste an onboarding image…" disabled={loading || onboardingBusy} /><button className="management-ai-send" disabled={loading || onboardingBusy || (!input.trim() && !image)} onClick={() => ask()}>{loading ? <FaSpinner className="spin" /> : <FaArrowUp />}</button><small>Enter to send · Shift+Enter for a new line · Actions always require review</small>{error && <p className="management-ai-error">{error}</p>}</footer>
         </motion.section>{showTimetablePlanner && <TimetableProposalPanel token={token} onClose={() => setShowTimetablePlanner(false)} />}{showBroadcastComposer && <BroadcastProposalPanel token={token} onClose={() => setShowBroadcastComposer(false)} />}{showAuditHistory && <ManagementAuditPanel token={token} onClose={() => setShowAuditHistory(false)} />}

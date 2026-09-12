@@ -3,7 +3,7 @@ import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, localWorkspacePath }) => {
+const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, localWorkspacePath, labMode = false }) => {
     const xtermRef = useRef(null);
     const fitAddonRef = useRef(null);
     const shellProcessRef = useRef(null);
@@ -107,7 +107,9 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
         const startNativeTerminal = async () => {
             if (!localWorkspacePath || !window.electronAPI || !active) return;
             try {
-                const res = await window.electronAPI.spawnTerminal(localWorkspacePath, term.cols, term.rows);
+                const res = labMode && window.electronAPI.spawnLabTerminal
+                    ? await window.electronAPI.spawnLabTerminal(localWorkspacePath, term.cols, term.rows)
+                    : await window.electronAPI.spawnTerminal(localWorkspacePath, term.cols, term.rows);
                 // Effects can be replaced while Electron is creating a shell.
                 // Never attach stale handlers: they send each keystroke twice.
                 if (!active || generation !== connectionGenerationRef.current) return;
@@ -287,7 +289,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             }
             if (cleanupLogic) cleanupLogic();
         };
-    }, [socket, webcontainer, userId, termId, courseId, localWorkspacePath]);
+    }, [socket, webcontainer, userId, termId, courseId, localWorkspacePath, labMode]);
 
     return (
         <div
