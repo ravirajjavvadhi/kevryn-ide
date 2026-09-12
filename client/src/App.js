@@ -543,13 +543,14 @@ function App() {
         }
 
         setIsAiPanelOpen(true);
+        const diagnostic = `Act as my senior debugging agent. Diagnose this terminal failure, identify the root cause, and give a minimal verified fix.\n\nActive file: ${fileName || 'none'}\nLanguage: ${getLanguage(fileName || '')}\n\nTerminal output:\n\n\`\`\`text\n${output.slice(-12000)}\n\`\`\`${code ? `\n\nCurrent file content:\n\n\`\`\`${getLanguage(fileName || '')}\n${code.slice(0, 20000)}\n\`\`\`` : ''}`;
         if (window.triggerAiChat) {
-            window.triggerAiChat(`I have an error in my terminal. Here is the output:\n\n\`\`\`\n${output}\n\`\`\`\n\nCan you explain what's wrong and provide a fix?`);
+            window.triggerAiChat(diagnostic);
         } else {
-            // Fallback if AIPanel is not mounted yet
+            // The panel mounts after its open state changes.
             setTimeout(() => {
                 if (window.triggerAiChat) {
-                    window.triggerAiChat(`I have an error in my terminal. Here is the output:\n\n\`\`\`\n${output}\n\`\`\`\n\nCan you explain what's wrong and provide a fix?`);
+                    window.triggerAiChat(diagnostic);
                 }
             }, 500);
         }
@@ -1698,15 +1699,15 @@ function App() {
         }
     };
 
-    const handleAIFix = async () => {
-        if (!activeFileId || !code) return alert("Open a file first!");
-        const instruction = prompt("What should AI do?");
-        if (!instruction) return;
-        setIsAiLoading(true);
-        try {
-            const res = await api.post('/ai/fix', { code, instruction }, { timeout: 15000 });
-            if (res.data.fixedCode) { setCode(res.data.fixedCode); alert("AI Magic applied! ✨"); }
-        } catch (e) { alert("AI Error"); } finally { setIsAiLoading(false); }
+    const handleAIFix = () => {
+        // Prefer the local user-selected agent and a real terminal diagnostic over
+        // the old server-only /ai/fix endpoint.
+        const output = window.getTerminalOutput ? window.getTerminalOutput(activeTermId) : "";
+        if (output.trim()) return handleDebugTerminal();
+        if (!activeFileId || !code) return alert("Open a file or run code first!");
+        setIsAiPanelOpen(true);
+        const promptText = `Review and fix the active file. Explain the issue, then provide a safe corrected version.\n\nFile: ${fileName}\nLanguage: ${getLanguage(fileName)}\n\n\`\`\`${getLanguage(fileName)}\n${code.slice(0, 20000)}\n\`\`\``;
+        setTimeout(() => window.triggerAiChat?.(promptText), 250);
     };
 
     const handleAgenticFix = async (errObj) => {
@@ -2970,6 +2971,7 @@ function App() {
                                                 <div className="right-sidebar" style={{ width: '100%', height: '100%', minHeight: 0, minWidth: 0 }}>
                                                     <AIPanel
                                                         token={token}
+                                                        userId={userId}
                                                         code={code}
                                                         fileName={fileName}
                                                         language={getLanguage(fileName)}

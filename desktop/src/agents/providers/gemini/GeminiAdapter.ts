@@ -1,5 +1,6 @@
 import { AgentExtension, AgentStatus, ExtensionManifest } from '../../core/AgentExtension';
 import axios from 'axios';
+import * as https from 'https';
 
 export class GeminiAdapter implements AgentExtension {
     private status: AgentStatus = 'NOT_INSTALLED';
@@ -32,6 +33,22 @@ export class GeminiAdapter implements AgentExtension {
             return true;
         }
         return false;
+    }
+
+    async validateCredentials(credentials: any): Promise<string[]> {
+        const apiKey = credentials?.apiKey?.trim();
+        if (!apiKey) throw new Error('Enter a Gemini API key first.');
+        try {
+            const response = await axios.get('https://generativelanguage.googleapis.com/v1beta/models', {
+                params: { key: apiKey }, timeout: 20000,
+                httpsAgent: new https.Agent({ family: 4 })
+            });
+            return (response.data?.models || [])
+                .filter((model: any) => model.supportedGenerationMethods?.includes('generateContent'))
+                .map((model: any) => String(model.name || '').replace(/^models\//, ''));
+        } catch (error: any) {
+            throw new Error(error.response?.data?.error?.message || this.networkError(error));
+        }
     }
 
     async launch(): Promise<void> {
@@ -77,7 +94,7 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
             const response = await axios.post(
                 `https://generativelanguage.googleapis.com/v1beta/models/${selectedModel}:generateContent?key=${this.apiKey}`,
                 payload,
-                { headers: { 'Content-Type': 'application/json' } }
+                { headers: { 'Content-Type': 'application/json' }, timeout: 60000, httpsAgent: new https.Agent({ family: 4 }) }
             );
 
             const text = response.data?.candidates?.[0]?.content?.parts?.[0]?.text || 'No response generated.';
@@ -90,7 +107,7 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
             }
 
         } catch (error: any) {
-            const errMsg = error.response?.data?.error?.message || error.message;
+            const errMsg = error.response?.data?.error?.message || this.networkError(error);
             yield `? KevRyn Neural Core Error: ${errMsg}`;
         }
     }
@@ -98,5 +115,11 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
     dispose(): void {
         this.apiKey = null;
         this.status = 'NOT_INSTALLED';
+    }
+
+    private networkError(error: any): string {
+        const code = error?.code || error?.cause?.code;
+        if (code === 'ETIMEDOUT' || code === 'ENETUNREACH') return 'Network connection timed out. Check your internet or firewall and try again.';
+        return error?.message || 'Unable to reach Google Gemini.';
     }
 }

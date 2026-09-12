@@ -28,17 +28,27 @@ export class AgentManager {
 
         ipcMain.handle('agent-authenticate', async (event, agentId: string, secret: string) => {
             const agent = this.registry.get(agentId);
-            if (!agent) return false;
+            if (!agent) return { success: false, error: 'AI provider was not found.' };
 
             let finalSecret: string | null = secret;
-            if (!finalSecret) return false;
+            if (!finalSecret?.trim()) return { success: false, error: 'Enter an API key first.' };
             
-            // Store securely
-            await this.credManager.storeCredential(agentId, finalSecret);
-            
-            // Attempt to auth
-            const success = await agent.authenticate({ apiKey: finalSecret });
-            return success;
+            try {
+                // Verify the provider before persisting anything. Keys never leave this process
+                // except for the provider's own HTTPS endpoint.
+                const models = await agent.validateCredentials({ apiKey: finalSecret });
+                if (!models.length) return { success: false, error: 'This key has no chat models available.' };
+                // Refuse to retain a key when OS-level encryption is unavailable.
+                await this.credManager.storeCredential(agentId, finalSecret);
+                const success = await agent.authenticate({ apiKey: finalSecret });
+                if (!success) {
+                    await this.credManager.deleteCredential(agentId);
+                    return { success: false, error: 'The provider rejected this API key.' };
+                }
+                return { success: true, models };
+            } catch (error: any) {
+                return { success: false, error: error?.message || 'Could not verify this API key.' };
+            }
         });
 
         ipcMain.handle('agent-signout', async (event, agentId: string) => {

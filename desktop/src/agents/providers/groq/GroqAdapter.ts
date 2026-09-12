@@ -1,4 +1,6 @@
 import { AgentExtension, AgentStatus, ExtensionManifest } from '../../core/AgentExtension';
+import axios from 'axios';
+import * as https from 'https';
 
 export class GroqAdapter implements AgentExtension {
     private status: AgentStatus = 'NOT_INSTALLED';
@@ -33,6 +35,21 @@ export class GroqAdapter implements AgentExtension {
         return false;
     }
 
+    async validateCredentials(credentials: any): Promise<string[]> {
+        const apiKey = credentials?.apiKey?.trim();
+        if (!apiKey) throw new Error('Enter a Groq API key first.');
+        try {
+            const response = await axios.get('https://api.groq.com/openai/v1/models', {
+                headers: { Authorization: `Bearer ${apiKey}` }, timeout: 20000,
+                httpsAgent: new https.Agent({ family: 4 })
+            });
+            return (response.data?.data || []).map((model: any) => model.id).filter(Boolean);
+        } catch (error: any) {
+            const message = error.response?.data?.error?.message || error.message;
+            throw new Error(error.code === 'ETIMEDOUT' ? 'Network connection timed out. Check your internet or firewall and try again.' : message);
+        }
+    }
+
     async launch(): Promise<void> {
         if (this.status === 'AUTHENTICATED') {
             this.status = 'RUNNING';
@@ -61,11 +78,8 @@ ${context?.code || 'Empty'}
 
 If the user asks for code, provide it cleanly. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
 
-            // Simple routing based on prompt complexity
-            let selectedModel = "openai/gpt-oss-20b";
-            if (message.length > 200 || message.toLowerCase().includes("analyze") || message.toLowerCase().includes("refactor")) {
-                selectedModel = "openai/gpt-oss-120b";
-            }
+            // The user explicitly chooses the model in the desktop AI workspace.
+            const selectedModel = context?.model || 'openai/gpt-oss-120b';
 
             const payload = {
                 model: selectedModel,
@@ -74,58 +88,24 @@ If the user asks for code, provide it cleanly. If you provide terminal commands,
                     { role: "user", content: message }
                 ],
                 temperature: 0.7,
-                stream: true
+                // Axios receives a normal JSON response here. Keeping this false is
+                // essential: a streamed SSE response has no `choices[0].message`.
+                stream: false
             };
 
-            const response = await fetch(`https://api.groq.com/openai/v1/chat/completions`, {
-                method: 'POST',
-                headers: { 
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${this.apiKey}`
-                },
-                body: JSON.stringify(payload)
+            const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', payload, {
+                headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${this.apiKey}` },
+                timeout: 60000, httpsAgent: new https.Agent({ family: 4 })
             });
-
-            if (!response.ok) {
-                const errData = await response.json();
-                yield `❌ Groq API Error: ${errData.error?.message || response.statusText}`;
-                return;
-            }
-
-            // Stream parsing logic (Server-Sent Events)
-            const reader = response.body?.getReader();
-            const decoder = new TextDecoder("utf-8");
-
-            if (!reader) {
-                yield "❌ Error: Response body is not readable.";
-                return;
-            }
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                const lines = chunk.split('\n');
-                
-                for (const line of lines) {
-                    if (line.trim() === '' || line.trim() === 'data: [DONE]') continue;
-                    if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            const content = data.choices[0]?.delta?.content;
-                            if (content) {
-                                yield content;
-                            }
-                        } catch (e) {
-                            // ignore parse errors on incomplete chunks
-                        }
-                    }
-                }
+            const text = response.data?.choices?.[0]?.message?.content || 'No response generated.';
+            for (let i = 0; i < text.length; i += 20) {
+                yield text.substring(i, i + 20);
+                await new Promise(r => setTimeout(r, 15));
             }
 
         } catch (error: any) {
-            yield `❌ Local Agent Error: ${error.message}`;
+            const message = error.response?.data?.error?.message || (error.code === 'ETIMEDOUT' ? 'Network connection timed out. Check your internet or firewall and try again.' : error.message);
+            yield `❌ Groq API Error: ${message}`;
         }
     }
 

@@ -1,148 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { FaTimes, FaRobot, FaCheckCircle, FaKey } from 'react-icons/fa';
+import { FaTimes, FaRobot, FaCheckCircle, FaKey, FaExternalLinkAlt, FaSyncAlt } from 'react-icons/fa';
+
+const PROVIDER_COPY = {
+    'google-gemini': { keyLabel: 'Gemini API key', getKey: 'Get a Gemini API key' },
+    'groq-assistant': { keyLabel: 'Groq API key', getKey: 'Get a Groq API key' }
+};
 
 const AgentHubModal = ({ isOpen, onClose }) => {
     const [agents, setAgents] = useState([]);
     const [authKey, setAuthKey] = useState({});
+    const [busy, setBusy] = useState({});
+    const [result, setResult] = useState({});
+    const loadAgents = async () => setAgents(await window.electronAPI.getAgentList());
 
-    useEffect(() => {
-        if (isOpen && window.__KEVRYN_DESKTOP__) {
-            loadAgents();
-        }
-    }, [isOpen]);
-
-    const loadAgents = async () => {
-        try {
-            const list = await window.electronAPI.getAgentList();
-            setAgents(list);
-        } catch (e) {
-            console.error("Failed to load agents", e);
-        }
-    };
+    useEffect(() => { if (isOpen && window.__KEVRYN_DESKTOP__) loadAgents(); }, [isOpen]);
 
     const handleAuthenticate = async (agentId) => {
-        const secret = authKey[agentId];
-        if (!secret) {
-            alert("Please enter an API Key first.");
-            return;
-        }
+        const secret = authKey[agentId]?.trim();
+        if (!secret) return setResult(prev => ({ ...prev, [agentId]: { error: 'Paste your API key first.' } }));
+        setBusy(prev => ({ ...prev, [agentId]: true }));
+        setResult(prev => ({ ...prev, [agentId]: { message: 'Checking key and available models…' } }));
         try {
-            const success = await window.electronAPI.authenticateAgent(agentId, secret);
-            if (success) {
-                alert("Agent Authenticated Successfully!");
-                loadAgents(); // refresh status
-                setAuthKey(prev => ({ ...prev, [agentId]: '' }));
-            } else {
-                alert("Authentication Failed. Invalid API Key.");
-            }
-        } catch (e) {
-            alert("Error authenticating: " + e.message);
-        }
+            const response = await window.electronAPI.authenticateAgent(agentId, secret);
+            if (!response?.success) throw new Error(response?.error || 'The provider rejected this API key.');
+            setAuthKey(prev => ({ ...prev, [agentId]: '' }));
+            setResult(prev => ({ ...prev, [agentId]: { message: `Connected. ${response.models.length} model${response.models.length === 1 ? '' : 's'} available to this key.` } }));
+            await loadAgents();
+        } catch (e) { setResult(prev => ({ ...prev, [agentId]: { error: e.message } })); }
+        finally { setBusy(prev => ({ ...prev, [agentId]: false })); }
     };
 
     const handleSignout = async (agentId) => {
-        try {
-            await window.electronAPI.signoutAgent(agentId);
-            loadAgents();
-        } catch (e) {
-            alert("Error signing out: " + e.message);
-        }
+        await window.electronAPI.signoutAgent(agentId);
+        setResult(prev => ({ ...prev, [agentId]: { message: 'Local API key removed.' } }));
+        await loadAgents();
     };
 
     if (!isOpen) return null;
-
-    return (
-        <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', zIndex: 10000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onClick={onClose}
-        >
-            <motion.div
-                initial={{ scale: 0.95, y: 20 }}
-                animate={{ scale: 1, y: 0 }}
-                style={{ width: '600px', background: '#1e1e2e', borderRadius: '12px', border: '1px solid var(--border-color)', overflow: 'hidden', display: 'flex', flexDirection: 'column', boxShadow: '0 10px 30px rgba(0,0,0,0.5)' }}
-                onClick={e => e.stopPropagation()}
-            >
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '15px 20px', background: 'rgba(0,0,0,0.2)', borderBottom: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                        <FaRobot size={20} color="#8b5cf6" />
-                        <span style={{ fontSize: '16px', fontWeight: 'bold', color: 'white' }}>KevRyn Core Settings</span>
-                    </div>
-                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: '#888', cursor: 'pointer', display: 'flex' }}><FaTimes size={16} /></button>
-                </div>
-                
-                <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '15px', maxHeight: '60vh', overflowY: 'auto' }}>
-                    <p style={{ color: 'var(--text-secondary)', fontSize: '13px', margin: 0 }}>
-                        Configure your Edge AI environment for KevRyn IDE. (Authorized Personnel Only)
-                    </p>
-
-                    {agents.map((agent) => (
-                        <div key={agent.manifest.id} style={{ background: 'rgba(255,255,255,0.03)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '15px' }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div>
-                                    <h3 style={{ margin: '0 0 5px 0', color: '#fff', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        {agent.manifest.name}
-                                        {agent.status === 'AUTHENTICATED' || agent.status === 'RUNNING' ? (
-                                            <span style={{ background: 'rgba(16, 185, 129, 0.2)', color: '#10b981', fontSize: '10px', padding: '2px 6px', borderRadius: '4px', display: 'flex', alignItems: 'center', gap: '4px' }}><FaCheckCircle /> Installed</span>
-                                        ) : (
-                                            <span style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', fontSize: '10px', padding: '2px 6px', borderRadius: '4px' }}>Setup Required</span>
-                                        )}
-                                    </h3>
-                                    <p style={{ margin: '0 0 10px 0', fontSize: '12px', color: 'var(--text-secondary)' }}>{agent.manifest.description} (v{agent.manifest.version})</p>
-                                </div>
-                            </div>
-                            
-                            {(agent.status === 'AUTH_REQUIRED' || agent.status === 'NOT_INSTALLED') && (
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginTop: '10px' }}>
-                                    <div style={{ display: 'flex', gap: '10px' }}>
-                                        <input 
-                                            type="password"
-                                            placeholder="Enter KevRyn Edge Core License Key..."
-                                            value={authKey[agent.manifest.id] || ''}
-                                            onChange={(e) => setAuthKey(prev => ({...prev, [agent.manifest.id]: e.target.value}))}
-                                            style={{ flex: 1, background: 'rgba(0,0,0,0.3)', border: '1px solid var(--border-color)', color: 'white', padding: '8px 12px', borderRadius: '6px', fontSize: '13px' }}
-                                        />
-                                        <button 
-                                            onClick={() => handleAuthenticate(agent.manifest.id)}
-                                            style={{ background: 'var(--accent-primary)', color: 'white', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '8px 24px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '8px' }}
-                                        >
-                                            <FaKey size={12} /> Save Key
-                                        </button>
-                                    </div>
-                                    
-
-                                </div>
-                            )}
-
-                            {(agent.status === 'AUTHENTICATED' || agent.status === 'RUNNING') && (
-                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px' }}>
-                                    <div style={{ fontSize: '12px', color: '#10b981', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                                        <FaCheckCircle size={12} /> Authenticated and ready for secure workspace access.
-                                    </div>
-                                    <button 
-                                        onClick={() => handleSignout(agent.manifest.id)}
-                                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.2)', borderRadius: '6px', padding: '6px 15px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' }}
-                                    >
-                                        Sign out
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    ))}
-
-                    {agents.length === 0 && (
-                        <div style={{ textAlign: 'center', color: '#666', padding: '20px' }}>
-                            Loading agents...
-                        </div>
-                    )}
-                </div>
-            </motion.div>
+    return <motion.div className="agent-settings-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+        <motion.div className="agent-settings-modal" initial={{ scale: .97, y: 16 }} animate={{ scale: 1, y: 0 }} onClick={e => e.stopPropagation()}>
+            <header><div><FaRobot /> <strong>AI Provider Settings</strong></div><button onClick={onClose} aria-label="Close settings"><FaTimes /></button></header>
+            <main>
+                <p className="agent-settings-intro">Use your own API keys. They are verified directly with the provider and stored only in this desktop app using your operating system’s secure credential storage.</p>
+                {agents.map(agent => {
+                    const configured = agent.status === 'AUTHENTICATED' || agent.status === 'RUNNING';
+                    const copy = PROVIDER_COPY[agent.manifest.id];
+                    const feedback = result[agent.manifest.id];
+                    return <section className="agent-card" key={agent.manifest.id}>
+                        <div className="agent-card-title"><div><h3>{agent.manifest.name}</h3><p>{agent.manifest.description}</p></div><span className={configured ? 'agent-ready' : 'agent-needs-key'}>{configured ? 'Ready' : 'Key required'}</span></div>
+                        {configured ? <div className="agent-configured"><span><FaCheckCircle /> Personal key saved locally</span><button className="agent-secondary" onClick={() => handleSignout(agent.manifest.id)}>Remove key</button></div> : <div className="agent-key-form">
+                            <label htmlFor={`key-${agent.manifest.id}`}>{copy?.keyLabel || 'API key'}</label>
+                            <div className="agent-key-row"><input id={`key-${agent.manifest.id}`} type="password" autoComplete="off" placeholder={`Paste your ${copy?.keyLabel || 'API key'}`} value={authKey[agent.manifest.id] || ''} onChange={e => setAuthKey(prev => ({ ...prev, [agent.manifest.id]: e.target.value }))} />
+                                <button disabled={busy[agent.manifest.id]} onClick={() => handleAuthenticate(agent.manifest.id)}>{busy[agent.manifest.id] ? <><FaSyncAlt className="spinning" /> Testing</> : <><FaKey /> Save & test</>}</button></div>
+                            <button className="agent-link" onClick={() => window.electronAPI.openProviderKeyPage(agent.manifest.id)}>{copy?.getKey || 'Get an API key'} <FaExternalLinkAlt /></button>
+                        </div>}
+                        {feedback?.message && <p className="agent-feedback success">{feedback.message}</p>}
+                        {feedback?.error && <p className="agent-feedback error">{feedback.error}</p>}
+                    </section>;
+                })}
+            </main>
         </motion.div>
-    );
+    </motion.div>;
 };
 
 export default AgentHubModal;
-

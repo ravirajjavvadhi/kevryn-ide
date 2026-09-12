@@ -16,6 +16,7 @@ export interface AgentExtension {
     // Lifecycle
     install(): Promise<boolean>;
     authenticate(credentials: any): Promise<boolean>;
+    validateCredentials(credentials: any): Promise<string[]>;
     launch(): Promise<void>;
     stop(): Promise<void>;
     

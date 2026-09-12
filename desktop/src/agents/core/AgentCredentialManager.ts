@@ -25,11 +25,7 @@ export class AgentCredentialManager {
     public async storeCredential(agentId: string, secret: string): Promise<boolean> {
         try {
             if (!safeStorage.isEncryptionAvailable()) {
-                console.warn('System encryption not available, storing plaintext (NOT RECOMMENDED)');
-                const store = this.getStore();
-                store[agentId] = Buffer.from(secret).toString('base64'); // Obfuscate if no encryption
-                this.saveStore(store);
-                return true;
+                throw new Error('Secure credential storage is unavailable on this computer. Your API key was not saved.');
             }
 
             const encrypted = safeStorage.encryptString(secret);
@@ -49,9 +45,7 @@ export class AgentCredentialManager {
             const storedValue = store[agentId];
             if (!storedValue) return null;
 
-            if (!safeStorage.isEncryptionAvailable()) {
-                return Buffer.from(storedValue, 'base64').toString('utf-8');
-            }
+            if (!safeStorage.isEncryptionAvailable()) return null;
 
             return safeStorage.decryptString(Buffer.from(storedValue, 'base64'));
         } catch (e) {

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from 'electron';
+import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { autoUpdater } from 'electron-updater';
 import * as path from 'path';
 import { setupIpcHandlers } from '../ipc/handlers';
@@ -58,6 +58,16 @@ async function createWindow() {
 
 app.whenReady().then(() => {
     createWindow();
+
+    ipcMain.handle('open-provider-key-page', async (_event, provider: string) => {
+        const urls: Record<string, string> = {
+            'google-gemini': 'https://aistudio.google.com/app/apikey',
+            'groq-assistant': 'https://console.groq.com/keys'
+        };
+        const url = urls[provider];
+        if (!url) throw new Error('Unknown AI provider.');
+        await shell.openExternal(url);
+    });
 
     // Auto-Updater UI Events
     autoUpdater.on('update-available', (info) => {
