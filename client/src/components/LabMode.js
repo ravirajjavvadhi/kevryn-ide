@@ -392,19 +392,26 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         };
     }, [session, username, updateStatus]);
 
-    // --- Emit code updates to server (for faculty real-time view) ---
-    const emitCodeUpdate = useCallback(() => {
+    // Desktop keeps the source of truth on disk locally, but faculty still get
+    // an ephemeral live mirror for the active session. This is a socket update,
+    // not a file upload or remote execution request.
+    const syncLabMirror = useCallback((fileName, contents, fileLanguage) => {
         if (socketRef.current && (session?.sessionId || session?._id) && username) {
             socketRef.current.emit('student-code-update', {
                 sessionId: session.sessionId || session._id,
                 username,
-                fileName: activeFileRef.current?.name || 'untitled',
-                code: codeRef.current || '',
-                language
+                fileName: fileName || activeFileRef.current?.name || 'untitled',
+                code: contents ?? codeRef.current ?? '',
+                language: fileLanguage || language || 'javascript'
             });
             setLastSynced(new Date().toLocaleTimeString());
         }
     }, [session?.sessionId, session?._id, username, language]);
+
+    // --- Emit code updates to server (for faculty real-time view) ---
+    const emitCodeUpdate = useCallback(() => {
+        syncLabMirror(activeFileRef.current?.name, codeRef.current, language);
+    }, [syncLabMirror, language]);
 
 
     // Debounced code change handler
@@ -496,6 +503,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             try {
                 const content = await window.electronAPI.readLabFile(labScope, file.path || file._id);
                 setActiveFile(file); setCode(content || ''); setLanguage(detectLanguage(file.name));
+                syncLabMirror(file.name, content || '', detectLanguage(file.name));
             } catch (error) { console.error('[LabMode] Could not open local lab file:', error); }
             return;
         }
@@ -545,6 +553,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 await loadFiles();
                 const created = { _id: name, path: name, name, type: 'file' };
                 setActiveFile(created); setCode(''); setLanguage(detectLanguage(name));
+                syncLabMirror(name, '', detectLanguage(name));
                 setNewFileName(''); setShowNewFile(false);
                 return;
             }
@@ -636,7 +645,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             if (isDesktopLab) {
                 await window.electronAPI.writeLabFile(labScope, activeFile.path || fullPath, code);
                 setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code } : file));
-                setLastSynced(new Date().toLocaleTimeString());
+                syncLabMirror(activeFile.name, code, language);
                 return;
             }
             await api.put(`/files/${activeFile._id}`, { content: code });
@@ -677,7 +686,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             emitCodeUpdate();
         } catch (e) { console.error("Save failed", e); }
         setSaving(false);
-    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, labScope]);
+    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, labScope, syncLabMirror, language]);
 
     // Keyboard shortcuts are handled in the main shortcut block below
 
