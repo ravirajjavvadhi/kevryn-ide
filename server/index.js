@@ -115,6 +115,7 @@ const File = require('./File');
 const Submission = require('./models/Submission');
 const LabSession = require('./LabSessionModel');
 const LabReport = require('./models/LabReport'); // NEW: Phase 11
+const LabSessionArtifact = require('./models/LabSessionArtifact');
 const FileHistory = require('./FileHistory');
 const Message = require('./Message');
 const Snippet = require('./Snippet');
@@ -832,6 +833,25 @@ app.get('/lab/sessions/past', authenticate, async (req, res) => {
     }
 });
 
+// Faculty session report: only the files mirrored while this exact lab was
+// active.  General workspace files are intentionally not queried here.
+app.get('/lab/session/:sessionId/artifacts', authenticate, async (req, res) => {
+    try {
+        const session = await LabSession.findById(req.params.sessionId).select('facultyId collegeId').lean();
+        if (!session) return res.status(404).json({ error: 'Lab session not found.' });
+        const isOwner = String(session.facultyId) === String(req.user.userId);
+        const isManagement = ['admin', 'college_admin'].includes(req.user.role) && (!req.user.collegeId || String(req.user.collegeId) === String(session.collegeId));
+        if (!isOwner && !isManagement) return res.status(403).json({ error: 'Only the session faculty or institution management can view this report.' });
+        const artifacts = await LabSessionArtifact.find({ sessionId: session._id })
+            .populate('studentId', 'username name rollNumber department year section')
+            .sort({ updatedAt: -1 }).lean();
+        res.json(artifacts.map(artifact => ({
+            ...artifact,
+            files: (artifact.files || []).filter(file => !file.deletedAt)
+        })));
+    } catch (error) { res.status(500).json({ error: 'Could not load the session artifact report.' }); }
+});
+
 app.get('/api/lab/sessions/:id/print', async (req, res) => {
     try {
         const LabSession = require('./LabSessionModel');
@@ -1201,16 +1221,25 @@ app.get('/lab/reports/cohort', authenticate, async (req, res) => {
                   timeSpent: file.timeSpent || 0
              });
         }
+        const sessionArtifacts = await LabSessionArtifact.find({ courseName: subjectName, studentId: { $in: studentIds } }).lean();
+        const artifactFilesByStudent = {};
+        sessionArtifacts.forEach(artifact => {
+            const ownerId = String(artifact.studentId);
+            if (!artifactFilesByStudent[ownerId]) artifactFilesByStudent[ownerId] = [];
+            (artifact.files || []).filter(file => !file.deletedAt).forEach(file => artifactFilesByStudent[ownerId].push({
+                fileName: file.path, code: file.code, lastUpdated: file.updatedAt, timeSpent: 0, source: 'supervised-lab'
+            }));
+        });
 
         const mergedReports = [
-            ...reports.map(r => ({ ...r, files: filesByStudent[r.studentId?._id?.toString()] || [] })),
+            ...reports.map(r => ({ ...r, files: [...(filesByStudent[r.studentId?._id?.toString()] || []), ...(artifactFilesByStudent[r.studentId?._id?.toString()] || [])] })),
             ...unmatchedUsernames.map(username => ({
                 _id: 'temp_' + username,
                 studentId: missingUsersMap[username] || { username, picture: null },
                 courseName: subjectName,
                 totalTimeSpent: 0,
                 lastActive: null,
-                files: filesByStudent[missingUsersMap[username]?._id?.toString()] || []
+                files: [...(filesByStudent[missingUsersMap[username]?._id?.toString()] || []), ...(artifactFilesByStudent[missingUsersMap[username]?._id?.toString()] || [])]
             }))
         ];
 
@@ -1270,16 +1299,31 @@ app.get('/lab/reports/:courseId', authenticate, async (req, res) => {
                   timeSpent: file.timeSpent || 0
              });
         }
+        // Local desktop Lab Mode files are never inserted into File. Aggregate
+        // their supervised session snapshots here for the student's general
+        // course report, while the session endpoint above remains session-only.
+        const reportStudentIds = [...reports.map(r => r.studentId?._id).filter(Boolean), ...missingUsers.map(user => user._id)];
+        const sessionArtifacts = reportStudentIds.length
+            ? await LabSessionArtifact.find({ courseId: course._id, studentId: { $in: reportStudentIds } }).lean()
+            : [];
+        const artifactFilesByStudent = {};
+        sessionArtifacts.forEach(artifact => {
+            const ownerId = String(artifact.studentId);
+            if (!artifactFilesByStudent[ownerId]) artifactFilesByStudent[ownerId] = [];
+            (artifact.files || []).filter(file => !file.deletedAt).forEach(file => artifactFilesByStudent[ownerId].push({
+                fileName: file.path, code: file.code, lastUpdated: file.updatedAt, timeSpent: 0, source: 'supervised-lab'
+            }));
+        });
 
         const mergedReports = [
-            ...reports.map(r => ({ ...r, files: filesByStudent[r.studentId?._id?.toString()] || [] })),
+            ...reports.map(r => ({ ...r, files: [...(filesByStudent[r.studentId?._id?.toString()] || []), ...(artifactFilesByStudent[r.studentId?._id?.toString()] || [])] })),
             ...unmatchedUsernames.map(username => ({
                 _id: 'temp_' + username,
                 studentId: missingUsersMap[username] || { username, picture: null },
                 courseName: course.name,
                 totalTimeSpent: 0,
                 lastActive: null,
-                files: filesByStudent[missingUsersMap[username]?._id?.toString()] || []
+                files: [...(filesByStudent[missingUsersMap[username]?._id?.toString()] || []), ...(artifactFilesByStudent[missingUsersMap[username]?._id?.toString()] || [])]
             }))
         ];
 
@@ -3221,6 +3265,61 @@ io.on('connection', (socket) => {
 
             io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
 
+        }
+    });
+
+    // A supervised desktop lab is local-first: its canonical files remain on
+    // the student's device.  This event stores an explicit *session report*
+    // mirror only, keyed to the one active session. It never writes File (the
+    // general workspace) and it does not alter the live active/idle/offline
+    // state maintained above.
+    socket.on('student-lab-file-event', async ({ sessionId, username, path: filePath, code, language, action }) => {
+        try {
+            if (!sessionId || !username || !filePath) return;
+            const safePath = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '');
+            if (!safePath || safePath.split('/').some(segment => !segment || segment === '.' || segment === '..') || safePath.length > 500) return;
+            const fileCode = typeof code === 'string' ? code : '';
+            if (fileCode.length > 2 * 1024 * 1024) return;
+
+            const session = await LabSession.findById(sessionId).select('collegeId courseId subject allowedStudents').lean();
+            if (!session) return;
+            const student = await User.findOne({ username, role: 'student', ...(session.collegeId ? { collegeId: session.collegeId } : {}) }).select('_id rollNumber').lean();
+            if (!student || !(session.allowedStudents || []).some(id => id === username || id === student.rollNumber)) return;
+
+            let artifact = await LabSessionArtifact.findOne({ sessionId, studentId: student._id });
+            if (!artifact) artifact = new LabSessionArtifact({
+                collegeId: session.collegeId,
+                sessionId,
+                studentId: student._id,
+                username,
+                courseId: session.courseId,
+                courseName: session.subject || ''
+            });
+            const now = new Date();
+            const fileIndex = artifact.files.findIndex(file => file.path === safePath);
+            if (action === 'delete') {
+                if (fileIndex >= 0) artifact.files[fileIndex].deletedAt = now;
+            } else if (fileIndex >= 0) {
+                artifact.files[fileIndex].code = fileCode;
+                artifact.files[fileIndex].language = String(language || artifact.files[fileIndex].language || 'plaintext');
+                artifact.files[fileIndex].updatedAt = now;
+                artifact.files[fileIndex].deletedAt = null;
+            } else {
+                artifact.files.push({ path: safePath, code: fileCode, language: String(language || 'plaintext'), createdAt: now, updatedAt: now });
+            }
+            artifact.lastSyncedAt = now;
+            await artifact.save();
+
+            if (liveLabState[sessionId]?.[username]) {
+                // Keep status/proctoring fields intact; only expose harmless
+                // session-file metadata for the live faculty monitor.
+                liveLabState[sessionId][username].labFiles = artifact.files
+                    .filter(file => !file.deletedAt)
+                    .map(file => ({ path: file.path, language: file.language, updatedAt: file.updatedAt }));
+                io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
+            }
+        } catch (error) {
+            console.error('[LAB ARTIFACT] Could not mirror supervised lab file:', error.message);
         }
     });
 

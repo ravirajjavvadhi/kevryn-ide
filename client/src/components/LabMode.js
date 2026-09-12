@@ -42,6 +42,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         subject: session?.subject || session?.subjectName
     }), [session?.collegeId, session?.college?._id, session?.courseId, session?.subject, session?.subjectName, userId, username]);
     const [localLabRoot, setLocalLabRoot] = useState(null);
+    const reportMirrorTimeoutRef = useRef(null);
 
     const tabCountRef = useRef(0);
     const pasteCountRef = useRef(0);
@@ -395,6 +396,23 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     // Desktop keeps the source of truth on disk locally, but faculty still get
     // an ephemeral live mirror for the active session. This is a socket update,
     // not a file upload or remote execution request.
+    const syncLabArtifact = useCallback((filePath, contents, fileLanguage, action = 'update', immediate = false) => {
+        if (!isDesktopLab || !socketRef.current || !(session?.sessionId || session?._id) || !username) return;
+        const send = () => socketRef.current?.emit('student-lab-file-event', {
+            sessionId: session.sessionId || session._id,
+            username,
+            path: filePath,
+            code: contents || '',
+            language: fileLanguage || 'plaintext',
+            action
+        });
+        if (immediate) { send(); return; }
+        if (reportMirrorTimeoutRef.current) clearTimeout(reportMirrorTimeoutRef.current);
+        // Live monitoring still streams at editor speed; report persistence is
+        // coalesced so it never makes local typing feel network-bound.
+        reportMirrorTimeoutRef.current = setTimeout(send, 1500);
+    }, [isDesktopLab, session?.sessionId, session?._id, username]);
+
     const syncLabMirror = useCallback((fileName, contents, fileLanguage) => {
         if (socketRef.current && (session?.sessionId || session?._id) && username) {
             socketRef.current.emit('student-code-update', {
@@ -406,7 +424,8 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             });
             setLastSynced(new Date().toLocaleTimeString());
         }
-    }, [session?.sessionId, session?._id, username, language]);
+        syncLabArtifact(fileName, contents, fileLanguage);
+    }, [session?.sessionId, session?._id, username, language, syncLabArtifact]);
 
     // --- Emit code updates to server (for faculty real-time view) ---
     const emitCodeUpdate = useCallback(() => {
@@ -554,6 +573,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 const created = { _id: name, path: name, name, type: 'file' };
                 setActiveFile(created); setCode(''); setLanguage(detectLanguage(name));
                 syncLabMirror(name, '', detectLanguage(name));
+                syncLabArtifact(name, '', detectLanguage(name), 'create', true);
                 setNewFileName(''); setShowNewFile(false);
                 return;
             }
@@ -580,6 +600,8 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         try {
             if (isDesktopLab) {
                 await window.electronAPI.deleteLabItem(labScope, fileId);
+                const removed = files.find(file => file._id === fileId);
+                syncLabArtifact(removed?.path || fileId, '', detectLanguage(removed?.name || ''), 'delete', true);
                 setFiles(prev => prev.filter(file => file._id !== fileId));
                 if (activeFile?._id === fileId) { setActiveFile(null); setCode('// Select or create a file to start coding...'); }
                 return;
@@ -612,6 +634,8 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 const parent = (file.path || '').includes('/') ? file.path.slice(0, file.path.lastIndexOf('/') + 1) : '';
                 const nextPath = `${parent}${newName}`;
                 await window.electronAPI.renameLabItem(labScope, file.path || fileId, nextPath);
+                syncLabArtifact(file.path || fileId, '', detectLanguage(file.name), 'delete', true);
+                syncLabArtifact(nextPath, activeFile?._id === fileId ? code : '', detectLanguage(newName), 'create', true);
                 setFiles(prev => prev.map(item => item._id === fileId ? { ...item, _id: nextPath, path: nextPath, name: newName } : item));
                 if (activeFile?._id === fileId) { setActiveFile({ ...activeFile, _id: nextPath, path: nextPath, name: newName }); setLanguage(detectLanguage(newName)); }
                 setEditingFileId(null); return;
