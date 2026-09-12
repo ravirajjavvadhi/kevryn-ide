@@ -34,6 +34,7 @@ const StudentAssignmentView = ({
     // NEW: Developer Identity
     const [devProfiles, setDevProfiles] = useState({ github: '', leetcode: '', hackerrank: '', codechef: '' });
     const [isSavingProfiles, setIsSavingProfiles] = useState(false);
+    const [showDeveloperProfiles, setShowDeveloperProfiles] = useState(false);
 
     // Solver & Test States
     const [code, setCode] = useState('');
@@ -371,14 +372,10 @@ const StudentAssignmentView = ({
                     </div></>)}
 
                 {/* NEW: Developer Identity Section */}
-                <div style={{ marginTop: '34px', marginBottom: '28px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                        <FaCode color="#8b5cf6" size={16} />
-                        <h2 style={{ fontSize: '11px', fontWeight: '800', color: '#8d9ab0', textTransform: 'uppercase', letterSpacing: '1.4px', margin: 0 }}>Developer profiles</h2>
-                    </div>
-                    <div style={{ ...cardStyle, cursor: 'default', background: '#101827' }}>
-                        <p style={{ color: '#9daac0', fontSize: '13px', margin: '0 0 16px' }}>Optionally link profiles to keep your progress in one place.</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+                <section className="student-profile-card">
+                    <div className="student-profile-card__summary"><div><span><FaCode /> Developer profiles</span><p>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} profile${Object.values(devProfiles).filter(Boolean).length === 1 ? '' : 's'} connected` : 'Link GitHub, LeetCode, HackerRank, or CodeChef when you are ready.'}</p></div><button type="button" onClick={() => setShowDeveloperProfiles(value => !value)}>{showDeveloperProfiles ? 'Close' : 'Manage profiles'}</button></div>
+                    {showDeveloperProfiles && <div className="student-profile-card__fields">
+                        <div className="student-profile-card__grid">
                             {['github', 'leetcode', 'hackerrank', 'codechef'].map(platform => (
                                 <div key={platform}>
                                     <label style={{ display: 'block', color: '#94a3b8', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -401,8 +398,8 @@ const StudentAssignmentView = ({
                         >
                             {isSavingProfiles ? 'SYNCING...' : 'SYNC PROFILES'}
                         </button>
-                    </div>
-                </div>
+                    </div>}
+                </section>
             </motion.div>
         </div>
     );
