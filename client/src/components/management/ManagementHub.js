@@ -1,14 +1,16 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FaBuilding, FaCalendarAlt, FaBookOpen, FaChartLine, FaSignOutAlt, FaCube, FaTimes, FaChevronRight } from 'react-icons/fa';
+import { FaBuilding, FaCalendarAlt, FaBookOpen, FaChartLine, FaSignOutAlt, FaCube, FaTimes, FaChevronRight, FaRobot } from 'react-icons/fa';
 
 import InstitutionSetup from './InstitutionSetup';
 import TimetableScheduler from './TimetableScheduler';
 import AcademicConfig from './AcademicConfig';
 import ManagementAnalytics from './ManagementAnalytics';
+import ManagementAssistantModal from './ManagementAssistantModal';
 
 const ManagementHub = ({ token, onLogout }) => {
     const [activeModal, setActiveModal] = useState(null);
+    const [isManagementAiOpen, setIsManagementAiOpen] = useState(false);
 
     const closeModal = () => setActiveModal(null);
 
@@ -89,6 +91,8 @@ const ManagementHub = ({ token, onLogout }) => {
                         </p>
                     </div>
                 </div>
+                <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+                <button onClick={() => setIsManagementAiOpen(true)} style={{ background: 'linear-gradient(135deg, #5b57ec, #7c5cff)', color: '#fff', border: '1px solid rgba(190,180,255,.5)', padding: '9px 15px', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px', fontSize: '13px', fontWeight: '700', boxShadow: '0 7px 20px rgba(91,87,236,.24)' }}><FaRobot /> Ask KevRyn AI</button>
                 <button 
                     onClick={onLogout}
                     style={{ 
@@ -102,6 +106,7 @@ const ManagementHub = ({ token, onLogout }) => {
                 >
                     <FaSignOutAlt /> Sign Out
                 </button>
+                </div>
             </nav>
 
             {/* Main Content Area */}
@@ -231,6 +236,7 @@ const ManagementHub = ({ token, onLogout }) => {
                     </motion.div>
                 )}
             </AnimatePresence>
+            {isManagementAiOpen && <ManagementAssistantModal token={token} onClose={() => setIsManagementAiOpen(false)} />}
         </div>
     );
 };

@@ -866,7 +866,11 @@ function App() {
         api.get('/deploy/status').then(res => setDeployStatus(res.data)).catch(() => { });
         // Removed: /api/debug-env health check (unnecessary API call on every login)
 
-        s.on('global-broadcast', (data) => setActiveBroadcast(data));
+        s.on('global-broadcast', (data) => {
+            const sameCollege = !data.collegeId || String(data.collegeId) === String(collegeId || '');
+            const intendedRole = data.targetRole === 'all' || data.targetRole === userRole;
+            if (sameCollege && intendedRole) setActiveBroadcast(data);
+        });
         s.on('global-broadcast-dismissed', ({ id }) => { setActiveBroadcast(prev => (prev && prev._id === id) ? null : prev); });
 
         const handleReceiveMessage = (msg) => { setChatMessages(prev => [...prev, msg]); };
@@ -958,7 +962,7 @@ function App() {
             s.off('global-broadcast-dismissed');
             window.removeEventListener('click', closeMenu);
         };
-    }, [token, username, userId, fetchFiles, api, userRole, activeWorkspaceFolderId]); // Simplified dependencies
+    }, [token, username, userId, fetchFiles, api, userRole, collegeId, activeWorkspaceFolderId]); // Simplified dependencies
 
 
 
@@ -1546,7 +1550,6 @@ function App() {
         const fullPath = findFileFullPath(activeFileId);
         const activeFileName = fullPath;
         const ext = activeFileName.split('.').pop().toLowerCase();
-        const serverExts = ['java', 'c', 'cpp', 'py', 'go', 'rs', 'php', 'rb'];
 
         const latestCode = editorRef.current ? editorRef.current.getValue() : code;
 
@@ -1561,33 +1564,27 @@ function App() {
                 return;
             }
             
-            // Still run it using Native Desktop
+            // Electron determines the right local target from the workspace:
+            // static web assets open in a local preview; package projects use
+            // their npm scripts; native languages use installed local toolchains.
+            const target = await window.electronAPI.getLocalRunTarget(activeFileId);
+            if (target.kind === 'error') {
+                alert(target.error);
+                return;
+            }
+            if (target.kind === 'preview') {
+                const preview = await window.electronAPI.openLocalPreview(target.entry);
+                if (!preview.success) alert(preview.error || 'Could not open the local preview.');
+                return;
+            }
+
             setBottomPanelTab('terminal');
             setIsBottomPanelOpen(true);
-            await new Promise(r => setTimeout(r, 50));
+            await new Promise(r => setTimeout(r, 100));
             setActiveTermId(1); // Native Desktop uses Local Terminal
             const ext = activeFileName.split('.').pop().toLowerCase();
             const fullLangName = ext === 'py' ? 'python' : ext === 'js' ? 'javascript' : ext;
-            
-            // Build the local command
-            const filenameOnly = activeFileId.split(/[\\/]/).pop();
-            const fileNameNoExt = filenameOnly.replace(/\.[^.]+$/, '');
-            const dirPath = activeFileId.substring(0, activeFileId.lastIndexOf(activeFileId.includes('\\') ? '\\' : '/'));
-            const isWin = navigator.userAgent.toLowerCase().includes('windows');
-            const sep = isWin ? ';' : '&&';
-            const runPrefix = isWin ? '.\\\\' : './';
-            const pyCmd = isWin ? 'python' : 'python3';
-            const exeExt = isWin ? '.exe' : '';
-            
-            let localCmd = '';
-            if (ext === 'py') localCmd = `${pyCmd} "${filenameOnly}"`;
-            else if (ext === 'js') localCmd = `node "${filenameOnly}"`;
-            else if (ext === 'java') localCmd = `javac "${filenameOnly}" ${sep} java "${fileNameNoExt}"`;
-            else if (ext === 'c') localCmd = `gcc "${filenameOnly}" -o "${fileNameNoExt}${exeExt}" ${sep} ${runPrefix}${fileNameNoExt}${exeExt}`;
-            else if (ext === 'cpp') localCmd = `g++ "${filenameOnly}" -o "${fileNameNoExt}${exeExt}" ${sep} ${runPrefix}${fileNameNoExt}${exeExt}`;
-            
-            const cdCmd = `cd "${dirPath}"`;
-            const finalCmd = localCmd ? `${cdCmd} ${sep} ${localCmd}` : '';
+            const finalCmd = `Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`;
 
             await ExecutionService.run({
                 fileName: activeFileId, // absolute path
@@ -1598,7 +1595,7 @@ function App() {
                 courseId: undefined,
                 socketRef,
                 api,
-                termId: serverExts.includes(ext) ? 'server-1' : 1
+                termId: 1
             });
             return;
         }
@@ -2066,7 +2063,7 @@ function App() {
                 </div>
             );
         }
-        return <FacultyHub token={token} SERVER_URL={SERVER_URL} userId={userId} onLogout={handleLogout} />;
+        return <><TopBroadcastBanner activeBroadcast={activeBroadcast} setActiveBroadcast={setActiveBroadcast} /><FacultyHub token={token} SERVER_URL={SERVER_URL} userId={userId} onLogout={handleLogout} /></>;
     }
 
     // 4. MAIN IDE OR AUTH SCREEN
@@ -2990,6 +2987,65 @@ function App() {
                                                             setBottomPanelTab('terminal');
                                                             if (window.electronAPI && localWorkspacePath) window.electronAPI.terminalWrite(command + '\r');
                                                             else safeEmit('terminal:write', { termId: activeTermId, data: command + '\r' });
+                                                        }}
+                                                        onAgentWorkspaceAction={async (action) => {
+                                                            if (!window.electronAPI || !localWorkspacePath) return { success: false, error: 'Automatic workspace actions are available in the local desktop workspace only.' };
+                                                            const runInLocalTerminal = async (command) => {
+                                                                // Even an explicit agent plan may not erase data or
+                                                                // publish it externally. Normal build/test/dev commands
+                                                                // are executed in the visible integrated terminal.
+                                                                if (/\b(rm\s+-rf|remove-item|del\s+\/|rmdir|format|git\s+push|curl\s+.+\|\s*(sh|bash)|invoke-expression)\b/i.test(command)) {
+                                                                    return { success: false, error: 'That destructive or external command requires a manual terminal run.' };
+                                                                }
+                                                                setBottomPanelTab('terminal');
+                                                                setIsBottomPanelOpen(true);
+                                                                setActiveTermId(1);
+                                                                const prefix = `Set-Location -LiteralPath "${localWorkspacePath.replace(/"/g, '`"')}"; `;
+                                                                window.electronAPI.terminalWrite(prefix + command + '\r');
+                                                                return { success: true };
+                                                            };
+
+                                                            if (action.plan) {
+                                                                const applied = await window.electronAPI.applyAgentWorkspaceActions(action.plan);
+                                                                if (!applied?.success) return { success: false, error: applied?.error || 'Could not apply the workspace plan.' };
+                                                                await fetchFiles();
+                                                                for (const step of applied.actions.filter(item => item.type === 'run')) {
+                                                                    const runResult = await runInLocalTerminal(step.command);
+                                                                    if (!runResult.success) return runResult;
+                                                                }
+                                                                return { success: true };
+                                                            }
+
+                                                            if (!action.write) {
+                                                                const target = await window.electronAPI.getLocalRunTarget(action.path);
+                                                                if (target.kind === 'error') return { success: false, error: target.error };
+                                                                if (target.kind === 'preview') {
+                                                                    const preview = await window.electronAPI.openLocalPreview(target.entry);
+                                                                    return preview.success ? { success: true } : { success: false, error: preview.error || 'Could not open the local preview.' };
+                                                                }
+                                                                return runInLocalTerminal(`Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`);
+                                                            }
+
+                                                            const write = await window.electronAPI.writeAgentWorkspaceFile(action.path, action.code);
+                                                            if (!write?.success) return { success: false, error: write?.error || `Could not update ${action.path}.` };
+
+                                                            // Keep a file already open in the editor immediately in
+                                                            // sync with the local disk write.
+                                                            if (activeFileId === write.path) {
+                                                                setCode(action.code);
+                                                                setDirtyFiles(previous => { const next = { ...previous }; delete next[activeFileId]; return next; });
+                                                            }
+                                                            setOpenFiles(previous => previous.map(item => item._id === write.path ? { ...item, content: action.code } : item));
+                                                            await fetchFiles();
+
+                                                            if (!action.run) return { success: true };
+                                                            const target = await window.electronAPI.getLocalRunTarget(write.path);
+                                                            if (target.kind === 'error') return { success: false, error: target.error };
+                                                            if (target.kind === 'preview') {
+                                                                const preview = await window.electronAPI.openLocalPreview(target.entry);
+                                                                return preview.success ? { success: true } : { success: false, error: preview.error || 'Could not open the local preview.' };
+                                                            }
+                                                            return runInLocalTerminal(`Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`);
                                                         }}
                                                         onApplyCode={(newCode, lang) => {
                                                             // AI changes are always reviewed as a diff before they

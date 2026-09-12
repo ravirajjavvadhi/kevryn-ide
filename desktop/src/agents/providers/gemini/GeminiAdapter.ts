@@ -78,6 +78,7 @@ export class GeminiAdapter implements AgentExtension {
             const relatedFiles = (context?.relatedFiles || []).map((file: any) => `\nReferenced file: ${file.path}\n${file.content}`).join('\n');
             const searchResults = (context?.searchResults || []).map((result: any) => `${result.path}${result.line ? `:${result.line}` : ''} ${result.text || ''}`).join('\n');
             const editorContext = context?.editorContext ? `Cursor: line ${context.editorContext.cursor?.line || 1}, column ${context.editorContext.cursor?.column || 1}\nSelected text:\n${context.editorContext.selectedText || 'None'}` : 'No editor selection.';
+            const managementContext = context?.managementSnapshot ? `Management institution data (college-scoped and live):\n${JSON.stringify(context.managementSnapshot)}` : '';
             const systemPrompt = `You are an advanced AI Agent in the KevRyn Desktop IDE.
 You are workspace-aware. Use the active file and workspace inventory below; do not claim a file is closed when it is listed.
 ${workspace}
@@ -88,12 +89,19 @@ ${context?.code || 'Empty'}
 ${editorContext}
 ${relatedFiles}
 Search results: ${searchResults || 'None'}
+${managementContext}
+${context?.actionRequest?.agentMode ? `The user approved this implementation plan: ${JSON.stringify(context.actionRequest.approvedPlan || context.projectPlan || {})}. Return a single fenced code block labelled kevryn-actions containing valid JSON only: {"actions":[{"type":"mkdir","path":"relative-folder"},{"type":"write","path":"relative-file","content":"complete content"},{"type":"rename","from":"old-relative-path","path":"new-relative-path"},{"type":"run","command":"safe local development command"}]}. Use only workspace-relative paths. Include only needed actions. Never use delete actions, shell redirection, or commands that erase data.` : context?.actionRequest?.planning ? `The user wants to create or revise this project plan: ${JSON.stringify(context.projectPlan || {})}. Do not create or change files yet. Ask only essential questions, propose sensible assumptions, and return a complete reviewable plan in one fenced code block labelled kevryn-plan containing valid JSON only: {"title":"","summary":"","assumptions":[""],"questions":[""],"steps":[""]}.` : context?.actionRequest?.needsTarget ? 'Do not provide code yet. Ask one concise question: which existing workspace file should be updated, or what exact new file path should be created?' : context?.actionRequest ? `Explicit user-requested workspace action: ${context.actionRequest.write ? 'replace the complete content of' : 'run'} ${context.actionRequest.path}${context.actionRequest.run && context.actionRequest.write ? ', then run it locally' : ''}. Return exactly one complete replacement file in one fenced code block for that path. Do not provide alternatives or unrelated files.` : ''}
 
-If the user asks for code, put every complete code suggestion in a fenced Markdown code block with its language. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
+If management institution data is supplied, answer from that data only. Never invent student, faculty, lab, attendance, or timetable records. Describe changes as proposals that require management confirmation. If the user asks for code, put every complete code suggestion in a fenced Markdown code block with its language. If you provide terminal commands, use a code block with language 'bash' or 'powershell'.`;
 
+            const imageMatch = typeof context?.image === 'string' && context.image.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
+            const parts: any[] = [{ text: systemPrompt + '\n\nUser: ' + message }];
+            if (imageMatch && context.image.length <= 7 * 1024 * 1024) {
+                parts.push({ inlineData: { mimeType: imageMatch[1], data: imageMatch[2] } });
+            }
             const payload = {
                 contents: [
-                    { role: 'user', parts: [{ text: systemPrompt + '\n\nUser: ' + message }] }
+                    { role: 'user', parts }
                 ],
                 generationConfig: { temperature: 0.7 }
             };

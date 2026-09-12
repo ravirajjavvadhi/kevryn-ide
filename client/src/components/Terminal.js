@@ -9,6 +9,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
     const shellProcessRef = useRef(null);
     const terminalRef = useRef(null);
     const onErrorRef = useRef(onError);
+    const connectionGenerationRef = useRef(0);
 
     useEffect(() => {
         onErrorRef.current = onError;
@@ -30,7 +31,12 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             allowTransparency: true,
             rows: 20,
             cols: 80,
-            convertEol: true
+            convertEol: true,
+            // Keep a substantial, local history.  This lets students inspect
+            // compiler output and long command results after scrolling instead
+            // of silently losing earlier lines.
+            scrollback: 20000,
+            lineHeight: 1.25
         });
 
         const fitAddon = new FitAddon();
@@ -54,7 +60,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             if (!t) return "";
             const buffer = t.buffer.active;
             let lines = [];
-            for (let i = Math.max(0, buffer.cursorY - 20); i <= buffer.cursorY; i++) {
+            for (let i = Math.max(0, buffer.baseY + buffer.cursorY - 400); i <= buffer.baseY + buffer.cursorY; i++) {
                 const line = buffer.getLine(i);
                 if (line) lines.push(line.translateToString(true));
             }
@@ -67,7 +73,12 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => {
                 if (fitAddonRef.current && xtermRef.current) {
-                    try { fitAddonRef.current.fit(); } catch (e) { }
+                    // A hidden/collapsed panel can temporarily report a zero
+                    // size.  Do not fit then: it produces a tiny viewport and
+                    // makes wrapped output appear clipped when reopened.
+                    if (terminalRef.current?.clientWidth > 0 && terminalRef.current?.clientHeight > 0) {
+                        try { fitAddonRef.current.fit(); } catch (e) { }
+                    }
                 }
             }, 100); // 100ms debounce
         });
@@ -91,11 +102,15 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
         let inputWriter = null;
         let onDataHandler = null;
         let onResizeHandler = null;
+        const generation = ++connectionGenerationRef.current;
 
         const startNativeTerminal = async () => {
             if (!localWorkspacePath || !window.electronAPI || !active) return;
             try {
                 const res = await window.electronAPI.spawnTerminal(localWorkspacePath, term.cols, term.rows);
+                // Effects can be replaced while Electron is creating a shell.
+                // Never attach stale handlers: they send each keystroke twice.
+                if (!active || generation !== connectionGenerationRef.current) return;
                 if (!res.success) {
                     console.error("[Terminal] Native Shell Load Error:", res.error);
                     return;
@@ -254,18 +269,12 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
         let cleanupLogic = null;
         if (localWorkspacePath && window.electronAPI) {
             console.log(`[Terminal] ${termId} Re-initializing in NATIVE DESKTOP mode`);
-            term.reset();
-            term.write('\x1b[32m[Native Desktop Terminal: Local Shell Connected]\x1b[0m\r\n');
             startShell().then(cleanup => cleanupLogic = cleanup);
         } else if (webcontainer) {
             console.log(`[Terminal] ${termId} Re-initializing in LOCAL (WebContainer) mode`);
-            term.reset();
-            term.write('\x1b[36m[Local Terminal: WebContainer Connected]\x1b[0m\r\n');
             startShell().then(cleanup => cleanupLogic = cleanup);
         } else if (socket) {
             console.log(`[Terminal] ${termId} Re-initializing in SERVER (PTY) mode`);
-            term.reset();
-            term.write('\x1b[35m[Server Terminal: PTY Connected]\x1b[0m\r\n');
             cleanupLogic = setupSocketFallback();
         }
 
@@ -288,9 +297,10 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             style={{
                 width: '100%',
                 height: '100%',
+                minHeight: 0,
                 background: 'transparent',
                 overflow: 'hidden',
-                padding: '10px'
+                padding: '8px'
             }}
         />
     );

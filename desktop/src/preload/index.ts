@@ -15,9 +15,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getEnvironmentStatus: () => ipcRenderer.invoke('get-env-status'),
     selectFolder: () => ipcRenderer.invoke('select-folder'),
     getWorkspacePath: () => ipcRenderer.invoke('get-workspace-path'),
+    getLocalRunTarget: (filePath: string) => ipcRenderer.invoke('get-local-run-target', filePath),
+    openLocalPreview: (entryPath: string) => ipcRenderer.invoke('open-local-preview', entryPath),
     getAgentWorkspaceContext: () => ipcRenderer.invoke('agent-workspace-context'),
     readAgentWorkspaceFile: (relativePath: string) => ipcRenderer.invoke('agent-read-workspace-file', relativePath),
     searchAgentWorkspace: (query: string) => ipcRenderer.invoke('agent-search-workspace', query),
+    writeAgentWorkspaceFile: (relativePath: string, content: string) => ipcRenderer.invoke('agent-write-workspace-file', relativePath, content),
+    applyAgentWorkspaceActions: (actions: unknown) => ipcRenderer.invoke('agent-apply-workspace-actions', actions),
     saveWorkspacePath: (path: string) => ipcRenderer.invoke('save-workspace-path', path),
     readLocalDir: (dirPath: string) => ipcRenderer.invoke('read-local-dir', dirPath),
     readLocalFile: (filePath: string) => ipcRenderer.invoke('read-local-file', filePath),
@@ -35,17 +39,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     signoutAgent: (agentId: string) => ipcRenderer.invoke('agent-signout', agentId),
     openProviderKeyPage: (agentId: string) => ipcRenderer.invoke('open-provider-key-page', agentId),
     chatWithAgent: (agentId: string, message: string, context: any) => ipcRenderer.invoke('agent-chat', agentId, message, context),
-    onAgentChatChunk: (agentId: string, callback: (chunk: string) => void) => {
-        ipcRenderer.removeAllListeners(`agent-chat-chunk-${agentId}`);
-        ipcRenderer.on(`agent-chat-chunk-${agentId}`, (_event, chunk) => callback(chunk));
+    onAgentChatChunk: (agentId: string, requestIdOrCallback: string | ((chunk: string) => void), possibleCallback?: (chunk: string) => void) => {
+        const requestId = typeof requestIdOrCallback === 'string' ? requestIdOrCallback : '';
+        const callback = typeof requestIdOrCallback === 'function' ? requestIdOrCallback : possibleCallback;
+        const channel = requestId ? `agent-chat-chunk-${agentId}-${requestId}` : `agent-chat-chunk-${agentId}`;
+        ipcRenderer.removeAllListeners(channel);
+        if (callback) ipcRenderer.on(channel, (_event, chunk) => callback(chunk));
     },
-    onAgentChatDone: (agentId: string, callback: () => void) => {
-        ipcRenderer.removeAllListeners(`agent-chat-done-${agentId}`);
-        ipcRenderer.on(`agent-chat-done-${agentId}`, () => callback());
+    onAgentChatDone: (agentId: string, requestIdOrCallback: string | (() => void), possibleCallback?: () => void) => {
+        const requestId = typeof requestIdOrCallback === 'string' ? requestIdOrCallback : '';
+        const callback = typeof requestIdOrCallback === 'function' ? requestIdOrCallback : possibleCallback;
+        const channel = requestId ? `agent-chat-done-${agentId}-${requestId}` : `agent-chat-done-${agentId}`;
+        ipcRenderer.removeAllListeners(channel);
+        if (callback) ipcRenderer.on(channel, () => callback());
     },
-    onAgentChatError: (agentId: string, callback: (error: string) => void) => {
-        ipcRenderer.removeAllListeners(`agent-chat-error-${agentId}`);
-        ipcRenderer.on(`agent-chat-error-${agentId}`, (_event, error) => callback(error));
+    onAgentChatError: (agentId: string, requestIdOrCallback: string | ((error: string) => void), possibleCallback?: (error: string) => void) => {
+        const requestId = typeof requestIdOrCallback === 'string' ? requestIdOrCallback : '';
+        const callback = typeof requestIdOrCallback === 'function' ? requestIdOrCallback : possibleCallback;
+        const channel = requestId ? `agent-chat-error-${agentId}-${requestId}` : `agent-chat-error-${agentId}`;
+        ipcRenderer.removeAllListeners(channel);
+        if (callback) ipcRenderer.on(channel, (_event, error) => callback(error));
     },
 
     onUpdateAvailable: (callback: (info: any) => void) => {

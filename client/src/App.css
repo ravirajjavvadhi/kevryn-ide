@@ -654,6 +654,7 @@ body.resizing-row .panel-resize-handle {
 .cyber-terminal {
   position: relative;
   overflow: hidden;
+  min-height: 0;
   background: rgba(10, 10, 15, 0.8) !important;
   border: 1px solid rgba(139, 92, 246, 0.3);
   box-shadow: inset 0 0 30px rgba(0, 0, 0, 0.6);
@@ -688,6 +689,16 @@ body.resizing-row .panel-resize-handle {
 
 .cyber-terminal .xterm-viewport {
   background: transparent !important;
+  overflow-y: auto !important;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 92, 246, 0.7) transparent;
+}
+
+.cyber-terminal .xterm,
+.cyber-terminal .xterm-screen {
+  width: 100% !important;
+  height: 100% !important;
 }
 
 /* --- NEON PULSES --- */
@@ -722,6 +733,7 @@ body.resizing-row .panel-resize-handle {
 
 .bottom-panel-content {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   display: flex;
   flex-direction: column;

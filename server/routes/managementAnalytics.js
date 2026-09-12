@@ -9,7 +9,7 @@ const CollegeStructure = require('../models/CollegeStructure');
 
 // Middleware to check if user is management
 const checkManagement = (req, res, next) => {
-    if (req.user.role === 'faculty') {
+    if (!['admin', 'college_admin'].includes(req.user.role)) {
         return res.status(403).json({ error: "Access denied. Management only." });
     }
     next();

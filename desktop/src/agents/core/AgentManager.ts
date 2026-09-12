@@ -64,17 +64,21 @@ export class AgentManager {
         ipcMain.handle('agent-chat', async (event, agentId: string, message: string, context: any) => {
             const agent = this.registry.get(agentId);
             if (!agent) throw new Error("Agent not found");
+            const requestId = typeof context?.requestId === 'string' ? context.requestId : '';
+            const channel = (type: 'chunk' | 'done' | 'error') => requestId
+                ? `agent-chat-${type}-${agentId}-${requestId}`
+                : `agent-chat-${type}-${agentId}`;
 
             // For IPC streams, Electron's invoke doesn't support AsyncGenerators directly.
             // We must use event emitting back to the renderer.
             try {
                 const stream = agent.sendChat(message, context);
                 for await (const chunk of stream) {
-                    this.mainWindow.webContents.send(`agent-chat-chunk-${agentId}`, chunk);
+                    this.mainWindow.webContents.send(channel('chunk'), chunk);
                 }
-                this.mainWindow.webContents.send(`agent-chat-done-${agentId}`);
+                this.mainWindow.webContents.send(channel('done'));
             } catch (e: any) {
-                this.mainWindow.webContents.send(`agent-chat-error-${agentId}`, e.message);
+                this.mainWindow.webContents.send(channel('error'), e.message);
             }
         });
     }

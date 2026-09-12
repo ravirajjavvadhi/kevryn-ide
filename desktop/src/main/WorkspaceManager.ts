@@ -122,6 +122,63 @@ export class WorkspaceManager {
         return fs.promises.readFile(target, 'utf8');
     }
 
+    // Agent writes are constrained to the active workspace and are called only
+    // after the renderer has matched an explicit user request to a workspace
+    // file. This is intentionally separate from the general file APIs.
+    public async writeAgentFile(relativePath: string, content: string): Promise<string> {
+        if (typeof content !== 'string' || content.length > 1024 * 1024) {
+            throw new Error('Agent file content must be text and no larger than 1 MB.');
+        }
+        const target = this.resolveAgentPath(relativePath);
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.writeFile(target, content, 'utf8');
+        this.notifyEvent('file-changed', target);
+        return target;
+    }
+
+    public async applyAgentActions(actions: unknown): Promise<Array<{ type: string; path?: string; from?: string; command?: string }>> {
+        if (!Array.isArray(actions) || actions.length === 0 || actions.length > 30) {
+            throw new Error('An agent plan must contain between 1 and 30 workspace actions.');
+        }
+        const results: Array<{ type: string; path?: string; from?: string; command?: string }> = [];
+        let totalContent = 0;
+        for (const rawAction of actions) {
+            const action = rawAction as { type?: string; path?: string; from?: string; content?: string; command?: string };
+            if (!action?.type) throw new Error('Every agent action needs a type.');
+            if (action.type === 'mkdir') {
+                if (!action.path) throw new Error('Folder creation needs a workspace-relative path.');
+                const target = this.resolveAgentPath(action.path);
+                await fs.promises.mkdir(target, { recursive: true });
+                this.notifyEvent('dir-added', target);
+                results.push({ type: 'mkdir', path: action.path });
+            } else if (action.type === 'write') {
+                if (!action.path || typeof action.content !== 'string') throw new Error('File writing needs a path and text content.');
+                totalContent += action.content.length;
+                if (action.content.length > 1024 * 1024 || totalContent > 2 * 1024 * 1024) throw new Error('The agent plan is too large to apply safely.');
+                const target = this.resolveAgentPath(action.path);
+                await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                await fs.promises.writeFile(target, action.content, 'utf8');
+                this.notifyEvent('file-changed', target);
+                results.push({ type: 'write', path: action.path });
+            } else if (action.type === 'rename') {
+                if (!action.from || !action.path) throw new Error('Rename needs both from and path.');
+                const from = this.resolveAgentPath(action.from);
+                const target = this.resolveAgentPath(action.path);
+                await fs.promises.mkdir(path.dirname(target), { recursive: true });
+                await fs.promises.rename(from, target);
+                this.notifyEvent('file-deleted', from);
+                this.notifyEvent('file-added', target);
+                results.push({ type: 'rename', from: action.from, path: action.path });
+            } else if (action.type === 'run') {
+                if (typeof action.command !== 'string' || !action.command.trim() || action.command.length > 1000) throw new Error('Run actions need a short terminal command.');
+                results.push({ type: 'run', command: action.command.trim() });
+            } else {
+                throw new Error(`Unsupported agent action: ${action.type}.`);
+            }
+        }
+        return results;
+    }
+
     public async searchAgentWorkspace(query: string): Promise<Array<{ path: string; line: number; text: string }>> {
         const context = await this.getAgentContext();
         if (!context || !query.trim()) return [];

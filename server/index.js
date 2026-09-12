@@ -125,6 +125,7 @@ const adminRouter = require('./routes/admin'); // NEW: Admin Dashboard
 const issuesRouter = require('./routes/issues'); // NEW: Issue Reporting
 const collegeRouter = require('./routes/college'); // NEW: Multi-College Tenancy
 const timetableRouter = require('./routes/timetable'); // NEW: Automated Timetable Manager
+const managementAssistantRouter = require('./routes/managementAssistant');
 const College = require('./models/College'); // NEW: College Model
 const aptitudeRouter = require('./routes/aptitude'); // NEW: Aptitude Test Module
 const DeployManager = require('./deploy/DeployManager');
@@ -486,6 +487,7 @@ app.use('/api/principal', require('./routes/principal'));
 app.use('/api/issues', issuesRouter); // NEW: Issue Reporting
 const managementAnalyticsRouter = require('./routes/managementAnalytics'); // NEW: Global Analytics
 app.use('/api/timetable', timetableRouter); // NEW: Timetable API
+app.use('/api/management-ai', managementAssistantRouter);
 app.use('/api/management-analytics', managementAnalyticsRouter); // NEW: Advanced Global Analytics API
 
 app.use('/api', collegeRouter); // NEW: Multi-College Routes (/api/college/join, /api/admin/colleges)
