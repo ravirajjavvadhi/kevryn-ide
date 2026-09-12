@@ -9,6 +9,7 @@ import {
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import StudentTimetableWidget from './StudentTimetableWidget'; // NEW: Student Timetable
+import './StudentCommandCenter.css';
 
 const StudentAssignmentView = ({ 
     token, serverUrl, userId, onBack, 
@@ -202,22 +203,21 @@ const StudentAssignmentView = ({
 
     // --- STYLES ---
     const cardStyle = {
-        background: 'linear-gradient(145deg, #1e293b 0%, #0f172a 100%)', // Solid neat card background
-        backdropFilter: 'blur(16px)',
-        border: '1px solid rgba(255, 255, 255, 0.1)',
-        borderRadius: '24px',
-        padding: '24px',
+        background: '#141d30',
+        border: '1px solid rgba(148, 163, 184, 0.16)',
+        borderRadius: '16px',
+        padding: '20px',
         cursor: 'pointer',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: 'relative',
         overflow: 'hidden',
-        boxShadow: '0 10px 30px -10px rgba(0,0,0,0.2)'
+        boxShadow: '0 12px 26px rgba(0,0,0,0.16)'
     };
 
     const containerStyle = {
-        padding: '40px 40px 120px 40px',
+        padding: '30px 32px 60px',
         color: '#f8fafc',
-        maxWidth: '1250px',
+        maxWidth: '1180px',
         margin: '0 auto',
         minHeight: '100%',
         position: 'relative',
@@ -228,59 +228,42 @@ const StudentAssignmentView = ({
     const rootStyle = {
         height: '100%',
         width: '100%',
-        background: 'radial-gradient(circle at top right, #1e1b4b 0%, #0a0f1c 40%, #020617 100%)', // Premium solid background to hide underlying particles
+        background: '#090e1a',
         overflowY: 'auto',
         position: 'relative',
         scrollBehavior: 'smooth'
     };
 
-    const watermarkStyle = {
-        position: 'fixed',
-        bottom: '-5%',
-        right: '-5%',
-        fontSize: '20vw',
-        fontWeight: '900',
-        color: 'rgba(255, 255, 255, 0.015)',
-        pointerEvents: 'none',
-        zIndex: 1,
-        fontFamily: "'Outfit', sans-serif",
-        letterSpacing: '-1vw',
-        lineHeight: 1,
-        userSelect: 'none'
-    };
+    // Kept for secondary views (tests, assignments, analytics). The hub itself
+    // intentionally omits the watermark for a calmer command-centre layout.
+    const watermarkStyle = { position: 'fixed', bottom: '-5%', right: '-5%', fontSize: '20vw', fontWeight: '900', color: 'rgba(255,255,255,.015)', pointerEvents: 'none', zIndex: 1, letterSpacing: '-1vw', lineHeight: 1, userSelect: 'none' };
 
     // --- HUB SECTION RENDER ---
     const renderHub = () => (
         <div style={rootStyle}>
-            {/* Watermark */}
-            <div style={watermarkStyle}>KEVRYN</div>
-
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={containerStyle}>
                 {/* Header / Hero */}
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '40px' }}>
+                <div className="student-command-header">
                     <div>
-                        <h1 style={{ fontSize: '48px', fontWeight: '900', margin: '0 0 12px 0', background: 'linear-gradient(to right, #fff, #94a3b8)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', letterSpacing: '-1.5px' }}>
-                            Student Command Center
-                        </h1>
-                        <p style={{ fontSize: '18px', color: '#94a3b8', margin: '0 0 24px 0' }}>Welcome back, Operator. Stay sharp, your missions await.</p>
+                        <div className="student-command-eyebrow"><FaBolt /> Learning workspace</div>
+                        <h1 className="student-command-title">Student Command Center</h1>
+                        <p className="student-command-subtitle">Your schedule, assignments, assessments, and progress—organized around the subject you are working on now.</p>
                         
                         {/* MASTER SUBJECT DROPDOWN */}
                         {courses.length > 0 && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', background: 'rgba(30, 41, 59, 0.6)', padding: '12px 24px', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)' }}>
-                                <FaBook color="#818cf8" size={20} />
-                                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                    <span style={{ fontSize: '11px', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 'bold', letterSpacing: '1px' }}>Active Subject Context</span>
-                                    <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+                            <div className="student-command-context">
+                                <FaBook size={18} />
+                                <div>
+                                    <small>Active subject</small>
+                                    <div>
                                         <select 
                                             value={selectedContextId} 
                                             onChange={(e) => setSelectedContextId(e.target.value)}
-                                            style={{ background: 'transparent', color: '#fff', border: 'none', fontSize: '18px', fontWeight: '800', outline: 'none', cursor: 'pointer', appearance: 'none', paddingRight: '25px', zIndex: 2, position: 'relative' }}
                                         >
                                             {courses.map(c => (
                                                 <option key={c._id} value={c._id} style={{ background: '#0f172a' }}>{c.name}</option>
                                             ))}
                                         </select>
-                                        <span style={{ position: 'absolute', right: '5px', color: '#818cf8', fontSize: '12px', pointerEvents: 'none', zIndex: 1 }}>▼</span>
                                     </div>
                                 </div>
                             </div>
@@ -288,14 +271,7 @@ const StudentAssignmentView = ({
                     </div>
                     <button
                         onClick={onBack}
-                        style={{
-                            padding: '14px 28px', borderRadius: '16px', border: '1px solid rgba(139, 92, 246, 0.3)',
-                            background: 'rgba(139, 92, 246, 0.1)', color: '#a78bfa', cursor: 'pointer',
-                            fontWeight: '700', fontSize: '15px', display: 'flex', alignItems: 'center', gap: '12px',
-                            transition: 'all 0.2s', boxShadow: '0 0 20px rgba(139, 92, 246, 0.1)'
-                        }}
-                        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.2)'; e.currentTarget.style.transform = 'translateY(-2px)'}}
-                        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(139, 92, 246, 0.1)'; e.currentTarget.style.transform = 'translateY(0)'}}
+                        className="student-command-workspace"
                     >
                         <FaCode /> OPEN PERSONAL WORKSPACE
                     </button>
@@ -359,8 +335,8 @@ const StudentAssignmentView = ({
                 )}
 
                 {/* Core Navigation Grid (Contextual) */}
-                {selectedContextId && (
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '32px' }}>
+                {selectedContextId && (<><div className="student-command-section-title"><FaBolt /> Continue learning</div>
+                    <div className="student-command-grid">
                         <HubCard 
                             title="Aptitude Center" 
                             desc="Take standardized tests and mock exams specific to this subject."
@@ -392,18 +368,17 @@ const StudentAssignmentView = ({
                                 setViewMode('analytics');
                             }}
                         />
-                    </div>
-                )}
+                    </div></>)}
 
                 {/* NEW: Developer Identity Section */}
-                <div style={{ marginTop: '60px', marginBottom: '60px' }}>
+                <div style={{ marginTop: '34px', marginBottom: '28px' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
                         <FaCode color="#8b5cf6" size={16} />
-                        <h2 style={{ fontSize: '14px', fontWeight: '800', color: '#64748b', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Developer Identity Integration</h2>
+                        <h2 style={{ fontSize: '11px', fontWeight: '800', color: '#8d9ab0', textTransform: 'uppercase', letterSpacing: '1.4px', margin: 0 }}>Developer profiles</h2>
                     </div>
-                    <div style={{ ...cardStyle, background: 'rgba(255,255,255,0.02)' }}>
-                        <p style={{ color: '#94a3b8', fontSize: '15px', marginBottom: '24px' }}>Link your external developer profiles to track your progress and showcase your global rankings.</p>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '24px' }}>
+                    <div style={{ ...cardStyle, cursor: 'default', background: '#101827' }}>
+                        <p style={{ color: '#9daac0', fontSize: '13px', margin: '0 0 16px' }}>Optionally link profiles to keep your progress in one place.</p>
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px', marginBottom: '16px' }}>
                             {['github', 'leetcode', 'hackerrank', 'codechef'].map(platform => (
                                 <div key={platform}>
                                     <label style={{ display: 'block', color: '#94a3b8', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
@@ -414,7 +389,7 @@ const StudentAssignmentView = ({
                                         value={devProfiles[platform] || ''} 
                                         onChange={(e) => setDevProfiles({ ...devProfiles, [platform]: e.target.value })}
                                         placeholder={`Enter ${platform} handle`}
-                                        style={{ width: '100%', boxSizing: 'border-box', padding: '12px 16px', background: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.1)', borderRadius: '12px', color: '#fff', outline: 'none' }}
+                                        style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', background: '#0b1220', border: '1px solid rgba(148,163,184,.17)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '12px' }}
                                     />
                                 </div>
                             ))}
@@ -422,7 +397,7 @@ const StudentAssignmentView = ({
                         <button 
                             onClick={handleSaveProfiles}
                             disabled={isSavingProfiles}
-                            style={{ padding: '12px 32px', background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '800', cursor: isSavingProfiles ? 'not-allowed' : 'pointer', opacity: isSavingProfiles ? 0.7 : 1, transition: 'all 0.3s' }}
+                            style={{ padding: '9px 15px', background: '#6254d9', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '11px', fontWeight: '800', cursor: isSavingProfiles ? 'not-allowed' : 'pointer', opacity: isSavingProfiles ? 0.7 : 1 }}
                         >
                             {isSavingProfiles ? 'SYNCING...' : 'SYNC PROFILES'}
                         </button>
@@ -438,8 +413,9 @@ const StudentAssignmentView = ({
             whileHover={{ y: -8, border: `1px solid ${color}44`, boxShadow: `0 20px 40px -20px ${color}22` }}
             onClick={onClick}
             style={cardStyle}
+            className="student-command-module"
         >
-            <div style={{ width: '56px', height: '56px', background: `${color}11`, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: color, marginBottom: '24px' }}>
+            <div className="student-command-module-icon" style={{ width: '56px', height: '56px', background: `${color}11`, borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: color, marginBottom: '24px' }}>
                 {icon}
             </div>
             <h3 style={{ fontSize: '24px', fontWeight: '800', marginBottom: '12px', color: '#fff' }}>{title}</h3>
