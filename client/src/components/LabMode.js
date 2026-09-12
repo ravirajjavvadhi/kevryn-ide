@@ -731,11 +731,16 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     };
 
     const handleRun = useCallback(async () => {
-        if (!activeFile || !socketRef.current) return;
+        if (!activeFile) return;
 
         if (isDesktopLab && localLabRoot) {
             await handleSave();
             const localPath = activeFile.path || activeFile.name;
+            if (/\.html?$/i.test(activeFile.name) && window.electronAPI.openLabPreview) {
+                const preview = await window.electronAPI.openLabPreview(labScope, localPath);
+                if (!preview?.success) alert(preview?.error || 'Could not open the local lab preview.');
+                return;
+            }
             const command = getRunCommand(localPath);
             if (!command) { alert('This file can be opened in the local terminal from its dedicated lab folder.'); return; }
             window.electronAPI.terminalWrite(command + '\r');
@@ -776,7 +781,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             api,
             termId: 1
         });
-    }, [activeFile, handleSave, session, userId, findFileFullPath, isDesktopLab, localLabRoot]);
+    }, [activeFile, handleSave, session, userId, findFileFullPath, isDesktopLab, localLabRoot, labScope]);
 
     // --- Keyboard Shortcuts ---
     useEffect(() => {
@@ -1220,7 +1225,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                             <FaTerminal size={12} /> TERMINAL
                         </div>
                         <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-                            {socketRef.current && userId ? (
+                            {(isDesktopLab && localLabRoot) || (socketRef.current && userId) ? (
                                 <Terminal
                                     key={terminalKey}
                                     socket={socketRef.current}

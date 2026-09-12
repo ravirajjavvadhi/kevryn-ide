@@ -285,6 +285,21 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
         await fs.promises.rm(target, { recursive: true, force: true });
         return { success: true };
     });
+    ipcMain.handle('open-lab-preview', async (_event, scope: LabWorkspaceScope, relativePath: string) => {
+        const root = labRootFor(scope || {});
+        const entry = await resolvePreviewEntry(resolveLabPath(root, relativePath), root);
+        if (!entry) return { success: false, error: 'No HTML entry point was found in this lab folder.' };
+        const port = await startPreviewServer(root);
+        const relative = path.relative(root, entry).replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/');
+        const url = `http://127.0.0.1:${port}/${relative}?t=${Date.now()}`;
+        if (!previewWindow || previewWindow.isDestroyed()) {
+            previewWindow = new BrowserWindow({ width: 1100, height: 780, title: 'KevRyn Local Lab Preview', webPreferences: { nodeIntegration: false, contextIsolation: true } });
+            previewWindow.on('closed', () => { previewWindow = null; });
+        }
+        await previewWindow.loadURL(url);
+        previewWindow.show(); previewWindow.focus();
+        return { success: true, url };
+    });
 
     ipcMain.handle('read-local-dir', async (event, dirPath: string) => {
         try {

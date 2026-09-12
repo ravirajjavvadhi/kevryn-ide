@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     createLabItem: (scope: { collegeId?: string, studentId?: string, courseId?: string, subject?: string }, path: string, type: 'file' | 'folder') => ipcRenderer.invoke('lab-create-item', scope, path, type),
     renameLabItem: (scope: { collegeId?: string, studentId?: string, courseId?: string, subject?: string }, from: string, to: string) => ipcRenderer.invoke('lab-rename-item', scope, from, to),
     deleteLabItem: (scope: { collegeId?: string, studentId?: string, courseId?: string, subject?: string }, path: string) => ipcRenderer.invoke('lab-delete-item', scope, path),
+    openLabPreview: (scope: { collegeId?: string, studentId?: string, courseId?: string, subject?: string }, path: string) => ipcRenderer.invoke('open-lab-preview', scope, path),
     readLocalDir: (dirPath: string) => ipcRenderer.invoke('read-local-dir', dirPath),
     readLocalFile: (filePath: string) => ipcRenderer.invoke('read-local-file', filePath),
     writeLocalFile: (filePath: string, content: string) => ipcRenderer.invoke('write-local-file', filePath, content),
