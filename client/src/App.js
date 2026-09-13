@@ -1584,11 +1584,10 @@ function App() {
             setActiveTermId(1); // Native Desktop uses Local Terminal
             const ext = activeFileName.split('.').pop().toLowerCase();
             const fullLangName = ext === 'py' ? 'python' : ext === 'js' ? 'javascript' : ext;
-            const finalCmd = `Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`;
-
             await ExecutionService.run({
                 fileName: activeFileId, // absolute path
-                cmd: finalCmd,
+                cmd: target.command,
+                cwd: target.cwd,
                 code: latestCode,
                 language: fullLangName,
                 activeFileId,
@@ -2985,7 +2984,7 @@ function App() {
                                                         onRunCommand={(command) => {
                                                             setIsBottomPanelOpen(true);
                                                             setBottomPanelTab('terminal');
-                                                            if (window.electronAPI && localWorkspacePath) window.electronAPI.terminalWrite(command + '\r');
+                                                            if (window.electronAPI && localWorkspacePath) window.electronAPI.runLocalCommand(localWorkspacePath, command);
                                                             else safeEmit('terminal:write', { termId: activeTermId, data: command + '\r' });
                                                         }}
                                                         onAgentWorkspaceAction={async (action) => {
@@ -3000,9 +2999,8 @@ function App() {
                                                                 setBottomPanelTab('terminal');
                                                                 setIsBottomPanelOpen(true);
                                                                 setActiveTermId(1);
-                                                                const prefix = `Set-Location -LiteralPath "${localWorkspacePath.replace(/"/g, '`"')}"; `;
-                                                                window.electronAPI.terminalWrite(prefix + command + '\r');
-                                                                return { success: true };
+                                                                const result = await window.electronAPI.runLocalCommand(localWorkspacePath, command);
+                                                                return result?.success ? { success: true } : { success: false, error: result?.error || 'Could not start the local command.' };
                                                             };
 
                                                             if (action.plan) {
@@ -3023,7 +3021,8 @@ function App() {
                                                                     const preview = await window.electronAPI.openLocalPreview(target.entry);
                                                                     return preview.success ? { success: true } : { success: false, error: preview.error || 'Could not open the local preview.' };
                                                                 }
-                                                                return runInLocalTerminal(`Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`);
+                                                                const result = await window.electronAPI.runLocalCommand(target.cwd, target.command);
+                                                                return result?.success ? { success: true } : { success: false, error: result?.error || 'Could not start the local command.' };
                                                             }
 
                                                             const write = await window.electronAPI.writeAgentWorkspaceFile(action.path, action.code);
@@ -3045,7 +3044,8 @@ function App() {
                                                                 const preview = await window.electronAPI.openLocalPreview(target.entry);
                                                                 return preview.success ? { success: true } : { success: false, error: preview.error || 'Could not open the local preview.' };
                                                             }
-                                                            return runInLocalTerminal(`Set-Location -LiteralPath "${target.cwd.replace(/"/g, '`"')}"; ${target.command}`);
+                                                            const result = await window.electronAPI.runLocalCommand(target.cwd, target.command);
+                                                            return result?.success ? { success: true } : { success: false, error: result?.error || 'Could not start the local command.' };
                                                         }}
                                                         onApplyCode={(newCode, lang) => {
                                                             // AI changes are always reviewed as a diff before they

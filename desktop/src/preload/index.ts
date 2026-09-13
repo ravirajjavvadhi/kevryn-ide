@@ -39,6 +39,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     renameLocalItem: (oldPath: string, newPath: string) => ipcRenderer.invoke('rename-local-item', oldPath, newPath),
     spawnTerminal: (cwd: string, cols?: number, rows?: number) => ipcRenderer.invoke('spawn-terminal', cwd, cols, rows),
     spawnLabTerminal: (cwd: string, cols?: number, rows?: number) => ipcRenderer.invoke('spawn-lab-terminal', cwd, cols, rows),
+    runLocalCommand: (cwd: string, command: string) => ipcRenderer.invoke('run-local-command', cwd, command),
     terminalWrite: (data: string) => ipcRenderer.invoke('terminal-write', data),
     terminalResize: (cols: number, rows: number) => ipcRenderer.invoke('terminal-resize', cols, rows),
     

@@ -9,16 +9,22 @@ export class DesktopExecution {
 
         options.socketRef.current?.emit('run_start', { language: options.language });
 
-        // Pipe the execution command directly into the Native PTY terminal
-        // This makes it 100% interactive (scanf/cin works) and preserves history!
-        const cmdString = `${options.cmd}\r`;
+        // Electron owns the PTY working directory.  Sending a bare command
+        // keeps the terminal readable and preserves interactive stdin for
+        // scanf/cin/input without echoing a Set-Location wrapper on every run.
+        const cmdString = `${options.cwd || ''}\u0000${options.cmd}`;
         const now = Date.now();
         // A double click, keyboard shortcut overlap, or a React event replay
         // must never put the same command into the PTY twice.
-        if (cmdString === lastDispatchedCommand && now - lastDispatchAt < 600) return;
+        if (cmdString === lastDispatchedCommand && now - lastDispatchAt < 1000) return;
         lastDispatchedCommand = cmdString;
         lastDispatchAt = now;
-        window.electronAPI.terminalWrite(cmdString);
+        const result = window.electronAPI.runLocalCommand
+            ? await window.electronAPI.runLocalCommand(options.cwd, options.cmd)
+            : await window.electronAPI.terminalWrite(`${options.cmd}\r`);
+        if (result && result.success === false) {
+            throw new Error(result.error || 'The local terminal could not start this command.');
+        }
         
         // Immediately emit run_end since the terminal handles the lifecycle interactively
         setTimeout(() => {
