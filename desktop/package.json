@@ -32,6 +32,14 @@
     "fs-extra": "^11.3.6",
     "typescript": "^5.3.3"
   },
+  "overrides": {
+    "fast-uri": "3.1.7",
+    "hono": "4.13.7",
+    "js-yaml": "4.3.2",
+    "qs": "6.16.0",
+    "brace-expansion@^1.1.7": "1.1.18",
+    "brace-expansion@^2.0.1": "2.1.4"
+  },
   "build": {
     "appId": "com.kevryn.desktop",
     "productName": "KevRyn IDE",
