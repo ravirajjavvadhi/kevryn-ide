@@ -1017,6 +1017,36 @@ app.get('/lab/sessions/:id/report', authenticate, async (req, res) => {
             }
         });
 
+        // Desktop Lab Mode deliberately keeps canonical files on the student's
+        // device.  Its session-only mirror is stored in LabSessionArtifact,
+        // rather than File, so add those exact artifacts here.  This keeps the
+        // report scoped to this lab while preserving compatibility with the
+        // older browser lab flow above.
+        const mirroredArtifacts = await LabSessionArtifact.find({ sessionId: session._id })
+            .select('username files')
+            .lean();
+        mirroredArtifacts.forEach(artifact => {
+            const username = artifact.username;
+            if (!username) return;
+            if (!filesByStudent[username]) filesByStudent[username] = [];
+
+            const merged = new Map(filesByStudent[username].map(file => [file.name, file]));
+            (artifact.files || [])
+                .filter(file => !file.deletedAt)
+                .forEach(file => {
+                    const name = file.path;
+                    // A local artifact is the authoritative version of a file
+                    // touched in this supervised session.
+                    merged.set(name, {
+                        name,
+                        type: file.language || 'plaintext',
+                        lastRunTime: file.updatedAt || file.createdAt,
+                        content: file.code || ''
+                    });
+                });
+            filesByStudent[username] = Array.from(merged.values());
+        });
+
         // Fetch user profiles for Roll Numbers and Full Names
         const allUsernames = [...attendedUsernames, ...offlineStudents];
         const userProfiles = await User.find({ username: { $in: allUsernames } }).select('username fullName rollNo email').lean();
@@ -3273,18 +3303,36 @@ io.on('connection', (socket) => {
     // mirror only, keyed to the one active session. It never writes File (the
     // general workspace) and it does not alter the live active/idle/offline
     // state maintained above.
-    socket.on('student-lab-file-event', async ({ sessionId, username, path: filePath, code, language, action }) => {
+    socket.on('student-lab-file-event', async ({ sessionId, username, path: filePath, code, language, action }, acknowledgement) => {
         try {
-            if (!sessionId || !username || !filePath) return;
+            const acknowledge = (payload) => {
+                if (typeof acknowledgement === 'function') acknowledgement(payload);
+            };
+            if (!sessionId || !username || !filePath) {
+                acknowledge({ success: false, error: 'Missing supervised-lab file details.' });
+                return;
+            }
             const safePath = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '');
-            if (!safePath || safePath.split('/').some(segment => !segment || segment === '.' || segment === '..') || safePath.length > 500) return;
+            if (!safePath || safePath.split('/').some(segment => !segment || segment === '.' || segment === '..') || safePath.length > 500) {
+                acknowledge({ success: false, error: 'Invalid supervised-lab file path.' });
+                return;
+            }
             const fileCode = typeof code === 'string' ? code : '';
-            if (fileCode.length > 2 * 1024 * 1024) return;
+            if (fileCode.length > 2 * 1024 * 1024) {
+                acknowledge({ success: false, error: 'Supervised-lab file exceeds the report size limit.' });
+                return;
+            }
 
             const session = await LabSession.findById(sessionId).select('collegeId courseId subject allowedStudents').lean();
-            if (!session) return;
+            if (!session) {
+                acknowledge({ success: false, error: 'Lab session not found.' });
+                return;
+            }
             const student = await User.findOne({ username, role: 'student', ...(session.collegeId ? { collegeId: session.collegeId } : {}) }).select('_id rollNumber').lean();
-            if (!student || !(session.allowedStudents || []).some(id => id === username || id === student.rollNumber)) return;
+            if (!student || !(session.allowedStudents || []).some(id => id === username || id === student.rollNumber)) {
+                acknowledge({ success: false, error: 'Student is not enrolled in this lab.' });
+                return;
+            }
 
             let artifact = await LabSessionArtifact.findOne({ sessionId, studentId: student._id });
             if (!artifact) artifact = new LabSessionArtifact({
@@ -3318,8 +3366,10 @@ io.on('connection', (socket) => {
                     .map(file => ({ path: file.path, language: file.language, updatedAt: file.updatedAt }));
                 io.to(`lab-${sessionId}`).emit('student-data-update', liveLabState[sessionId][username]);
             }
+            acknowledge({ success: true, syncedAt: now.toISOString() });
         } catch (error) {
             console.error('[LAB ARTIFACT] Could not mirror supervised lab file:', error.message);
+            if (typeof acknowledgement === 'function') acknowledgement({ success: false, error: 'Could not save the supervised-lab report artifact.' });
         }
     });
 

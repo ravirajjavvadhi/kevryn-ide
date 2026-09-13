@@ -397,20 +397,38 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     // an ephemeral live mirror for the active session. This is a socket update,
     // not a file upload or remote execution request.
     const syncLabArtifact = useCallback((filePath, contents, fileLanguage, action = 'update', immediate = false) => {
-        if (!isDesktopLab || !socketRef.current || !(session?.sessionId || session?._id) || !username) return;
-        const send = () => socketRef.current?.emit('student-lab-file-event', {
-            sessionId: session.sessionId || session._id,
-            username,
-            path: filePath,
-            code: contents || '',
-            language: fileLanguage || 'plaintext',
-            action
+        if (!isDesktopLab || !socketRef.current || !(session?.sessionId || session?._id) || !username) return Promise.resolve(false);
+        const send = () => new Promise(resolve => {
+            const socket = socketRef.current;
+            if (!socket?.connected) { resolve(false); return; }
+
+            // The acknowledgement confirms report persistence, not local file
+            // saving. A slow/offline mirror must never leave the Save button
+            // in a pending state or block local execution.
+            let settled = false;
+            const finish = (result) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timeout);
+                if (result?.success) setLastSynced(new Date().toLocaleTimeString());
+                resolve(Boolean(result?.success));
+            };
+            const timeout = setTimeout(() => finish({ success: false }), 4000);
+            socket.emit('student-lab-file-event', {
+                sessionId: session.sessionId || session._id,
+                username,
+                path: filePath,
+                code: contents || '',
+                language: fileLanguage || 'plaintext',
+                action
+            }, finish);
         });
-        if (immediate) { send(); return; }
+        if (immediate) return send();
         if (reportMirrorTimeoutRef.current) clearTimeout(reportMirrorTimeoutRef.current);
         // Live monitoring still streams at editor speed; report persistence is
         // coalesced so it never makes local typing feel network-bound.
-        reportMirrorTimeoutRef.current = setTimeout(send, 1500);
+        reportMirrorTimeoutRef.current = setTimeout(() => { void send(); }, 1500);
+        return Promise.resolve(true);
     }, [isDesktopLab, session?.sessionId, session?._id, username]);
 
     const syncLabMirror = useCallback((fileName, contents, fileLanguage) => {
@@ -670,46 +688,46 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 await window.electronAPI.writeLabFile(labScope, activeFile.path || fullPath, code);
                 setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code } : file));
                 syncLabMirror(activeFile.name, code, language);
-                return;
-            }
-            await api.put(`/files/${activeFile._id}`, { content: code });
-            setFiles(prev => prev.map(f => f._id === activeFile._id ? { ...f, content: code } : f));
+            } else {
+                await api.put(`/files/${activeFile._id}`, { content: code });
+                setFiles(prev => prev.map(f => f._id === activeFile._id ? { ...f, content: code } : f));
 
-            // FIX: Enforce disk sync for previews/runs
-            if (socketRef.current) {
-                socketRef.current.emit('save-file-disk', {
-                    fileName: fullPath,
-                    code: code,
-                    userId,
-                    fileId: activeFile._id,
-                    courseId: session?.courseId
-                });
-            }
-
-            // Sync to WebContainer if bridge is ready
-            if (wcBridgeRef.current) {
-                try {
-                    await wcBridgeRef.current.writeFile(activeFile.name, code);
-                    console.log(`[LabMode] Synced ${activeFile.name} to WebContainer`);
-                } catch (wcErr) {
-                    console.error("[LabMode] WebContainer sync failed:", wcErr);
+                // FIX: Enforce disk sync for previews/runs
+                if (socketRef.current) {
+                    socketRef.current.emit('save-file-disk', {
+                        fileName: fullPath,
+                        code: code,
+                        userId,
+                        fileId: activeFile._id,
+                        courseId: session?.courseId
+                    });
                 }
-            }
-            
-            // Native Local Lab Save
-            if (localWorkspacePath && window.electronAPI) {
-                try {
-                    await window.electronAPI.writeLocalFile(`${localWorkspacePath}/${fullPath}`, code);
-                    console.log(`[LabMode] Synced ${fullPath} to Local Native Workspace`);
-                } catch (localErr) {
-                    console.error("[LabMode] Local Native save failed:", localErr);
-                }
-            }
 
-            // Also emit to faculty
-            emitCodeUpdate();
+                // Sync to WebContainer if bridge is ready
+                if (wcBridgeRef.current) {
+                    try {
+                        await wcBridgeRef.current.writeFile(activeFile.name, code);
+                        console.log(`[LabMode] Synced ${activeFile.name} to WebContainer`);
+                    } catch (wcErr) {
+                        console.error("[LabMode] WebContainer sync failed:", wcErr);
+                    }
+                }
+
+                // Native Local Lab Save
+                if (localWorkspacePath && window.electronAPI) {
+                    try {
+                        await window.electronAPI.writeLocalFile(`${localWorkspacePath}/${fullPath}`, code);
+                        console.log(`[LabMode] Synced ${fullPath} to Local Native Workspace`);
+                    } catch (localErr) {
+                        console.error("[LabMode] Local Native save failed:", localErr);
+                    }
+                }
+
+                // Also emit to faculty
+                emitCodeUpdate();
+            }
         } catch (e) { console.error("Save failed", e); }
-        setSaving(false);
+        finally { setSaving(false); }
     }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, labScope, syncLabMirror, language]);
 
     // Keyboard shortcuts are handled in the main shortcut block below
@@ -811,7 +829,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             // exact last version the student saw in the editor.
             if (isDesktopLab && activeFileRef.current) {
                 const current = activeFileRef.current;
-                syncLabArtifact(current.path || current._id, codeRef.current || '', detectLanguage(current.name), 'update', true);
+                await syncLabArtifact(current.path || current._id, codeRef.current || '', detectLanguage(current.name), 'update', true);
             }
         } catch (e) {
             console.error("[LabMode] Failed to save before logout:", e);
@@ -824,10 +842,11 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 userId
             });
         }
-        // Small delay to ensure socket packet is sent before unmount/reload
+        // The final artifact acknowledgement above has already had an
+        // opportunity to persist. Keep this only for the leave-status packet.
         setTimeout(() => {
             onLogout();
-        }, 100);
+        }, 150);
     };
 
     const isServerLanguage = useMemo(() => {
