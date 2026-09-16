@@ -107,6 +107,15 @@ const StudentAssignmentView = ({
         catch (e) { console.error('Failed to load announcements', e); }
     };
 
+    // The home count and assessment popup deliberately share this one rule.
+    // It prevents a stale summary from ever claiming more work than the user
+    // can actually open.
+    const pendingAssignments = () => {
+        const now = new Date();
+        const submittedIds = new Set(submissions.map(item => String(item.assignmentId?._id || item.assignmentId)));
+        return activeAssignments.filter(item => (!item.startTime || new Date(item.startTime) <= now) && (!item.endTime || new Date(item.endTime) >= now) && !submittedIds.has(String(item._id)));
+    };
+
     const fetchDeveloperProfiles = async () => {
         try {
             const res = await api.get('/auth/user');
@@ -265,6 +274,7 @@ const StudentAssignmentView = ({
         const insight = commandSummary?.insights || {};
         const identity = commandSummary?.identity || {};
         const unread = announcements.length;
+        const pendingCount = pendingAssignments().length;
         return <div className="student-command-screen">
             <header className="student-command-nav">
                 <div className="student-command-brand"><span>K</span><strong>KevRyn</strong></div>
@@ -279,9 +289,9 @@ const StudentAssignmentView = ({
             </header>
             <main className="student-command-main">
                 <div className="student-command-welcome"><div><span>Learning workspace</span><h1>Good to see you, <em>{identity.rollNumber || localStorage.getItem('username') || 'Student'}</em></h1><p>Your labs, assessments, and progress in one clear place.</p></div>{activeSessionId && <button className="student-command-live" onClick={onEnterLab}><FaTerminal /> Join live lab</button>}</div>
-                <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{insight.labsAttended ?? '—'} / {insight.labsConducted ?? '—'}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{insight.attendancePercentage ?? '—'}%</b></span></div><div><FaGraduationCap /><span>Courses<b>{insight.coursesEnrolled ?? courses.length}</b></span></div><div><FaClipboardList /><span>Pending work<b>{insight.pendingAssignments ?? 0}</b></span></div></section>
+                <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{insight.labsAttended ?? '—'} / {insight.labsConducted ?? '—'}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{insight.attendancePercentage ?? '—'}%</b></span></div><div><FaGraduationCap /><span>Courses<b>{insight.coursesEnrolled ?? courses.length}</b></span></div><div><FaClipboardList /><span>Pending work<b>{pendingCount}</b></span></div></section>
                 <section className="student-command-content-grid">
-                    <button className="student-command-assessment-card" onClick={() => { setAssessmentTab('todo'); setViewMode('assessment-hub'); }}><div className="student-command-assessment-icon"><FaClipboardList /></div><div><h2>Assignments &amp; Aptitude</h2><p>Everything due, submitted, and scheduled in one place.</p><span className="student-command-chip urgent">{insight.pendingAssignments ?? 0} to do</span><span className="student-command-chip">{activeAptitudeSession ? '1 active test' : 'Aptitude history ready'}</span><span className="student-command-chip success">{insight.submittedAssignments ?? submissions.length} submitted</span><strong>Open assessment hub →</strong></div></button>
+                    <button className="student-command-assessment-card" onClick={() => { setAssessmentTab('todo'); setViewMode('assessment-hub'); }}><div className="student-command-assessment-icon"><FaClipboardList /></div><div><h2>Assignments &amp; Aptitude</h2><p>Everything due, submitted, and scheduled in one place.</p><span className="student-command-chip urgent">{pendingCount} to do</span><span className="student-command-chip">{activeAptitudeSession ? '1 active test' : 'Aptitude history ready'}</span><span className="student-command-chip success">{submissions.length} submitted</span><strong>Open assessment hub →</strong></div></button>
                     <aside className="student-command-sidecards"><button onClick={activeSessionId ? onEnterLab : () => {}} className="student-command-sidecard"><FaCalendarAlt /><span><b>{activeSessionId ? 'Lab ready now' : 'Next lab'}</b><small>{activeSessionId ? 'Enter your monitored lab environment' : 'Your timetable appears here when scheduled'}</small></span></button><button onClick={() => { setAssessmentTab('submitted'); setViewMode('assessment-hub'); }} className="student-command-sidecard"><FaHistory /><span><b>Recent results</b><small>{insight.averageScore === null || insight.averageScore === undefined ? 'No graded work yet' : `Average score: ${insight.averageScore}%`}</small></span></button><button onClick={() => setShowDeveloperProfiles(true)} className="student-command-sidecard"><FaCode /><span><b>Developer profiles</b><small>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} connected` : 'GitHub, LeetCode, HackerRank, CodeChef'}</small></span></button></aside>
                 </section>
             </main>
@@ -620,8 +630,7 @@ const StudentAssignmentView = ({
 
     const renderAssessmentHub = () => {
         const now = new Date();
-        const submittedIds = new Set(submissions.map(item => String(item.assignmentId?._id || item.assignmentId)));
-        const todo = activeAssignments.filter(item => (!item.startTime || new Date(item.startTime) <= now) && (!item.endTime || new Date(item.endTime) >= now) && !submittedIds.has(String(item._id)));
+        const todo = pendingAssignments();
         const upcoming = activeAssignments.filter(item => item.startTime && new Date(item.startTime) > now);
         const submitted = submissions;
         const assignmentRows = assessmentTab === 'todo' ? todo : assessmentTab === 'upcoming' ? upcoming : [];

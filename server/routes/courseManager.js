@@ -295,13 +295,22 @@ router.get('/student/command-summary', authenticate, async (req, res) => {
         if (!student) return res.status(404).json({ error: 'Student not found' });
         const scope = req.user.collegeId ? { collegeId: req.user.collegeId } : {};
         const cohort = { targetDepartment: student.department, targetYear: student.year, targetSection: student.section };
-        const [courses, labs, assignments, collegeAssignmentIds, aptitude] = await Promise.all([
+        const [courses, labs, cohortAssignments, collegeAssignmentIds, aptitude] = await Promise.all([
             Course.find({ ...scope, department: student.department, year: student.year }).select('name code').lean(),
             LabSession.find({ ...scope, startTime: { $lte: new Date() }, $or: [{ allowedStudents: student.username }, { 'activeStudents.username': student.username }, { 'activityLog.username': student.username }] }).select('sessionName subject startTime isActive allowedStudents activeStudents activityLog').sort({ startTime: -1 }).limit(100).lean(),
             Assignment.find({ ...scope, $or: [cohort, { batchId: { $in: student.enrolledBatches || [] } }] }).select('title startTime endTime maxPoints subjectName').lean(),
             Assignment.find(scope).select('_id').lean(),
             AptitudeSubmission.find({ studentId: student._id }).populate('testId', 'title totalMarks').select('testId totalScore submittedAt').lean()
         ]);
+        // Match the student assignment endpoint: cohort work plus work for any
+        // course available to this student.  A dashboard count must use the
+        // exact same audience rules as the assessment popup.
+        const courseIds = courses.map(course => course._id);
+        const courseAssignments = courseIds.length
+            ? await Assignment.find({ ...scope, courseId: { $in: courseIds } }).select('title startTime endTime maxPoints subjectName').lean()
+            : [];
+        const assignmentMap = new Map([...cohortAssignments, ...courseAssignments].map(item => [String(item._id), item]));
+        const assignments = [...assignmentMap.values()];
         const submissions = await Submission.find({ studentUsername: student.username, assignmentId: { $in: collegeAssignmentIds.map(item => item._id) } }).select('assignmentId score maxScore status submittedAt').lean();
         const attended = labs.filter(lab => (lab.activeStudents || []).some(item => item.username === student.username) || (lab.activityLog || []).some(item => item.username === student.username && item.event?.type === 'login')).length;
         const now = new Date();
