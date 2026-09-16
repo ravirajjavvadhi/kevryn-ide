@@ -134,6 +134,13 @@ const GatewayCard = ({ title, desc, icon, color, onClick }) => (
     const renderOverlay = () => {
         if (!activeOverlay) return null;
 
+        // Faculty Intelligence owns its own centred modal and backdrop. Keeping
+        // it outside the legacy full-screen command overlay makes it match the
+        // Management Intelligence experience instead of looking like a page.
+        if (activeOverlay === 'ai-assistant') {
+            return <FacultyAssistant token={token} serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} />;
+        }
+
         const overlayVariants = {
             hidden: { opacity: 0, scale: 0.98 },
             visible: { opacity: 1, scale: 1, transition: { duration: 0.2, ease: "easeOut" } },
@@ -147,7 +154,6 @@ const GatewayCard = ({ title, desc, icon, color, onClick }) => (
                 case 'aptitude': return <AptitudeManager token={token} serverUrl={serverUrl} userId={userId} preSelectedCohort={selectedClass} />;
                 case 'reports': return <LabReports token={token} serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} preSelectedCohort={selectedClass} />;
                 case 'general-reports': return <StudentReports token={token} serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} preSelectedCohort={selectedClass} />;
-                case 'ai-assistant': return <FacultyAssistant token={token} serverUrl={serverUrl} onClose={() => setActiveOverlay(null)} />;
                 case 'assessments-gateway':
                     return (
                         <div style={{ padding: '60px', display: 'flex', gap: '32px', justifyContent: 'center', alignItems: 'center', height: '100%', flexWrap: 'wrap' }}>

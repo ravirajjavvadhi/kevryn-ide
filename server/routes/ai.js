@@ -4,6 +4,7 @@ const { authenticate } = require('../utils/authMiddleware');
 const aiService = require('../services/aiService');
 const ChatSession = require('../models/ChatSession');
 const aiTools = require('../utils/aiTools');
+const { buildFacultyOverview, buildStudentReport, extractStudentIdentifier } = require('../services/institutionAssistant');
 
 // ── BOOT: Start keep-alive ping (deferred, non-blocking) ────────
 try { setTimeout(() => aiService.startKeepAlive(), 10000); } catch(e) { console.warn('[AI] Keep-alive init error:', e.message); }
@@ -181,8 +182,15 @@ Always aim for zero-bug delivery.`;
     }
 });
 
-// ── FACULTY AI ASSISTANT (WITH MCP TOOLS) ──────────────────────────
-const mcpTools = require('../services/mcpTools');
+// ── FACULTY INTELLIGENCE (COLLEGE- AND COURSE-SCOPED) ──────────────
+router.get('/faculty-intelligence/overview', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'faculty') return res.status(403).json({ error: 'Faculty only' });
+        res.json(await buildFacultyOverview({ collegeId: req.user.collegeId, facultyId: req.user.userId }));
+    } catch (error) {
+        res.status(400).json({ error: error.message || 'Could not load faculty intelligence.' });
+    }
+});
 
 router.post('/faculty-assistant', authenticate, async (req, res, next) => {
     try {
@@ -190,69 +198,38 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
         const { messages, sessionId } = req.body;
         if (!messages) return res.status(400).json({ error: 'Messages are required' });
 
-        const backendUrl = process.env.BASE_URL || 'https://kevryn-ide.onrender.com';
-        const systemContext = `You are the KevRyn Faculty Assistant, a professional AI embedded in the Faculty Command Center.
-You have access to advanced MCP tools to fetch live lab session data, generate CSV reports, track student competitive programming stats, and execute dynamic database queries.
-
-DATABASE TERMINOLOGY GUIDE & ALLOWED MODELS:
-- User: Contains student profiles (username, rollNumber, fullName, role).
-- Course/Subject: Courses are mapped in the 'Course' collection (name field).
-- Assignments: Created by faculty in the 'Assignment' collection (title, subjectName).
-- Submissions: Student code uploads in the 'Submission' collection (assignmentId, studentUsername, score, submittedAt).
-- LabSession: Attendance and session records in the 'LabSession' collection (sessionName, subject, startTime, activeStudents).
-- DeveloperMetrics: Live stats from Github, Leetcode, Hackerrank in the 'DeveloperMetrics' collection.
-
-When asked about sessions, submissions, or reports, use the dedicated tools ('get_lab_sessions', 'get_recent_submissions'). 
-If the faculty asks for something entirely custom or analytical (e.g. "average score", "who hasn't submitted", "list assignments matching X"), use the 'execute_read_query' tool to construct a MongoDB query on the relevant model.
-If you need to provide a report link for a specific session ID, format it using standard markdown pointing to the printable PDF: [🖨️ Print Official PDF](${backendUrl}/api/lab/sessions/ID/print).`;
+        const lastUserMessage = String(messages[messages.length - 1]?.content || '');
+        const identifier = extractStudentIdentifier(lastUserMessage);
+        const [overview, studentReport] = await Promise.all([
+            buildFacultyOverview({ collegeId: req.user.collegeId, facultyId: req.user.userId }),
+            identifier ? buildStudentReport({ collegeId: req.user.collegeId, identifier, facultyId: req.user.userId }) : Promise.resolve(null)
+        ]);
+        const systemContext = `You are KevRyn Faculty Intelligence. Answer only from the verified, faculty-authorized records below. You may explain operational implications, but never invent students, scores, sessions, or attendance. A roll number is the student's username. If STUDENT REPORT says not found, state its reason exactly. Do not output raw markdown tables because the application renders verified report cards. Keep the answer concise and actionable.\n\nFACULTY OVERVIEW:\n${JSON.stringify(overview)}\n\nSTUDENT REPORT:\n${JSON.stringify(studentReport)}`;
 
         const fullMessages = [
             { role: 'system', content: systemContext },
             ...messages.map(m => ({ role: m.role, content: m.content }))
         ];
 
-        // Determine Model Capability based on context
-        const lastUserMessage = messages[messages.length - 1].content.toLowerCase();
+        // Use the stronger provider path for reports and student intelligence.
+        const messageLower = lastUserMessage.toLowerCase();
         let modelCategory = 'general';
         if (
-            lastUserMessage.includes('report') || 
-            lastUserMessage.includes('session') || 
-            lastUserMessage.includes('student') || 
-            lastUserMessage.includes('detail') ||
-            lastUserMessage.includes('analyze')
+            messageLower.includes('report') ||
+            messageLower.includes('session') ||
+            messageLower.includes('student') ||
+            identifier ||
+            messageLower.includes('detail') ||
+            messageLower.includes('analyze')
         ) {
-            modelCategory = 'complex'; // Use 120B for complex agentic/reporting tasks
+            modelCategory = 'complex';
         }
 
-        // Call LLM with tools
-        let result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
-        
-        // Handle tool calls loop
-        let loopCount = 0;
-        while (result.tool_calls && loopCount < 5) {
-            fullMessages.push({ role: 'assistant', content: result.content || "", tool_calls: result.tool_calls });
-            
-            for (const toolCall of result.tool_calls) {
-                let args = {};
-                try {
-                    args = JSON.parse(toolCall.function.arguments || '{}');
-                } catch (e) {
-                    console.log(`[Faculty AI] Warning: JSON parse failed for tool arguments:`, toolCall.function.arguments);
-                }
-                console.log(`[Faculty AI] Executing tool ${toolCall.function.name}...`);
-                const toolResult = await mcpTools.executeTool(toolCall.function.name, args, req.user.userId);
-                
-                fullMessages.push({
-                    role: 'tool',
-                    tool_call_id: toolCall.id,
-                    name: toolCall.function.name,
-                    content: JSON.stringify(toolResult)
-                });
-            }
-            // Call LLM again to get final answer
-            result = await aiService.chat(fullMessages, { tools: mcpTools.tools, modelCategory, role: 'faculty' });
-            loopCount++;
-        }
+        // A failed exact roll-number lookup is a verified database result. Do
+        // not make the faculty wait for an LLM just to repeat that fact.
+        const result = studentReport && !studentReport.found
+            ? { content: studentReport.reason, model: 'verified-records' }
+            : await aiService.chat(fullMessages, { modelCategory, role: 'faculty' });
 
         const safeContent = result.content || "[Tool execution completed successfully]";
 
@@ -276,11 +253,14 @@ If you need to provide a report link for a specific session ID, format it using 
         res.json({
             response: safeContent,
             model: result.model,
-            sessionId: session._id
+            sessionId: session._id,
+            blocks: studentReport ? (studentReport.blocks || []) : (overview.blocks || []),
+            freshness: studentReport?.freshness || overview.freshness,
+            studentReport: studentReport ? { found: studentReport.found, identifier, reason: studentReport.reason } : null
         });
     } catch (error) {
         console.error('[Faculty Assistant Error]', error.message);
-        res.json({ response: `[DEBUG REAL ERROR] ${error.message} - Stack: ${error.stack}` });
+        res.status(500).json({ error: error.message || 'Faculty Intelligence could not complete the request.' });
     }
 });
 
