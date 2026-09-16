@@ -2254,6 +2254,7 @@ function App() {
                             }}
                             activeAptitudeSession={activeAptitudeSession}
                             onEnterAptitude={() => setIsAptitudeOpen(true)}
+                            activeBroadcast={activeBroadcast}
                         />
                     </motion.div>
                 ) : (

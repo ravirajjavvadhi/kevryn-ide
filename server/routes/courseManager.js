@@ -3,6 +3,10 @@ const router = express.Router();
 const Course = require('../models/Course');
 const Batch = require('../models/Batch');
 const User = require('../User');
+const LabSession = require('../LabSessionModel');
+const Assignment = require('../models/Assignment');
+const Submission = require('../models/Submission');
+const AptitudeSubmission = require('../models/AptitudeSubmission');
 const { authenticate } = require('../utils/authMiddleware'); // Assume auth middleware exists or will be moved
 
 // --- GLOBAL CATALOG FOR FACULTY MANUAL CREATION ---
@@ -280,6 +284,38 @@ router.get('/student/enrolled-courses', authenticate, async (req, res) => {
     } catch (e) {
         res.status(500).json({ error: e.message });
     }
+});
+
+// Compact, verified data for the Student Command Center.  This replaces the
+// old placeholder stats without exposing another student's data.
+router.get('/student/command-summary', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Students only' });
+        const student = await User.findById(req.user.userId).select('username rollNumber name department year section enrolledBatches collegeId').lean();
+        if (!student) return res.status(404).json({ error: 'Student not found' });
+        const scope = req.user.collegeId ? { collegeId: req.user.collegeId } : {};
+        const cohort = { targetDepartment: student.department, targetYear: student.year, targetSection: student.section };
+        const [courses, labs, assignments, collegeAssignmentIds, aptitude] = await Promise.all([
+            Course.find({ ...scope, department: student.department, year: student.year }).select('name code').lean(),
+            LabSession.find({ ...scope, startTime: { $lte: new Date() }, $or: [{ allowedStudents: student.username }, { 'activeStudents.username': student.username }, { 'activityLog.username': student.username }] }).select('sessionName subject startTime isActive allowedStudents activeStudents activityLog').sort({ startTime: -1 }).limit(100).lean(),
+            Assignment.find({ ...scope, $or: [cohort, { batchId: { $in: student.enrolledBatches || [] } }] }).select('title startTime endTime maxPoints subjectName').lean(),
+            Assignment.find(scope).select('_id').lean(),
+            AptitudeSubmission.find({ studentId: student._id }).populate('testId', 'title totalMarks').select('testId totalScore submittedAt').lean()
+        ]);
+        const submissions = await Submission.find({ studentUsername: student.username, assignmentId: { $in: collegeAssignmentIds.map(item => item._id) } }).select('assignmentId score maxScore status submittedAt').lean();
+        const attended = labs.filter(lab => (lab.activeStudents || []).some(item => item.username === student.username) || (lab.activityLog || []).some(item => item.username === student.username && item.event?.type === 'login')).length;
+        const now = new Date();
+        const submittedAssignmentIds = new Set(submissions.map(item => String(item.assignmentId)));
+        const pendingAssignments = assignments.filter(item => (!item.startTime || new Date(item.startTime) <= now) && (!item.endTime || new Date(item.endTime) >= now) && !submittedAssignmentIds.has(String(item._id))).length;
+        const scored = submissions.filter(item => ['submitted', 'graded'].includes(item.status));
+        const averageScore = scored.length ? Math.round(scored.reduce((total, item) => total + ((item.score || 0) / (item.maxScore || 100)) * 100, 0) / scored.length) : null;
+        res.json({
+            identity: { rollNumber: student.rollNumber || student.username, username: student.username, name: student.name || '', department: student.department || '', year: student.year || '', section: student.section || '' },
+            insights: { labsConducted: labs.length, labsAttended: attended, attendancePercentage: labs.length ? Math.round((attended / labs.length) * 100) : 0, coursesEnrolled: courses.length, pendingAssignments, submittedAssignments: submissions.length, averageScore, aptitudeAttempts: aptitude.length },
+            recentResults: submissions.sort((a, b) => new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0)).slice(0, 2).map(item => ({ type: 'assignment', score: item.score, maxScore: item.maxScore, submittedAt: item.submittedAt })),
+            freshness: new Date().toISOString()
+        });
+    } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

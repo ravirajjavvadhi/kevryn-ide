@@ -7,6 +7,27 @@ const Submission = require('../models/Submission');
 const { authenticate } = require('../utils/authMiddleware');
 const { runAutoGrader } = require('../utils/autoGrader');
 
+const collegeScope = user => user.collegeId ? { collegeId: user.collegeId } : {};
+
+const assertAssignmentWindow = assignment => {
+    const now = new Date();
+    if (assignment.startTime && now < new Date(assignment.startTime)) throw new Error('This assignment has not opened yet.');
+    if (assignment.endTime && now > new Date(assignment.endTime)) throw new Error('This assignment deadline has passed.');
+};
+
+const studentMayAccess = async (assignment, user) => {
+    if (assignment.collegeId && user.collegeId && String(assignment.collegeId) !== String(user.collegeId)) return false;
+    const cohortMatch = assignment.targetDepartment && assignment.targetYear && assignment.targetSection
+        && assignment.targetDepartment === user.department
+        && String(assignment.targetYear) === String(user.year)
+        && String(assignment.targetSection).toUpperCase() === String(user.section).toUpperCase();
+    if (cohortMatch) return true;
+    if (assignment.batchId && (user.enrolledBatches || []).some(id => String(id) === String(assignment.batchId))) return true;
+    if (!assignment.courseId) return false;
+    const course = await Course.findOne({ _id: assignment.courseId, ...collegeScope(user) }).select('department year').lean();
+    return Boolean(course && course.department === user.department && String(course.year) === String(user.year));
+};
+
 // 1. Create Assignment (Faculty Only)
 router.post('/', authenticate, async (req, res) => {
     try {
@@ -27,6 +48,7 @@ router.post('/', authenticate, async (req, res) => {
 
         const newAssignment = new Assignment({
             collegeId: req.user.collegeId || undefined,
+            createdBy: req.user.userId,
             courseId,
             batchId: batchId || undefined,
             targetDepartment,
@@ -83,7 +105,7 @@ router.get('/course/:courseId', authenticate, async (req, res) => {
 router.get('/cohort-assignments', authenticate, async (req, res) => {
     try {
         const { targetDepartment, targetYear, targetSection, subjectName } = req.query;
-        const assignments = await Assignment.find({
+        const assignments = await Assignment.find({ ...collegeScope(req.user),
             targetDepartment,
             targetYear,
             targetSection,
@@ -136,7 +158,10 @@ router.get('/:id/submissions', authenticate, async (req, res) => {
     try {
         if (req.user.role !== 'faculty') return res.status(403).json({ error: "Only faculty can view assignment submissions" });
         
-        const submissions = await Submission.find({ assignmentId: req.params.id })
+        const assignment = await Assignment.findOne({ _id: req.params.id, ...collegeScope(req.user) }).select('createdBy courseId');
+        if (!assignment) return res.status(404).json({ error: 'Assignment not found' });
+        if (assignment.createdBy && String(assignment.createdBy) !== String(req.user.userId)) return res.status(403).json({ error: 'Only the assignment creator can view submissions' });
+        const submissions = await Submission.find({ assignmentId: req.params.id, ...collegeScope(req.user) })
             .populate('assignmentId', 'title maxPoints')
             .sort({ submittedAt: -1 });
 
@@ -174,8 +199,12 @@ router.get('/:id', authenticate, async (req, res) => {
 router.post('/:id/run-tests', authenticate, async (req, res) => {
     try {
         const { code, language } = req.body;
-        const assignment = await Assignment.findById(req.params.id);
+        const assignment = await Assignment.findOne({ _id: req.params.id, ...collegeScope(req.user) });
         if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Only students can run assignment tests' });
+        const user = await User.findById(req.user.userId).select('department year section enrolledBatches collegeId');
+        if (!user || !(await studentMayAccess(assignment, user))) return res.status(403).json({ error: 'This assignment is not assigned to your cohort.' });
+        assertAssignmentWindow(assignment);
 
         // Run auto-grader
         const results = await runAutoGrader(code, language || assignment.language, assignment.testCases);
@@ -196,8 +225,12 @@ router.post('/:id/run-tests', authenticate, async (req, res) => {
 router.post('/:id/submit', authenticate, async (req, res) => {
     try {
         const { code, language } = req.body;
-        const assignment = await Assignment.findById(req.params.id);
+        const assignment = await Assignment.findOne({ _id: req.params.id, ...collegeScope(req.user) });
         if (!assignment) return res.status(404).json({ error: "Assignment not found" });
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Only students can submit assignments' });
+        const user = await User.findById(req.user.userId).select('department year section enrolledBatches collegeId');
+        if (!user || !(await studentMayAccess(assignment, user))) return res.status(403).json({ error: 'This assignment is not assigned to your cohort.' });
+        assertAssignmentWindow(assignment);
 
         // Run auto-grader
         const results = await runAutoGrader(code, language || assignment.language, assignment.testCases);
@@ -220,6 +253,7 @@ router.post('/:id/submit', authenticate, async (req, res) => {
         const submission = await Submission.findOneAndUpdate(
             { assignmentId: assignment._id, studentUsername: req.user.username },
             {
+                collegeId: req.user.collegeId || undefined,
                 submittedCode: code,
                 testResults: results.map((r, i) => ({
                     testCaseIndex: i,
@@ -263,9 +297,11 @@ router.get('/course/:courseId/student/:username', authenticate, async (req, res)
 router.get('/student/my-submissions', authenticate, async (req, res) => {
     try {
         if (req.user.role !== 'student') return res.status(403).json({ error: "Only students can view their global submissions" });
-        const submissions = await Submission.find({
-            studentUsername: req.user.username
-        }).populate('assignmentId', 'title maxPoints');
+        // Scope through institution-owned assignments.  This also keeps older
+        // submissions (created before collegeId was added to the row) visible
+        // without weakening multi-college isolation.
+        const assignmentIds = (await Assignment.find(collegeScope(req.user)).select('_id').lean()).map(item => item._id);
+        const submissions = await Submission.find({ studentUsername: req.user.username, assignmentId: { $in: assignmentIds } }).populate('assignmentId', 'title maxPoints subjectName');
         res.json(submissions);
     } catch (e) {
         res.status(500).json({ error: e.message });
@@ -328,7 +364,7 @@ router.get('/student/active', authenticate, async (req, res) => {
         const user = await User.findById(req.user.userId);
         const enrolledBatches = user.enrolledBatches || [];
 
-        const courses = await Course.find({ enrolledStudents: req.user.username });
+        const courses = await Course.find({ ...collegeScope(req.user), department: user.department, year: user.year });
         const courseIds = courses.map(c => c._id);
 
         // Find assignments for those courses, restricted by batch if applicable
@@ -351,7 +387,7 @@ router.get('/student/active', authenticate, async (req, res) => {
             });
         }
 
-        const assignments = await Assignment.find({ $or: conditions })
+        const assignments = await Assignment.find({ ...collegeScope(req.user), $or: conditions })
             .populate('courseId', 'name')
             .sort({ endTime: 1 }); // Sort by end time (closest first)
 

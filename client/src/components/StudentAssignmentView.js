@@ -5,7 +5,7 @@ import {
     FaPlay, FaPaperPlane, FaArrowLeft, FaCheckCircle, FaTimesCircle, 
     FaBook, FaCode, FaRobot, FaRocket, FaExclamationTriangle, 
     FaTerminal, FaChalkboardTeacher, FaClipboardList, FaGraduationCap,
-    FaBolt, FaHistory, FaTrophy, FaCalendarAlt
+    FaBolt, FaHistory, FaTrophy, FaCalendarAlt, FaBell, FaUserCircle
 } from 'react-icons/fa';
 import { motion, AnimatePresence } from 'framer-motion';
 import StudentTimetableWidget from './StudentTimetableWidget'; // NEW: Student Timetable
@@ -14,7 +14,7 @@ import './StudentCommandCenter.css';
 const StudentAssignmentView = ({ 
     token, serverUrl, userId, onBack, 
     activeSessionId, onEnterLab, 
-    activeAptitudeSession, onEnterAptitude 
+    activeAptitudeSession, onEnterAptitude, activeBroadcast
 }) => {
     // viewMode: 'hub' | 'courses' | 'assignments' | 'solve' | 'aptitude-list'
     const [viewMode, setViewMode] = useState('hub');
@@ -30,6 +30,10 @@ const StudentAssignmentView = ({
     const [aptitudeHistory, setAptitudeHistory] = useState([]);
     const [userStats, setUserStats] = useState({ completed: 0, points: 0, rank: 'Novice' });
     const [selectedAnalyticsSubmission, setSelectedAnalyticsSubmission] = useState(null);
+    const [commandSummary, setCommandSummary] = useState(null);
+    const [announcements, setAnnouncements] = useState([]);
+    const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
+    const [assessmentTab, setAssessmentTab] = useState('todo');
 
     // NEW: Developer Identity
     const [devProfiles, setDevProfiles] = useState({ github: '', leetcode: '', hackerrank: '', codechef: '' });
@@ -53,8 +57,8 @@ const StudentAssignmentView = ({
         fetchAptitudeHistory();
         fetchActiveAssignments();
         fetchDeveloperProfiles();
-        // Mock stats or fetch from backend if available
-        setUserStats({ completed: 12, points: 450, rank: 'Pro Code-Warrior' });
+        fetchCommandSummary();
+        fetchAnnouncements();
 
         // Fullscreen Listener
         const handleFullscreenChange = () => {
@@ -87,6 +91,21 @@ const StudentAssignmentView = ({
             window.removeEventListener('popstate', handlePopState);
         };
     }, [viewMode, onBack, submissionStatus]);
+
+    useEffect(() => {
+        if (!activeBroadcast?._id) return;
+        setAnnouncements(previous => [activeBroadcast, ...previous.filter(item => item._id !== activeBroadcast._id)].slice(0, 5));
+    }, [activeBroadcast]);
+
+    const fetchCommandSummary = async () => {
+        try { setCommandSummary((await api.get('/api/student/command-summary')).data); }
+        catch (e) { console.error('Failed to load command summary', e); }
+    };
+
+    const fetchAnnouncements = async () => {
+        try { setAnnouncements((await api.get('/api/broadcasts/active')).data || []); }
+        catch (e) { console.error('Failed to load announcements', e); }
+    };
 
     const fetchDeveloperProfiles = async () => {
         try {
@@ -196,6 +215,8 @@ const StudentAssignmentView = ({
             setTestResults(res.data.results);
             const { score, maxScore } = res.data.submission;
             setSubmissionStatus(`Submitted Successfully! Marks: ${score}/${maxScore}`);
+            fetchActiveAssignments();
+            fetchCommandSummary();
             if (document.fullscreenElement) {
                 document.exitFullscreen().catch(e => console.error(e));
             }
@@ -240,169 +261,32 @@ const StudentAssignmentView = ({
     const watermarkStyle = { position: 'fixed', bottom: '-5%', right: '-5%', fontSize: '20vw', fontWeight: '900', color: 'rgba(255,255,255,.015)', pointerEvents: 'none', zIndex: 1, letterSpacing: '-1vw', lineHeight: 1, userSelect: 'none' };
 
     // --- HUB SECTION RENDER ---
-    const renderHub = () => (
-        <div style={rootStyle}>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={containerStyle}>
-                {/* Header / Hero */}
-                <div className="student-command-header">
-                    <div>
-                        <div className="student-command-eyebrow"><FaBolt /> Learning workspace</div>
-                        <h1 className="student-command-title">Student Command Center</h1>
-                        <p className="student-command-subtitle">Your schedule, assignments, assessments, and progress—organized around the subject you are working on now.</p>
-                        
-                        {/* MASTER SUBJECT DROPDOWN */}
-                        {courses.length > 0 && (
-                            <div className="student-command-context">
-                                <FaBook size={18} />
-                                <div>
-                                    <small>Active subject</small>
-                                    <div>
-                                        <select 
-                                            value={selectedContextId} 
-                                            onChange={(e) => setSelectedContextId(e.target.value)}
-                                        >
-                                            {courses.map(c => (
-                                                <option key={c._id} value={c._id} style={{ background: '#0f172a' }}>{c.name}</option>
-                                            ))}
-                                        </select>
-                                    </div>
-                                </div>
-                            </div>
-                        )}
+    const renderHub = () => {
+        const insight = commandSummary?.insights || {};
+        const identity = commandSummary?.identity || {};
+        const unread = announcements.length;
+        return <div className="student-command-screen">
+            <header className="student-command-nav">
+                <div className="student-command-brand"><span>K</span><strong>KevRyn</strong></div>
+                <div className="student-command-nav__actions">
+                    <div className="student-command-notices">
+                        <button aria-label="Open announcements" className="student-command-bell" onClick={() => setIsNotificationsOpen(value => !value)}><FaBell />{unread > 0 && <i>{unread > 9 ? '9+' : unread}</i>}</button>
+                        {isNotificationsOpen && <section className="student-command-notice-popover"><div><strong>Announcements</strong><button onClick={() => setAnnouncements([])}>Mark all read</button></div>{announcements.length ? announcements.map(item => <article key={item._id}><FaBolt /><span><b>{item.title}</b><small>{item.message}</small></span><time>{item.createdAt ? new Date(item.createdAt).toLocaleDateString() : 'Now'}</time></article>) : <p>You are all caught up.</p>}</section>}
                     </div>
-                    <button
-                        onClick={onBack}
-                        className="student-command-workspace"
-                    >
-                        <FaCode /> OPEN PERSONAL WORKSPACE
-                    </button>
+                    <div className="student-command-identity"><FaUserCircle /><span><b>{identity.rollNumber || localStorage.getItem('username') || 'Student'}</b><small>{[identity.department, identity.year && `Year ${identity.year}`, identity.section && `Section ${identity.section}`].filter(Boolean).join(' · ') || 'Personal learning space'}</small></span></div>
+                    <button onClick={onBack} className="student-command-workspace"><FaCode /> Personal Workspace</button>
                 </div>
-
-                {/* Today's Schedule Widget */}
-                <div style={{ marginBottom: '40px' }}>
-                    <StudentTimetableWidget token={token} serverUrl={serverUrl} activeSessionId={activeSessionId} onEnterLab={onEnterLab} />
-                </div>
-
-                {/* Mission Control (Active) */}
-                {(activeAptitudeSession || activeSessionId) && (
-                    <div style={{ marginBottom: '60px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
-                            <FaBolt color="#fbbf24" size={16} />
-                            <h2 style={{ fontSize: '14px', fontWeight: '800', color: '#cbd5e1', textTransform: 'uppercase', letterSpacing: '2px', margin: 0 }}>Mission Control: Active Now</h2>
-                        </div>
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(400px, 1fr))', gap: '24px' }}>
-                            {activeAptitudeSession && (
-                                <motion.div
-                                    whileHover={{ scale: 1.02 }}
-                                    style={{
-                                        background: 'linear-gradient(135deg, rgba(234, 179, 8, 0.15), rgba(161, 98, 7, 0.1))',
-                                        border: '1px solid rgba(234, 179, 8, 0.5)', padding: '32px', borderRadius: '24px',
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        boxShadow: '0 10px 40px -10px rgba(234, 179, 8, 0.2)'
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                                        <div style={{ width: '56px', height: '56px', background: 'rgba(234,179,8,0.2)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fbbf24' }}><FaExclamationTriangle size={28} /></div>
-                                        <div>
-                                            <div style={{ color: '#fbbf24', fontSize: '12px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>STRICT EXAM ACTIVE</div>
-                                            <h3 style={{ margin: '4px 0', fontSize: '22px', fontWeight: '800', color: '#fff' }}>{activeAptitudeSession.title}</h3>
-                                        </div>
-                                    </div>
-                                    <button onClick={onEnterAptitude} style={{ padding: '12px 24px', background: '#fbbf24', color: '#000', border: 'none', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' }}>ENGAGE MISSION</button>
-                                </motion.div>
-                            )}
-                            {activeSessionId && (
-                                <motion.div
-                                    whileHover={{ scale: 1.02 }}
-                                    style={{
-                                        background: 'linear-gradient(135deg, rgba(124, 58, 237, 0.15), rgba(91, 33, 182, 0.1))',
-                                        border: '1px solid rgba(124, 58, 237, 0.5)', padding: '32px', borderRadius: '24px',
-                                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                                        boxShadow: '0 10px 40px -10px rgba(124, 58, 237, 0.2)'
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-                                        <div style={{ width: '56px', height: '56px', background: 'rgba(124,58,237,0.2)', borderRadius: '16px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#a78bfa' }}><FaTerminal size={28} /></div>
-                                        <div>
-                                            <div style={{ color: '#c4b5fd', fontSize: '12px', fontWeight: '800', letterSpacing: '1px', textTransform: 'uppercase' }}>LIVE LAB ACTIVE</div>
-                                            <h3 style={{ margin: '4px 0', fontSize: '22px', fontWeight: '800', color: '#fff' }}>Monitored Playground</h3>
-                                        </div>
-                                    </div>
-                                    <button onClick={onEnterLab} style={{ padding: '12px 24px', background: '#8b5cf6', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: '900', cursor: 'pointer' }}>JOIN SQUAD</button>
-                                </motion.div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-                {/* Core Navigation Grid (Contextual) */}
-                {selectedContextId && (<><div className="student-command-section-title"><FaBolt /> Continue learning</div>
-                    <div className="student-command-grid">
-                        <HubCard 
-                            title="Aptitude Center" 
-                            desc="Take standardized tests and mock exams specific to this subject."
-                            icon={<FaTrophy size={24} />}
-                            color="#fbbf24"
-                            onClick={() => setViewMode('aptitude-list')}
-                            count={activeAptitudeSession && new Date() >= new Date(activeAptitudeSession.startTime) && new Date() <= new Date(activeAptitudeSession.endTime) ? 1 : 0}
-                        />
-                        <HubCard 
-                            title="Assignment Depot" 
-                            desc="Complete your coding missions and deploy solutions for this subject."
-                            icon={<FaClipboardList size={24} />}
-                            color="#3b82f6"
-                            onClick={() => setViewMode('assignments')}
-                            count={activeAssignments.filter(a => {
-                                const isContext = (a.courseId) 
-                                    ? (a.courseId._id || a.courseId) === selectedContextId 
-                                    : (courses.find(c => c._id === selectedContextId)?.name?.toLowerCase() === a.subjectName?.toLowerCase());
-                                return isContext && (!a.startTime || new Date() >= new Date(a.startTime)) && (!a.endTime || new Date() <= new Date(a.endTime));
-                            }).length}
-                        />
-                        <HubCard 
-                            title="Performance Analytics" 
-                            desc="Review your past submissions, feedback, and grade progressions for this subject."
-                            icon={<FaHistory size={24} />}
-                            color="#10b981"
-                            onClick={() => {
-                                setSelectedAnalyticsSubmission(null);
-                                setViewMode('analytics');
-                            }}
-                        />
-                    </div></>)}
-
-                {/* NEW: Developer Identity Section */}
-                <section className="student-profile-card">
-                    <div className="student-profile-card__summary"><div><span><FaCode /> Developer profiles</span><p>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} profile${Object.values(devProfiles).filter(Boolean).length === 1 ? '' : 's'} connected` : 'Link GitHub, LeetCode, HackerRank, or CodeChef when you are ready.'}</p></div><button type="button" onClick={() => setShowDeveloperProfiles(value => !value)}>{showDeveloperProfiles ? 'Close' : 'Manage profiles'}</button></div>
-                    {showDeveloperProfiles && <div className="student-profile-card__fields">
-                        <div className="student-profile-card__grid">
-                            {['github', 'leetcode', 'hackerrank', 'codechef'].map(platform => (
-                                <div key={platform}>
-                                    <label style={{ display: 'block', color: '#94a3b8', fontSize: '12px', fontWeight: '700', textTransform: 'uppercase', marginBottom: '8px' }}>
-                                        {platform === 'github' ? 'GitHub' : platform === 'leetcode' ? 'LeetCode' : platform === 'hackerrank' ? 'HackerRank' : 'CodeChef'} Username
-                                    </label>
-                                    <input 
-                                        type="text" 
-                                        value={devProfiles[platform] || ''} 
-                                        onChange={(e) => setDevProfiles({ ...devProfiles, [platform]: e.target.value })}
-                                        placeholder={`Enter ${platform} handle`}
-                                        style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', background: '#0b1220', border: '1px solid rgba(148,163,184,.17)', borderRadius: '8px', color: '#fff', outline: 'none', fontSize: '12px' }}
-                                    />
-                                </div>
-                            ))}
-                        </div>
-                        <button 
-                            onClick={handleSaveProfiles}
-                            disabled={isSavingProfiles}
-                            style={{ padding: '9px 15px', background: '#6254d9', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '11px', fontWeight: '800', cursor: isSavingProfiles ? 'not-allowed' : 'pointer', opacity: isSavingProfiles ? 0.7 : 1 }}
-                        >
-                            {isSavingProfiles ? 'SYNCING...' : 'SYNC PROFILES'}
-                        </button>
-                    </div>}
+            </header>
+            <main className="student-command-main">
+                <div className="student-command-welcome"><div><span>Learning workspace</span><h1>Good to see you, <em>{identity.rollNumber || localStorage.getItem('username') || 'Student'}</em></h1><p>Your labs, assessments, and progress in one clear place.</p></div>{activeSessionId && <button className="student-command-live" onClick={onEnterLab}><FaTerminal /> Join live lab</button>}</div>
+                <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{insight.labsAttended ?? '—'} / {insight.labsConducted ?? '—'}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{insight.attendancePercentage ?? '—'}%</b></span></div><div><FaGraduationCap /><span>Courses<b>{insight.coursesEnrolled ?? courses.length}</b></span></div><div><FaClipboardList /><span>Pending work<b>{insight.pendingAssignments ?? 0}</b></span></div></section>
+                <section className="student-command-content-grid">
+                    <button className="student-command-assessment-card" onClick={() => { setAssessmentTab('todo'); setViewMode('assessment-hub'); }}><div className="student-command-assessment-icon"><FaClipboardList /></div><div><h2>Assignments &amp; Aptitude</h2><p>Everything due, submitted, and scheduled in one place.</p><span className="student-command-chip urgent">{insight.pendingAssignments ?? 0} to do</span><span className="student-command-chip">{activeAptitudeSession ? '1 active test' : 'Aptitude history ready'}</span><span className="student-command-chip success">{insight.submittedAssignments ?? submissions.length} submitted</span><strong>Open assessment hub →</strong></div></button>
+                    <aside className="student-command-sidecards"><button onClick={activeSessionId ? onEnterLab : () => {}} className="student-command-sidecard"><FaCalendarAlt /><span><b>{activeSessionId ? 'Lab ready now' : 'Next lab'}</b><small>{activeSessionId ? 'Enter your monitored lab environment' : 'Your timetable appears here when scheduled'}</small></span></button><button onClick={() => { setAssessmentTab('submitted'); setViewMode('assessment-hub'); }} className="student-command-sidecard"><FaHistory /><span><b>Recent results</b><small>{insight.averageScore === null || insight.averageScore === undefined ? 'No graded work yet' : `Average score: ${insight.averageScore}%`}</small></span></button><button onClick={() => setShowDeveloperProfiles(true)} className="student-command-sidecard"><FaCode /><span><b>Developer profiles</b><small>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} connected` : 'GitHub, LeetCode, HackerRank, CodeChef'}</small></span></button></aside>
                 </section>
-            </motion.div>
-        </div>
-    );
+            </main>
+        </div>;
+    };
 
     // --- SUB-COMPONENTS ---
     const HubCard = ({ title, desc, icon, color, onClick, count }) => (
@@ -577,13 +461,9 @@ const StudentAssignmentView = ({
     // --- RENDER ASSIGNMENTS LIST ---
     const renderAssignmentsList = () => {
         const now = new Date();
-        const selectedCourse = courses.find(c => c._id === selectedContextId);
-        
-        const contextualAssignments = activeAssignments.filter(a => {
-            if (a.courseId) return (a.courseId?._id || a.courseId) === selectedContextId;
-            if (selectedCourse && a.subjectName) return a.subjectName.toLowerCase() === selectedCourse.name.toLowerCase();
-            return false;
-        });
+        // Assignments are deliberately global to the student's authorised
+        // cohort here; a course picker must never hide an assigned task.
+        const contextualAssignments = activeAssignments;
         
         const activeNow = contextualAssignments.filter(a => (!a.startTime || now >= new Date(a.startTime)) && (!a.endTime || now <= new Date(a.endTime)));
         const upcoming = contextualAssignments.filter(a => a.startTime && now < new Date(a.startTime));
@@ -738,12 +618,24 @@ const StudentAssignmentView = ({
         );
     };
 
+    const renderAssessmentHub = () => {
+        const now = new Date();
+        const submittedIds = new Set(submissions.map(item => String(item.assignmentId?._id || item.assignmentId)));
+        const todo = activeAssignments.filter(item => (!item.startTime || new Date(item.startTime) <= now) && (!item.endTime || new Date(item.endTime) >= now) && !submittedIds.has(String(item._id)));
+        const upcoming = activeAssignments.filter(item => item.startTime && new Date(item.startTime) > now);
+        const submitted = submissions;
+        const assignmentRows = assessmentTab === 'todo' ? todo : assessmentTab === 'upcoming' ? upcoming : [];
+        const renderAssignment = item => <button className="student-assessment-row" key={item._id} onClick={() => openAssignment(item)}><span className="student-assessment-row__icon"><FaCode /></span><span><b>{item.title}</b><small>{item.subjectName || item.courseId?.name || 'Coding assignment'} · {item.language || 'Code'}</small></span><span className="student-assessment-row__meta"><b>{item.maxPoints || 100} marks</b><small>{item.endTime ? `Due ${new Date(item.endTime).toLocaleString()}` : 'No deadline'}</small></span><strong>{assessmentTab === 'upcoming' ? 'Scheduled' : 'Start →'}</strong></button>;
+        return <section className="student-assessment-modal"><header><div><span>My assessment hub</span><h2>Assignments &amp; Aptitude</h2></div><button aria-label="Close assessment hub" onClick={() => setViewMode('hub')}><FaTimesCircle /></button></header><nav>{[['todo', `To do (${todo.length})`], ['upcoming', `Upcoming (${upcoming.length})`], ['submitted', `Submitted (${submitted.length})`], ['aptitude', `Aptitude (${aptitudeHistory.length})`]].map(([id, label]) => <button key={id} onClick={() => setAssessmentTab(id)} className={assessmentTab === id ? 'active' : ''}>{label}</button>)}</nav><div className="student-assessment-list">{assessmentTab === 'aptitude' ? <>{activeAptitudeSession && <button className="student-assessment-row active-test" onClick={onEnterAptitude}><span className="student-assessment-row__icon"><FaTrophy /></span><span><b>{activeAptitudeSession.title}</b><small>Strict aptitude test is active now</small></span><strong>Start →</strong></button>}{aptitudeHistory.map(item => <div className="student-assessment-row" key={item._id}><span className="student-assessment-row__icon"><FaTrophy /></span><span><b>{item.title || 'Aptitude test'}</b><small>Completed {item.startTime ? new Date(item.startTime).toLocaleDateString() : ''}</small></span><span className="student-assessment-row__meta"><b>{item.submission?.score ?? '—'} / {item.submission?.maxScore ?? '—'}</b><small>Submitted</small></span></div>)}{!activeAptitudeSession && !aptitudeHistory.length && <p className="student-assessment-empty">No aptitude tests have been assigned yet.</p>}</> : assessmentTab === 'submitted' ? <>{submitted.map(item => <div className="student-assessment-row" key={item._id}><span className="student-assessment-row__icon"><FaCheckCircle /></span><span><b>{item.assignmentId?.title || 'Assignment submission'}</b><small>Submitted {item.submittedAt ? new Date(item.submittedAt).toLocaleString() : ''}</small></span><span className="student-assessment-row__meta"><b>{item.score} / {item.maxScore || item.assignmentId?.maxPoints || 100}</b><small>{item.status || 'submitted'}</small></span></div>)}{!submitted.length && <p className="student-assessment-empty">No submitted assignments yet.</p>}</> : <>{assignmentRows.map(renderAssignment)}{!assignmentRows.length && <p className="student-assessment-empty">Nothing here right now. New work will appear automatically when faculty assigns it to your cohort.</p>}</>}</div></section>;
+    };
+
     const renderActiveOverlay = () => {
         if (viewMode === 'aptitude-list') return renderAptitudeList();
         if (viewMode === 'solve' && selectedAssignment) return renderSolve();
         if (viewMode === 'assignments') return renderAssignmentsList();
         if (viewMode === 'courses') return renderCourseList();
         if (viewMode === 'analytics') return renderAnalytics();
+        if (viewMode === 'assessment-hub') return renderAssessmentHub();
         return null;
     };
 
@@ -762,9 +654,9 @@ const StudentAssignmentView = ({
                         animate={{ opacity: 1, scale: 1 }}
                         exit={{ opacity: 0, scale: 0.98 }}
                         transition={{ duration: 0.2, ease: "easeOut" }}
-                        style={{ position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--bg-primary, #0f172a)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
+                        style={viewMode === 'assessment-hub' ? { position: 'fixed', inset: 0, zIndex: 9999, background: 'rgba(3,8,20,.72)', backdropFilter: 'blur(8px)', display: 'grid', placeItems: 'center', padding: '22px' } : { position: 'fixed', inset: 0, zIndex: 9999, background: 'var(--bg-primary, #0f172a)', display: 'flex', flexDirection: 'column', overflowY: 'auto' }}
                     >
-                        {viewMode !== 'solve' && (
+                        {viewMode !== 'solve' && viewMode !== 'assessment-hub' && (
                             <div style={{ padding: '12px 24px', background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid rgba(255,255,255,0.1)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 10, backdropFilter: 'blur(10px)' }}>
                                 <div style={{ fontSize: '14px', fontWeight: 'bold', color: '#818cf8', textTransform: 'uppercase', letterSpacing: '1px' }}>
                                     {viewMode === 'aptitude-list' ? 'Aptitude Test Center' : viewMode === 'assignments' ? 'Assignment Depot' : viewMode === 'analytics' ? 'Performance Analytics' : 'Academy Vault'}
@@ -774,12 +666,13 @@ const StudentAssignmentView = ({
                                 </button>
                             </div>
                         )}
-                        <div style={{ flex: 1, position: 'relative' }}>
+                        <div style={viewMode === 'assessment-hub' ? { width: 'min(980px, 94vw)', height: 'min(700px, 90vh)', position: 'relative' } : { flex: 1, position: 'relative' }}>
                             {renderActiveOverlay()}
                         </div>
                     </motion.div>
                 )}
             </AnimatePresence>
+            {showDeveloperProfiles && <div className="student-profile-modal"><section><header><div><span><FaCode /> Developer profiles</span><p>Connect the accounts you want KevRyn to track.</p></div><button onClick={() => setShowDeveloperProfiles(false)}><FaTimesCircle /></button></header><div className="student-profile-card__grid">{['github', 'leetcode', 'hackerrank', 'codechef'].map(platform => <label key={platform}>{platform === 'github' ? 'GitHub' : platform === 'leetcode' ? 'LeetCode' : platform === 'hackerrank' ? 'HackerRank' : 'CodeChef'} username<input type="text" value={devProfiles[platform] || ''} onChange={e => setDevProfiles({ ...devProfiles, [platform]: e.target.value })} placeholder={`Enter ${platform} handle`} /></label>)}</div><footer><button onClick={() => setShowDeveloperProfiles(false)}>Cancel</button><button className="primary" onClick={handleSaveProfiles} disabled={isSavingProfiles}>{isSavingProfiles ? 'Saving…' : 'Save profiles'}</button></footer></section></div>}
         </div>
     );
 };

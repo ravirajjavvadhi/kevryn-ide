@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const AssignmentSchema = new mongoose.Schema({
     collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
+    createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' }, // Optional now
     batchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch' }, // Optional
 
@@ -37,5 +38,6 @@ const AssignmentSchema = new mongoose.Schema({
 // PERFORMANCE: Indexes for fast scoping
 AssignmentSchema.index({ courseId: 1 });
 AssignmentSchema.index({ collegeId: 1 });
+AssignmentSchema.index({ collegeId: 1, targetDepartment: 1, targetYear: 1, targetSection: 1, endTime: 1 });
 
 module.exports = mongoose.model('Assignment', AssignmentSchema);
