@@ -204,11 +204,13 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
             buildFacultyOverview({ collegeId: req.user.collegeId, facultyId: req.user.userId }),
             identifier ? buildStudentReport({ collegeId: req.user.collegeId, identifier, facultyId: req.user.userId }) : Promise.resolve(null)
         ]);
-        const systemContext = `You are KevRyn Faculty Intelligence. Answer only from the verified, faculty-authorized records below. You may explain operational implications, but never invent students, scores, sessions, or attendance. A roll number is the student's username. If STUDENT REPORT says not found, state its reason exactly. Do not output raw markdown tables because the application renders verified report cards. Keep the answer concise and actionable.\n\nFACULTY OVERVIEW:\n${JSON.stringify(overview)}\n\nSTUDENT REPORT:\n${JSON.stringify(studentReport)}`;
+        const systemContext = `You are KevRyn Faculty Intelligence. Answer only from the verified, faculty-authorized records below. You may explain operational implications, but never invent students, scores, sessions, or attendance. A roll number is the student's username. If STUDENT REPORT says not found, state its reason exactly. Do not output raw markdown tables because the application renders verified report cards. Keep the answer concise and actionable.\n\nFACULTY OVERVIEW:\n${JSON.stringify(overview.llmContext)}\n\nSTUDENT REPORT:\n${JSON.stringify(studentReport?.llmContext || studentReport)}`;
 
         const fullMessages = [
             { role: 'system', content: systemContext },
-            ...messages.map(m => ({ role: m.role, content: m.content }))
+            // Bound history too: provider limits should never be consumed by a
+            // long conversation when current verified data is available.
+            ...messages.slice(-6).map(m => ({ role: m.role, content: String(m.content || '').slice(0, 2000) }))
         ];
 
         // Use the stronger provider path for reports and student intelligence.
@@ -227,9 +229,23 @@ router.post('/faculty-assistant', authenticate, async (req, res, next) => {
 
         // A failed exact roll-number lookup is a verified database result. Do
         // not make the faculty wait for an LLM just to repeat that fact.
-        const result = studentReport && !studentReport.found
-            ? { content: studentReport.reason, model: 'verified-records' }
-            : await aiService.chat(fullMessages, { modelCategory, role: 'faculty' });
+        let result;
+        if (studentReport && !studentReport.found) {
+            result = { content: studentReport.reason, model: 'verified-records' };
+        } else {
+            try {
+                result = await aiService.chat(fullMessages, { modelCategory, role: 'faculty' });
+            } catch (providerError) {
+                console.warn('[Faculty Assistant Provider Fallback]', providerError.message);
+                const source = studentReport?.llmContext || overview.llmContext;
+                result = {
+                    content: studentReport
+                        ? `Verified report for ${studentReport.student.rollNumber || studentReport.student.username}: ${studentReport.summary.labsAttended}/${studentReport.summary.labsAssigned} labs attended, ${studentReport.summary.attendancePercentage}% attendance, ${studentReport.summary.submissions}/${studentReport.summary.assignmentsAvailable} submissions, and ${studentReport.summary.averageScore === null ? 'no graded average yet' : `${studentReport.summary.averageScore}% average score`}.`
+                        : `Verified faculty overview: ${source.summary.liveLabs} live labs, ${source.summary.recentLabs} recent labs, ${source.summary.attendancePercentage}% attendance, and ${source.summary.weeklySlots} weekly timetable slots.`,
+                    model: 'verified-records'
+                };
+            }
+        }
 
         const safeContent = result.content || "[Tool execution completed successfully]";
 

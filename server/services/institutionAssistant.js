@@ -63,8 +63,13 @@ async function buildStudentReport({ collegeId, identifier, facultyId = null }) {
         : { ...scope, targetDepartment: student.department, targetYear: student.year, targetSection: student.section };
     const assignments = await Assignment.find(assignmentScope).select('title subjectName maxPoints endTime').lean();
     const assignmentIds = assignments.map(item => item._id);
+    // Never load submitted source code or other large payloads into the
+    // intelligence context.  The UI only needs factual submission metadata.
     const submissions = assignmentIds.length
-        ? await Submission.find({ ...scope, studentUsername: student.username, assignmentId: { $in: assignmentIds } }).populate('assignmentId', 'title subjectName maxPoints').sort({ submittedAt: -1 }).lean()
+        ? await Submission.find({ ...scope, studentUsername: student.username, assignmentId: { $in: assignmentIds } })
+            .select('assignmentId status score maxScore submittedAt gradedAt timeSpentSeconds tabSwitches fullScreenExits')
+            .populate('assignmentId', 'title subjectName maxPoints')
+            .sort({ submittedAt: -1 }).limit(12).lean()
         : [];
     const graded = submissions.filter(item => ['submitted', 'graded'].includes(item.status));
     const averageScore = graded.length ? Math.round(graded.reduce((sum, item) => sum + ((item.score / (item.maxScore || 100)) * 100), 0) / graded.length) : null;
@@ -94,8 +99,16 @@ async function buildStudentReport({ collegeId, identifier, facultyId = null }) {
             rows: submissions.slice(0, 8).map(item => [item.assignmentId?.title || 'Assignment', item.assignmentId?.subjectName || '—', item.status || 'Draft', item.status === 'graded' || item.status === 'submitted' ? `${item.score}/${item.maxScore || item.assignmentId?.maxPoints || 100}` : '—'])
         }
     ];
+    const summary = { labsAssigned: sessions.length, labsAttended: attended, attendancePercentage, assignmentsAvailable: assignments.length, submissions: submissions.length, averageScore };
+    const llmContext = {
+        student: { rollNumber: student.rollNumber || student.username, username: student.username, department: student.department, year: student.year, section: student.section, active: student.isActiveStudent !== false },
+        summary,
+        recentLabs: sessions.slice(0, 6).map(session => ({ name: session.sessionName || session.subject || 'Lab', subject: session.subject || null, status: session.isActive ? 'Live' : 'Completed', startedAt: session.startTime || null, durationMinutes: durationMinutes(session), attendance: presentIn(session, username) ? 'Present' : 'Absent' })),
+        recentSubmissions: submissions.slice(0, 6).map(item => ({ title: item.assignmentId?.title || 'Assignment', subject: item.assignmentId?.subjectName || null, status: item.status || 'Draft', score: item.score ?? null, maxScore: item.maxScore || item.assignmentId?.maxPoints || null, submittedAt: item.submittedAt || null }))
+    };
     return {
-        found: true, student, sessions, submissions, summary: { labsAssigned: sessions.length, labsAttended: attended, attendancePercentage, assignmentsAvailable: assignments.length, submissions: submissions.length, averageScore },
+        found: true, student, sessions, submissions, summary,
+        llmContext,
         blocks, freshness: new Date().toISOString()
     };
 }
@@ -113,8 +126,20 @@ async function buildFacultyOverview({ collegeId, facultyId }) {
         const result = attendanceFor(session);
         return { attended: total.attended + result.attended, expected: total.expected + result.expected };
     }, { attended: 0, expected: 0 });
+    const summarizeSession = session => {
+        const value = attendanceFor(session);
+        return { name: session.sessionName || session.subject || 'Lab', subject: session.subject || null, status: session.isActive ? 'Live' : 'Completed', startedAt: session.startTime || null, endedAt: session.endTime || null, durationMinutes: durationMinutes(session), attended: value.attended, expected: value.expected };
+    };
+    const attendancePercentage = attendance.expected ? Math.round((attendance.attended / attendance.expected) * 100) : 0;
+    const llmContext = {
+        summary: { liveLabs: live.length, recentLabs: sessions.length, attendancePercentage, weeklySlots: ownTimetable.length },
+        liveLabs: live.slice(0, 4).map(summarizeSession),
+        recentLabs: sessions.filter(session => !session.isActive).slice(0, 6).map(summarizeSession),
+        upcomingTimetable: ownTimetable.slice(0, 8).map(item => ({ subject: item.subjectName || 'Subject', day: item.dayOfWeek || null, startTime: item.startTime || null, endTime: item.endTime || null, room: item.labRoom || null }))
+    };
     return {
         sessions, live, recent, timetable: ownTimetable,
+        llmContext,
         blocks: [
             { type: 'kpis', items: [kpi('Live labs', live.length, live.length ? 'success' : 'neutral'), kpi('Recent labs', sessions.length, 'primary'), kpi('Attendance', attendance.expected ? `${Math.round((attendance.attended / attendance.expected) * 100)}%` : '—', 'primary'), kpi('Weekly slots', ownTimetable.length, 'neutral')] },
             { type: 'table', title: 'Your recent sessions', columns: ['Lab', 'Status', 'Attendance', 'Started'], rows: sessions.slice(0, 6).map(session => { const value = attendanceFor(session); return [session.sessionName || session.subject || 'Lab', session.isActive ? 'Live' : 'Completed', `${value.attended}/${value.expected}`, session.startTime ? new Date(session.startTime).toLocaleString() : '—']; }) }
