@@ -34,6 +34,8 @@ const StudentAssignmentView = ({
     const [announcements, setAnnouncements] = useState([]);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [assessmentTab, setAssessmentTab] = useState('todo');
+    const [schedule, setSchedule] = useState([]);
+    const [showSchedule, setShowSchedule] = useState(false);
 
     // NEW: Developer Identity
     const [devProfiles, setDevProfiles] = useState({ github: '', leetcode: '', hackerrank: '', codechef: '' });
@@ -59,6 +61,7 @@ const StudentAssignmentView = ({
         fetchDeveloperProfiles();
         fetchCommandSummary();
         fetchAnnouncements();
+        fetchSchedule();
 
         // Fullscreen Listener
         const handleFullscreenChange = () => {
@@ -105,6 +108,11 @@ const StudentAssignmentView = ({
     const fetchAnnouncements = async () => {
         try { setAnnouncements((await api.get('/api/broadcasts/active')).data || []); }
         catch (e) { console.error('Failed to load announcements', e); }
+    };
+
+    const fetchSchedule = async () => {
+        try { setSchedule((await api.get('/api/timetable/my-schedule/student')).data || []); }
+        catch (e) { console.error('Failed to load student timetable', e); }
     };
 
     // The home count and assessment popup deliberately share this one rule.
@@ -294,7 +302,7 @@ const StudentAssignmentView = ({
                 <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{insight.labsAttended ?? '—'} / {insight.labsConducted ?? '—'}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{insight.attendancePercentage ?? '—'}%</b></span></div><div><FaGraduationCap /><span>Courses<b>{insight.coursesEnrolled ?? courses.length}</b></span></div><div><FaClipboardList /><span>Pending work<b>{pendingCount}</b></span></div></section>
                 <section className="student-command-content-grid">
                     <button className="student-command-assessment-card" onClick={() => { setAssessmentTab('todo'); setViewMode('assessment-hub'); }}><div className="student-command-assessment-copy"><div className="student-command-assessment-icon"><FaClipboardList /></div><div><h2>Assignments &amp; Aptitude</h2><p>Everything due, submitted, and scheduled in one place.</p><span className="student-command-chip urgent">{pendingCount} to do</span><span className="student-command-chip">{activeAptitudeSession ? '1 active test' : 'Aptitude history ready'}</span><span className="student-command-chip success">{submissions.length} submitted</span><strong>Open assessment hub →</strong></div></div><div className="student-command-task-preview"><span>Up next</span><b>{nextTask?.title || 'You are up to date'}</b><small>{nextTask ? `${nextTask.subjectName || nextTask.courseId?.name || 'Assignment'} · ${nextTask.maxPoints || 100} marks` : 'New cohort work will appear here automatically.'}</small><div><i style={{ width: `${Math.min(100, Math.max(12, (submissions.length / Math.max(1, submissions.length + pendingCount)) * 100))}%` }} /></div><em>{pendingCount ? `${pendingCount} item${pendingCount === 1 ? '' : 's'} waiting` : 'No pending work'}</em></div></button>
-                    <aside className="student-command-sidecards"><button onClick={activeSessionId ? onEnterLab : () => {}} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCalendarAlt /></span><span><b>{activeSessionId ? 'Lab ready now' : 'Next lab'}</b><small>{activeSessionId ? 'Your monitored lab is ready to join.' : 'Your timetable appears here when scheduled.'}</small><em>{activeSessionId ? 'Join lab →' : 'View schedule'}</em></span></button><button onClick={() => { setAssessmentTab('submitted'); setViewMode('assessment-hub'); }} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaHistory /></span><span><b>Recent results</b><small>{insight.averageScore === null || insight.averageScore === undefined ? 'No graded work yet' : `Average score: ${insight.averageScore}%`}</small><em>{submissions.length} submissions →</em></span></button><button onClick={() => setShowDeveloperProfiles(true)} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCode /></span><span><b>Developer profiles</b><small>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} connected` : 'GitHub, LeetCode, HackerRank, CodeChef'}</small><em>Manage profiles →</em></span></button></aside>
+                    <aside className="student-command-sidecards"><button onClick={activeSessionId ? onEnterLab : () => setShowSchedule(true)} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCalendarAlt /></span><span><b>{activeSessionId ? 'Lab ready now' : 'Next lab'}</b><small>{activeSessionId ? 'Your monitored lab is ready to join.' : schedule.length ? `${schedule.length} scheduled lab${schedule.length === 1 ? '' : 's'} in your timetable.` : 'No labs scheduled for your cohort yet.'}</small><em>{activeSessionId ? 'Join lab →' : 'View schedule →'}</em></span></button><button onClick={() => { setAssessmentTab('submitted'); setViewMode('assessment-hub'); }} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaHistory /></span><span><b>Recent results</b><small>{insight.averageScore === null || insight.averageScore === undefined ? 'No graded work yet' : `Average score: ${insight.averageScore}%`}</small><em>{submissions.length} submissions →</em></span></button><button onClick={() => setShowDeveloperProfiles(true)} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCode /></span><span><b>Developer profiles</b><small>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} connected` : 'GitHub, LeetCode, HackerRank, CodeChef'}</small><em>Manage profiles →</em></span></button></aside>
                 </section>
             </main>
         </div>;
@@ -684,6 +692,7 @@ const StudentAssignmentView = ({
                 )}
             </AnimatePresence>
             {showDeveloperProfiles && <div className="student-profile-modal"><section><header><div><span><FaCode /> Developer profiles</span><p>Connect the accounts you want KevRyn to track.</p></div><button onClick={() => setShowDeveloperProfiles(false)}><FaTimesCircle /></button></header><div className="student-profile-card__grid">{['github', 'leetcode', 'hackerrank', 'codechef'].map(platform => <label key={platform}>{platform === 'github' ? 'GitHub' : platform === 'leetcode' ? 'LeetCode' : platform === 'hackerrank' ? 'HackerRank' : 'CodeChef'} username<input type="text" value={devProfiles[platform] || ''} onChange={e => setDevProfiles({ ...devProfiles, [platform]: e.target.value })} placeholder={`Enter ${platform} handle`} /></label>)}</div><footer><button onClick={() => setShowDeveloperProfiles(false)}>Cancel</button><button className="primary" onClick={handleSaveProfiles} disabled={isSavingProfiles}>{isSavingProfiles ? 'Saving…' : 'Save profiles'}</button></footer></section></div>}
+            {showSchedule && <div className="student-profile-modal"><section className="student-schedule-modal"><header><div><span><FaCalendarAlt /> My timetable</span><p>Your scheduled labs for {commandSummary?.identity?.department || 'your'} · Year {commandSummary?.identity?.year || '—'} · Section {commandSummary?.identity?.section || '—'}.</p></div><button onClick={() => setShowSchedule(false)}><FaTimesCircle /></button></header><div className="student-schedule-modal__list">{schedule.length ? schedule.map(item => <article key={item._id}><span>{item.dayOfWeek?.slice(0, 3)}</span><div><b>{item.subjectName}</b><small>{item.startTime} – {item.endTime} · {item.labRoom || 'Lab room pending'}</small><small>Faculty: {item.facultyId?.username || 'To be assigned'}</small></div></article>) : <p>No timetable has been scheduled for your cohort yet.</p>}</div><footer><button className="primary" onClick={() => setShowSchedule(false)}>Done</button></footer></section></div>}
         </div>
     );
 };
