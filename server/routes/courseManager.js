@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const Course = require('../models/Course');
 const Batch = require('../models/Batch');
 const User = require('../User');
@@ -290,10 +291,16 @@ router.get('/student/enrolled-courses', authenticate, async (req, res) => {
 // old placeholder stats without exposing another student's data.
 router.get('/student/command-summary', authenticate, async (req, res) => {
     try {
-        if (req.user.role !== 'student') return res.status(403).json({ error: 'Students only' });
-        const student = await User.findById(req.user.userId).select('username rollNumber name department year section enrolledBatches collegeId').lean();
+        // Resolve against both claims carried by old desktop tokens. This keeps
+        // an existing signed-in student working after a desktop upgrade while
+        // still returning only their own document.
+        const identityQuery = [];
+        if (req.user.userId && mongoose.Types.ObjectId.isValid(req.user.userId)) identityQuery.push({ _id: req.user.userId });
+        if (req.user.username) identityQuery.push({ username: req.user.username });
+        const student = await User.findOne({ role: 'student', $or: identityQuery }).select('username rollNumber name department year section enrolledBatches collegeId').lean();
         if (!student) return res.status(404).json({ error: 'Student not found' });
-        const scope = req.user.collegeId ? { collegeId: req.user.collegeId } : {};
+        if (req.user.collegeId && student.collegeId && String(req.user.collegeId) !== String(student.collegeId)) return res.status(403).json({ error: 'College access denied' });
+        const scope = student.collegeId ? { collegeId: student.collegeId } : {};
         const cohort = { targetDepartment: student.department, targetYear: student.year, targetSection: student.section };
         const [courses, labs, cohortAssignments, collegeAssignmentIds, aptitude] = await Promise.all([
             Course.find({ ...scope, department: student.department, year: student.year }).select('name code').lean(),

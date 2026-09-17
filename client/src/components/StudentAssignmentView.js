@@ -31,6 +31,8 @@ const StudentAssignmentView = ({
     const [userStats, setUserStats] = useState({ completed: 0, points: 0, rank: 'Novice' });
     const [selectedAnalyticsSubmission, setSelectedAnalyticsSubmission] = useState(null);
     const [commandSummary, setCommandSummary] = useState(null);
+    const [summaryState, setSummaryState] = useState('loading');
+    const [summaryError, setSummaryError] = useState('');
     const [announcements, setAnnouncements] = useState([]);
     const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
     const [assessmentTab, setAssessmentTab] = useState('todo');
@@ -52,7 +54,7 @@ const StudentAssignmentView = ({
     const [isFullscreen, setIsFullscreen] = useState(false);
     const [proctorWarning, setProctorWarning] = useState('');
 
-    const api = axios.create({ baseURL: serverUrl, headers: { Authorization: token } });
+    const api = axios.create({ baseURL: serverUrl, headers: { Authorization: token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '' } });
 
     useEffect(() => {
         fetchEnrolledCourses();
@@ -101,8 +103,16 @@ const StudentAssignmentView = ({
     }, [activeBroadcast]);
 
     const fetchCommandSummary = async () => {
-        try { setCommandSummary((await api.get('/api/student/command-summary')).data); }
-        catch (e) { console.error('Failed to load command summary', e); }
+        setSummaryState('loading');
+        try {
+            setCommandSummary((await api.get('/api/student/command-summary')).data);
+            setSummaryState('ready'); setSummaryError('');
+        } catch (e) {
+            const status = e.response?.status;
+            const message = e.response?.data?.error || (status === 401 ? 'Your sign-in has expired. Please sign out and sign in again.' : 'Could not load your learning records.');
+            console.error('Failed to load command summary', e);
+            setSummaryState('error'); setSummaryError(message);
+        }
     };
 
     const fetchAnnouncements = async () => {
@@ -299,7 +309,8 @@ const StudentAssignmentView = ({
             </header>
             <main className="student-command-main">
                 <div className="student-command-welcome"><div><span>Learning workspace</span><h1>Good to see you, <em>{identity.rollNumber || localStorage.getItem('username') || 'Student'}</em></h1><p>Your labs, assessments, and progress in one clear place.</p></div>{activeSessionId && <button className="student-command-live" onClick={onEnterLab}><FaTerminal /> Join live lab</button>}</div>
-                <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{insight.labsAttended ?? '—'} / {insight.labsConducted ?? '—'}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{insight.attendancePercentage ?? '—'}%</b></span></div><div><FaGraduationCap /><span>Courses<b>{insight.coursesEnrolled ?? courses.length}</b></span></div><div><FaClipboardList /><span>Pending work<b>{pendingCount}</b></span></div></section>
+                {summaryState !== 'ready' && <section className={`student-command-data-state ${summaryState}`}><span>{summaryState === 'loading' ? 'Loading your courses, labs, and attendance…' : summaryError}</span>{summaryState === 'error' && <button onClick={fetchCommandSummary}>Retry</button>}</section>}
+                <section className="student-command-insights"><div><FaBook /><span>Labs attended<b>{summaryState === 'loading' ? '…' : `${insight.labsAttended ?? '—'} / ${insight.labsConducted ?? '—'}`}</b></span></div><div><FaCheckCircle /><span>Attendance<b>{summaryState === 'loading' ? '…' : `${insight.attendancePercentage ?? '—'}%`}</b></span></div><div><FaGraduationCap /><span>Courses<b>{summaryState === 'loading' ? '…' : (insight.coursesEnrolled ?? courses.length)}</b></span></div><div><FaClipboardList /><span>Pending work<b>{summaryState === 'loading' ? '…' : pendingCount}</b></span></div></section>
                 <section className="student-command-content-grid">
                     <button className="student-command-assessment-card" onClick={() => { setAssessmentTab('todo'); setViewMode('assessment-hub'); }}><div className="student-command-assessment-copy"><div className="student-command-assessment-icon"><FaClipboardList /></div><div><h2>Assignments &amp; Aptitude</h2><p>Everything due, submitted, and scheduled in one place.</p><span className="student-command-chip urgent">{pendingCount} to do</span><span className="student-command-chip">{activeAptitudeSession ? '1 active test' : 'Aptitude history ready'}</span><span className="student-command-chip success">{submissions.length} submitted</span><strong>Open assessment hub →</strong></div></div><div className="student-command-task-preview"><span>Up next</span><b>{nextTask?.title || 'You are up to date'}</b><small>{nextTask ? `${nextTask.subjectName || nextTask.courseId?.name || 'Assignment'} · ${nextTask.maxPoints || 100} marks` : 'New cohort work will appear here automatically.'}</small><div><i style={{ width: `${Math.min(100, Math.max(12, (submissions.length / Math.max(1, submissions.length + pendingCount)) * 100))}%` }} /></div><em>{pendingCount ? `${pendingCount} item${pendingCount === 1 ? '' : 's'} waiting` : 'No pending work'}</em></div></button>
                     <aside className="student-command-sidecards"><button onClick={activeSessionId ? onEnterLab : () => setShowSchedule(true)} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCalendarAlt /></span><span><b>{activeSessionId ? 'Lab ready now' : 'Next lab'}</b><small>{activeSessionId ? 'Your monitored lab is ready to join.' : schedule.length ? `${schedule.length} scheduled lab${schedule.length === 1 ? '' : 's'} in your timetable.` : 'No labs scheduled for your cohort yet.'}</small><em>{activeSessionId ? 'Join lab →' : 'View schedule →'}</em></span></button><button onClick={() => { setAssessmentTab('submitted'); setViewMode('assessment-hub'); }} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaHistory /></span><span><b>Recent results</b><small>{insight.averageScore === null || insight.averageScore === undefined ? 'No graded work yet' : `Average score: ${insight.averageScore}%`}</small><em>{submissions.length} submissions →</em></span></button><button onClick={() => setShowDeveloperProfiles(true)} className="student-command-sidecard"><span className="student-command-sidecard__icon"><FaCode /></span><span><b>Developer profiles</b><small>{Object.values(devProfiles).filter(Boolean).length ? `${Object.values(devProfiles).filter(Boolean).length} connected` : 'GitHub, LeetCode, HackerRank, CodeChef'}</small><em>Manage profiles →</em></span></button></aside>
