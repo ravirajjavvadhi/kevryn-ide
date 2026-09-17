@@ -502,16 +502,15 @@ app.get('/files', authenticate, async (req, res) => {
     try {
         const { courseId } = req.query;
         const userId = req.user.userId;
-        const username = req.user.username;
-
         const ownerId = mongoose.Types.ObjectId.isValid(userId) ? new mongoose.Types.ObjectId(userId) : userId;
 
-        // Build the base ownership filter
+        // A personal workspace belongs only to its authenticated owner.  Lab
+        // supervision uses LabSessionArtifact, not the personal File store.
+        // Do not surface legacy sharedWith records here.
         const ownerFilter = {
             $or: [
                 { owner: ownerId },
-                { owner: userId }, // String fallback
-                { sharedWith: username }
+                { owner: userId } // String fallback for legacy records
             ]
         };
 
@@ -540,13 +539,13 @@ app.get('/files', authenticate, async (req, res) => {
             };
         }
 
-        console.log(`[FILES] Query for ${username} (${userId}):`, JSON.stringify(query, null, 2));
+        console.log(`[FILES] Query for authenticated user ${userId}`);
 
         const files = await File.find(query)
             .select('name type parentId owner sharedWith courseId lastActivity') // Remove 'content' for performance
             .lean();
 
-        console.log(`[FILES] Found ${files.length} files for ${username}`);
+        console.log(`[FILES] Found ${files.length} private workspace files`);
         res.json(files);
     } catch (err) {
         console.error("[FILES ERROR]", err.message, err.stack);
@@ -2801,16 +2800,15 @@ app.post('/files', authenticate, async (req, res) => {
 // --- FILE LIST (MOVED TO TOP) ---
 app.get('/files/:id', authenticate, async (req, res) => {
     try {
-        const file = await File.findOne({ _id: req.params.id, $or: [{ owner: req.user.userId }, { sharedWith: req.user.username }] });
+        const ownerId = mongoose.Types.ObjectId.isValid(req.user.userId) ? new mongoose.Types.ObjectId(req.user.userId) : req.user.userId;
+        const file = await File.findOne({ _id: req.params.id, $or: [{ owner: ownerId }, { owner: req.user.userId }] });
         if (!file) return res.status(404).json({ error: "File not found" });
         res.json(file);
     } catch (err) {
         res.status(500).json({ error: "Error fetching file" });
     }
 });
-app.post('/share', authenticate, async (req, res) => { /* Keep existing */
-    try { const { fileId, targetUsername } = req.body; const user = await User.findOne({ username: targetUsername }); if (!user) return res.status(404).json({ error: "User not found" }); await File.findOneAndUpdate({ _id: fileId, owner: req.user.userId }, { $addToSet: { sharedWith: targetUsername } }); res.json({ message: "Shared" }); } catch (err) { res.status(500).json({ error: "Error" }); }
-});
+app.post('/share', authenticate, (req, res) => res.status(403).json({ error: 'Personal workspace sharing is disabled. Lab supervision uses session-only reports.' }));
 app.delete('/files/:id', authenticate, async (req, res) => {
     try {
         // Find the file first to check ownership vs shared status
@@ -2825,10 +2823,6 @@ app.delete('/files/:id', authenticate, async (req, res) => {
             const p = path.join(userDir, relativePath || file.name);
             if (fs.existsSync(p)) fs.unlinkSync(p);
             return res.json({ message: "Deleted" });
-        } else if (file.sharedWith.includes(req.user.username)) {
-            // IF COLLABORATOR: Just remove from sharedWith (Unshare)
-            await File.findByIdAndUpdate(req.params.id, { $pull: { sharedWith: req.user.username } });
-            return res.json({ message: "Unshared" });
         } else {
             return res.status(403).json({ error: "Access denied" });
         }
@@ -2887,14 +2881,9 @@ app.put('/files/:id', authenticate, async (req, res) => {
             }
         }
 
+        const ownerId = mongoose.Types.ObjectId.isValid(req.user.userId) ? new mongoose.Types.ObjectId(req.user.userId) : req.user.userId;
         const file = await File.findOneAndUpdate(
-            {
-                _id: req.params.id,
-                $or: [
-                    { owner: req.user.userId },
-                    { sharedWith: req.user.username }
-                ]
-            },
+            { _id: req.params.id, $or: [{ owner: ownerId }, { owner: req.user.userId }] },
             updateFields,
             { new: true }
         );
@@ -3101,11 +3090,24 @@ app.post('/project/sync', authenticate, async (req, res) => { /* Keep existing *
 
 io.on('connection', (socket) => {
     socket.on('register-user', (u) => socket.join(u));
-    socket.on('join-file', async (fid) => { socket.join(fid); const f = await File.findById(fid); if (f) socket.emit('receive-code', f.content); });
+    socket.on('join-file', async (fid) => {
+        try {
+            if (!socket.user?.userId || !mongoose.Types.ObjectId.isValid(fid)) return;
+            const ownerId = mongoose.Types.ObjectId.isValid(socket.user.userId) ? new mongoose.Types.ObjectId(socket.user.userId) : socket.user.userId;
+            const file = await File.findOne({ _id: fid, $or: [{ owner: ownerId }, { owner: socket.user.userId }] });
+            if (!file) return;
+            socket.join(fid);
+            socket.emit('receive-code', { fileId: fid, newCode: file.content });
+        } catch (error) { console.error('[FILE ROOM] Join denied:', error.message); }
+    });
     const lastTimelineSnapshots = {}; // { fileId: timestamp }
 
     socket.on('code-change', async ({ fileId, newCode, userId }) => {
         try {
+            if (!socket.user?.userId || !mongoose.Types.ObjectId.isValid(fileId)) return;
+            const ownerId = mongoose.Types.ObjectId.isValid(socket.user.userId) ? new mongoose.Types.ObjectId(socket.user.userId) : socket.user.userId;
+            const ownedFile = await File.findOne({ _id: fileId, $or: [{ owner: ownerId }, { owner: socket.user.userId }] }).select('_id');
+            if (!ownedFile) return;
             // 1. Broadcast to others immediately for low latency
             socket.to(fileId).emit('receive-code', newCode);
 
@@ -3116,7 +3118,7 @@ io.on('connection', (socket) => {
 
             if (now - lastUpdate > 1000) { // 1 second throttling for DB persistence
                 lastTimelineSnapshots[fileId + '_db'] = now;
-                await File.findByIdAndUpdate(fileId, { content: newCode });
+                await File.updateOne({ _id: fileId, $or: [{ owner: ownerId }, { owner: socket.user.userId }] }, { content: newCode });
             }
 
             // --- THROTTLED TIMELINE: Save history snapshot every 5 minutes of active typing ---
@@ -3126,7 +3128,7 @@ io.on('connection', (socket) => {
                 const history = new FileHistory({
                     fileId,
                     content: newCode,
-                    savedBy: userId
+                    savedBy: socket.user.userId
                 });
                 await history.save();
                 console.log(`[TIMELINE] Auto-snapshot for ${fileId}`);

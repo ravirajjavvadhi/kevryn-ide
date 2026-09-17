@@ -1441,9 +1441,15 @@ function App() {
                 // 1. Update cache in state
                 setOpenFiles(prev => prev.map(f => f._id === prevFileId ? { ...f, content: latestContent } : f));
                 
-                // 2. Persist to DB and Disk
-                api.put(`/files/${prevFileId}`, { content: latestContent }).catch(() => {});
-                safeEmit('save-file-disk', { fileName: prevFileName, code: latestContent, userId, fileId: prevFileId });
+                // 2. A desktop workspace is local-only.  It must never turn a
+                // local path into a cloud file or broadcast it through the
+                // shared editing socket while switching tabs.
+                if (!window.__KEVRYN_DESKTOP__) {
+                    api.put(`/files/${prevFileId}`, { content: latestContent }).catch(() => {});
+                    safeEmit('save-file-disk', { fileName: prevFileName, code: latestContent, userId, fileId: prevFileId });
+                } else if (localWorkspacePath && window.electronAPI) {
+                    window.electronAPI.writeLocalFile(prevFileId, latestContent).catch(() => {});
+                }
                 
                 // 3. Clear any pending auto-saves
                 if (autoSaveTimeoutRef.current) { clearTimeout(autoSaveTimeoutRef.current); autoSaveTimeoutRef.current = null; }
@@ -1494,7 +1500,8 @@ function App() {
             }
 
             isRemoteUpdate.current = false;
-            safeEmit('join-file', targetFile._id);
+            // Local desktop files are never joined to a server-side file room.
+            if (!window.__KEVRYN_DESKTOP__) safeEmit('join-file', targetFile._id);
 
             // --- SMART TERMINAL SWITCHING ---
             if (targetFile && targetFile.name) {
@@ -2778,11 +2785,15 @@ function App() {
                                                             setOpenFiles(prev => prev.map(f => f._id === activeFileId ? { ...f, content: v } : f));
                                                         }, 500);
 
-                                                        // Debounce Socket Sync
-                                                        if (codeSyncTimeoutRef.current) clearTimeout(codeSyncTimeoutRef.current);
-                                                        codeSyncTimeoutRef.current = setTimeout(() => {
-                                                            safeEmit('code-change', { fileId: activeFileId, newCode: v, userId });
-                                                        }, 400);
+                                                        // Browser workspaces may collaborate through the server.
+                                                        // A native desktop file is local and must not emit its
+                                                        // absolute path or content to that shared channel.
+                                                        if (!window.__KEVRYN_DESKTOP__) {
+                                                            if (codeSyncTimeoutRef.current) clearTimeout(codeSyncTimeoutRef.current);
+                                                            codeSyncTimeoutRef.current = setTimeout(() => {
+                                                                safeEmit('code-change', { fileId: activeFileId, newCode: v, userId });
+                                                            }, 400);
+                                                        }
 
                                                         // Debounce Auto-Save to DB
                                                         if (autoSaveTimeoutRef.current) {
@@ -2790,6 +2801,10 @@ function App() {
                                                         }
                                                         autoSaveTimeoutRef.current = setTimeout(async () => {
                                                             try {
+                                                                if (window.__KEVRYN_DESKTOP__ && localWorkspacePath && window.electronAPI) {
+                                                                    await window.electronAPI.writeLocalFile(activeFileId, v);
+                                                                    return;
+                                                                }
                                                                 await api.put(`/files/${activeFileId}`, { content: v });
                                                                 safeEmit('save-file-disk', { fileName: fileName, code: v, userId, fileId: activeFileId });
                                                             } catch (err) {

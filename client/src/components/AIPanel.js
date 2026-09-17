@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import axios from 'axios';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { FaBolt, FaCheck, FaChevronDown, FaCode, FaCopy, FaFileCode, FaHistory, FaKey, FaPaperPlane, FaPlus, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
+import { FaBolt, FaCheck, FaChevronDown, FaCode, FaCopy, FaFileCode, FaHistory, FaKey, FaPaperPlane, FaPaperclip, FaPlus, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
 
 const PROVIDERS = {
     'google-gemini': {
@@ -25,6 +25,11 @@ const makeId = () => (typeof window !== 'undefined' && window.crypto?.randomUUID
 const makeThread = () => ({ id: makeId(), title: 'New conversation', messages: [], updatedAt: Date.now() });
 const codeBlocks = content => [...String(content || '').matchAll(/```([^\n]*)\n([\s\S]*?)```/g)].map(match => ({ language: match[1].trim(), code: match[2].trim() }));
 const escapeRegExp = value => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+const DIRECT_ATTACHMENT_TYPES = new Set(['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'application/pdf']);
+const TEXT_ATTACHMENT_TYPES = /^(text\/|application\/(json|javascript|typescript|xml|yaml|x-yaml))/i;
+const TEXT_FILE_EXTENSIONS = /\.(?:txt|md|csv|json|js|jsx|ts|tsx|py|java|c|cc|cpp|h|hpp|html|css|xml|yml|yaml|go|rs|php|rb|cs|kt|swift|sh|ps1)$/i;
+const attachmentKind = mimeType => mimeType === 'application/pdf' ? 'PDF' : String(mimeType || '').startsWith('image/') ? 'Image' : 'File';
 const explicitWorkspaceAction = (prompt, earlierMessages, workspace) => {
     const wantsWrite = /\b(change|update|replace|modify|edit|write|rewrite|fix|create)\b/i.test(prompt);
     const wantsRun = /\b(run|execute|compile|test)\b/i.test(prompt);
@@ -65,6 +70,8 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
     const [models, setModels] = useState(() => ({ 'google-gemini': 'gemini-3.8-flash', 'groq-assistant': 'openai/gpt-oss-120b' }));
     const [input, setInput] = useState('');
     const [includeFile, setIncludeFile] = useState(false);
+    const [attachment, setAttachment] = useState(null);
+    const [attachmentError, setAttachmentError] = useState('');
     const [loading, setLoading] = useState({});
     const [status, setStatus] = useState({});
     const [activity, setActivity] = useState([]);
@@ -75,6 +82,7 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
     const [pendingProjectPlan, setPendingProjectPlan] = useState(null);
     const messagesRef = useRef(null);
     const composerInputRef = useRef(null);
+    const attachmentInputRef = useRef(null);
     const loadedRef = useRef(false);
     const sendRef = useRef(null);
     const permissionGrantsRef = useRef({});
@@ -91,7 +99,13 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
     useEffect(() => {
         try { permissionGrantsRef.current = JSON.parse(localStorage.getItem(`kevryn.desktop.ai.permissions.${userId || 'local'}`) || '{}'); } catch (_) { permissionGrantsRef.current = {}; }
     }, [userId]);
-    useEffect(() => { if (loadedRef.current) localStorage.setItem(storageKey, JSON.stringify(threads)); }, [threads, storageKey]);
+    // Image/PDF payloads can be large. Conversation history remembers their
+    // name, but never writes their raw contents into browser storage.
+    useEffect(() => {
+        if (!loadedRef.current) return;
+        const safeThreads = Object.fromEntries(Object.entries(threads).map(([providerId, providerThreads]) => [providerId, providerThreads.map(thread => ({ ...thread, messages: thread.messages.map(({ attachmentData, ...message }) => message) }))]));
+        localStorage.setItem(storageKey, JSON.stringify(safeThreads));
+    }, [threads, storageKey]);
     useEffect(() => { if (loadedRef.current) localStorage.setItem(modelKey, JSON.stringify(models)); }, [models, modelKey]);
 
     const providerThreads = threads[provider] || [];
@@ -147,19 +161,53 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
         prompt.resolve(scope !== 'deny');
     };
 
+    const attachFile = file => {
+        if (!file) return;
+        const sourceMimeType = file.type || 'application/octet-stream';
+        const mimeType = TEXT_ATTACHMENT_TYPES.test(sourceMimeType) || DIRECT_ATTACHMENT_TYPES.has(sourceMimeType)
+            ? sourceMimeType
+            : TEXT_FILE_EXTENSIONS.test(file.name || '') ? 'text/plain' : sourceMimeType;
+        if (!DIRECT_ATTACHMENT_TYPES.has(mimeType) && !TEXT_ATTACHMENT_TYPES.test(mimeType)) {
+            setAttachmentError('Attach an image, PDF, or plain-text/code file.');
+            return;
+        }
+        if (file.size > MAX_ATTACHMENT_BYTES) {
+            setAttachmentError('Use an attachment smaller than 10 MB.');
+            return;
+        }
+        if (TEXT_ATTACHMENT_TYPES.test(mimeType) && file.size > 250 * 1024) {
+            setAttachmentError('Use a text or code file smaller than 250 KB.');
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = () => {
+            const data = String(reader.result || '');
+            setAttachment({ name: file.name || `attached-${attachmentKind(mimeType).toLowerCase()}`, mimeType, data, isImage: mimeType.startsWith('image/') });
+            setAttachmentError('');
+        };
+        reader.onerror = () => setAttachmentError('Could not read that attachment. Please try again.');
+        reader.readAsDataURL(file);
+    };
+
     const sendMessage = async eventOrPrompt => {
         const automatedAction = eventOrPrompt && typeof eventOrPrompt === 'object' && typeof eventOrPrompt.prompt === 'string' ? eventOrPrompt : null;
         const automatedPrompt = typeof eventOrPrompt === 'string' ? eventOrPrompt : null;
         if (!automatedPrompt && !automatedAction) eventOrPrompt?.preventDefault();
         const text = (automatedAction?.prompt || automatedPrompt || input).trim();
-        if (!text || isLoading) return;
+        if ((!text && !attachment) || isLoading) return;
         const providerId = provider;
+        if (attachment && providerId !== 'google-gemini') {
+            setAttachmentError('Image and file analysis is available with Google Gemini. Select Gemini, then send this attachment.');
+            return;
+        }
         const thread = activeThread || createThread(providerId);
         const threadId = thread.id;
         const requestId = makeId();
         setInput(''); setLoading(previous => ({ ...previous, [providerId]: true })); setStatus(previous => ({ ...previous, [providerId]: 'Connecting…' }));
         setActivity(['Preparing workspace context']);
-        addMessage(providerId, threadId, { id: makeId(), role: 'user', content: text, createdAt: Date.now() });
+        addMessage(providerId, threadId, { id: makeId(), role: 'user', content: text || `Please analyse the attached ${attachmentKind(attachment?.mimeType).toLowerCase()}.`, attachmentName: attachment?.name, attachmentKind: attachment ? attachmentKind(attachment.mimeType) : null, attachmentData: attachment?.data, createdAt: Date.now() });
+        const outgoingAttachment = attachment;
+        setAttachment(null); setAttachmentError('');
         const assistantId = makeId();
         addMessage(providerId, threadId, { id: assistantId, role: 'assistant', content: '', createdAt: Date.now(), streaming: true });
         try {
@@ -274,6 +322,7 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
             // Desktop agents are workspace-aware by default. The checkbox is now an
             // explicit "include full file" override for very large/unsaved buffers.
             const context = { model: models[providerId], requestId, workspace, relatedFiles, searchResults, fileName, language, editorContext, actionRequest, projectPlan: pendingProjectPlan?.plan || null,
+                attachment: outgoingAttachment ? { name: outgoingAttachment.name, mimeType: outgoingAttachment.mimeType, data: outgoingAttachment.data } : null,
                 code: code || '', includeFullFile: includeFile };
             setActivity(previous => [...previous, `Asking ${PROVIDERS[providerId].name}`]);
             await window.electronAPI.chatWithAgent(providerId, text, context);
@@ -309,12 +358,12 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
         <div className="ai-conversation" ref={messagesRef} onScroll={onScroll}>
             {messages.length === 0 ? <div className="ai-empty-state"><div className="ai-empty-icon"><FaRobot /></div><h2>Start a conversation</h2><p>Choose a model, ask for help, or attach the current file when you want coding context.</p><button onClick={onOpenSettings}><FaKey /> Manage personal API keys</button></div> : messages.map(message => {
                 const blocks = codeBlocks(message.content); const primary = blocks[0]; const command = ['bash', 'shell', 'powershell', 'cmd'].includes(primary?.language?.toLowerCase());
-                return <article className={`ai-chat-message ${message.role}`} key={message.id}><div className="ai-chat-avatar">{message.role === 'user' ? 'You' : <FaRobot />}</div><div className="ai-chat-content">{message.role === 'assistant' ? renderAssistant(message) : message.content}{message.streaming && <span className="ai-streaming-dot"><FaSpinner className="spinning" /></span>}{message.projectPlan && <section style={{ marginTop: 12, padding: 12, border: '1px solid #6251a6', borderRadius: 9, background: 'rgba(89,68,158,.14)' }}><strong style={{ display: 'block', marginBottom: 6 }}>Implementation plan: {message.projectPlan.title || 'New project'}</strong><p style={{ margin: '0 0 8px', fontSize: 12 }}>{message.projectPlan.summary || 'Review the proposed workspace plan before building.'}</p>{Array.isArray(message.projectPlan.steps) && <ol style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12 }}>{message.projectPlan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}{Array.isArray(message.projectPlan.questions) && message.projectPlan.questions.length > 0 && <p style={{ margin: '0 0 10px', color: '#d6c9ff', fontSize: 12 }}>Questions: {message.projectPlan.questions.join(' · ')}</p>}<button onClick={() => { setPendingProjectPlan(null); sendMessage({ prompt: `Approved implementation plan: ${message.projectPlan.title || 'project'}. Build it now exactly as planned.`, executeProjectPlan: true, plan: message.projectPlan }); }} style={{ border: 0, borderRadius: 6, padding: '8px 10px', color: '#fff', background: '#7052e8', fontWeight: 700, cursor: 'pointer' }}>Approve plan & build</button></section>}{message.role === 'assistant' && message.content && <div className="ai-message-actions"><button onClick={() => navigator.clipboard.writeText(primary?.code || message.content)}><FaCopy /> {primary ? (command ? 'Copy command' : 'Copy code') : 'Copy'}</button>{primary && command && onRunCommand && <button onClick={() => { if (window.confirm(`Run this command in the active terminal?\n\n${primary.code}`)) onRunCommand(primary.code); }}><FaCode /> Run command</button>}{primary && !command && primary?.language !== 'kevryn-plan' && primary?.language !== 'kevryn-actions' && onApplyCode && <button onClick={() => onApplyCode(primary.code, primary.language || language)}><FaCode /> Review & apply</button>}</div>}</div></article>;
+                return <article className={`ai-chat-message ${message.role}`} key={message.id}><div className="ai-chat-avatar">{message.role === 'user' ? 'You' : <FaRobot />}</div><div className="ai-chat-content">{message.role === 'assistant' ? renderAssistant(message) : message.content}{message.attachmentName && <div className="ai-message-attachment">{message.attachmentData && message.attachmentKind === 'Image' && <img src={message.attachmentData} alt="Attached for AI analysis" />}<span><FaPaperclip /> {message.attachmentKind || 'File'}: {message.attachmentName}</span></div>}{message.streaming && <span className="ai-streaming-dot"><FaSpinner className="spinning" /></span>}{message.projectPlan && <section style={{ marginTop: 12, padding: 12, border: '1px solid #6251a6', borderRadius: 9, background: 'rgba(89,68,158,.14)' }}><strong style={{ display: 'block', marginBottom: 6 }}>Implementation plan: {message.projectPlan.title || 'New project'}</strong><p style={{ margin: '0 0 8px', fontSize: 12 }}>{message.projectPlan.summary || 'Review the proposed workspace plan before building.'}</p>{Array.isArray(message.projectPlan.steps) && <ol style={{ margin: '0 0 10px', paddingLeft: 18, fontSize: 12 }}>{message.projectPlan.steps.map((step, index) => <li key={index}>{step}</li>)}</ol>}{Array.isArray(message.projectPlan.questions) && message.projectPlan.questions.length > 0 && <p style={{ margin: '0 0 10px', color: '#d6c9ff', fontSize: 12 }}>Questions: {message.projectPlan.questions.join(' · ')}</p>}<button onClick={() => { setPendingProjectPlan(null); sendMessage({ prompt: `Approved implementation plan: ${message.projectPlan.title || 'project'}. Build it now exactly as planned.`, executeProjectPlan: true, plan: message.projectPlan }); }} style={{ border: 0, borderRadius: 6, padding: '8px 10px', color: '#fff', background: '#7052e8', fontWeight: 700, cursor: 'pointer' }}>Approve plan & build</button></section>}{message.role === 'assistant' && message.content && <div className="ai-message-actions"><button onClick={() => navigator.clipboard.writeText(primary?.code || message.content)}><FaCopy /> {primary ? (command ? 'Copy command' : 'Copy code') : 'Copy'}</button>{primary && command && onRunCommand && <button onClick={() => { if (window.confirm(`Run this command in the active terminal?\n\n${primary.code}`)) onRunCommand(primary.code); }}><FaCode /> Run command</button>}{primary && !command && primary?.language !== 'kevryn-plan' && primary?.language !== 'kevryn-actions' && onApplyCode && <button onClick={() => onApplyCode(primary.code, primary.language || language)}><FaCode /> Review & apply</button>}</div>}</div></article>;
             })}
             {status[provider] && <div className="ai-connection-state"><FaBolt /> {status[provider]}</div>}
         </div>
         {!atBottom && messages.length > 0 && <button className="ai-jump-latest" onClick={() => { messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight, behavior: 'smooth' }); setAtBottom(true); }}>Jump to latest</button>}
-        <form className="ai-composer" onSubmit={sendMessage} onMouseDown={event => { if (event.target === event.currentTarget) composerInputRef.current?.focus(); }}><label className="ai-context-toggle"><input type="checkbox" checked={includeFile} onChange={event => setIncludeFile(event.target.checked)} /><FaFileCode /> Attach current file</label><textarea ref={composerInputRef} value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder={isLoading ? `${PROVIDERS[provider].name} is working — you can write the next prompt…` : `Ask ${PROVIDERS[provider].name} anything…`} rows="3" aria-label={`Message ${PROVIDERS[provider].name}`} aria-busy={isLoading} /><div><span>{isLoading ? 'Response in progress · Enter sends when ready' : 'Enter to send · Shift+Enter for new line'}</span>{isLoading && <button type="button" className="ai-reset-request" onClick={() => { setLoading(previous => ({ ...previous, [provider]: false })); setStatus(previous => ({ ...previous, [provider]: null })); setActivity(previous => [...previous, 'Request released — you can continue typing']); composerInputRef.current?.focus(); }} title="Release the composer if the provider does not finish">Stop waiting</button>}<button type="submit" disabled={!input.trim() || isLoading} title={isLoading ? 'Wait for the current response to finish' : 'Send message'}>{isLoading ? <FaSpinner className="spinning" /> : <FaPaperPlane />}</button></div></form>
+        <form className="ai-composer" onSubmit={sendMessage} onMouseDown={event => { if (event.target === event.currentTarget) composerInputRef.current?.focus(); }}><div className="ai-composer-context"><label className="ai-context-toggle"><input type="checkbox" checked={includeFile} onChange={event => setIncludeFile(event.target.checked)} /><FaFileCode /> Attach current file</label><input ref={attachmentInputRef} className="ai-attachment-input" type="file" accept="image/png,image/jpeg,image/webp,image/gif,application/pdf,text/*,.txt,.md,.json,.csv,.js,.jsx,.ts,.tsx,.py,.java,.c,.cpp,.h,.html,.css,.xml,.yml,.yaml" onChange={event => { attachFile(event.target.files?.[0]); event.target.value = ''; }} /><button className="ai-attachment-button" type="button" onClick={() => attachmentInputRef.current?.click()} title="Attach image, PDF, or text file"><FaPaperclip /> Attach</button></div>{attachment && <div className="ai-attachment-preview">{attachment.isImage && <img src={attachment.data} alt="Ready for AI analysis" />}<span>{attachmentKind(attachment.mimeType)}: {attachment.name}</span><button type="button" onClick={() => { setAttachment(null); setAttachmentError(''); }} title="Remove attachment"><FaTimes /></button></div>}{attachmentError && <p className="ai-attachment-error">{attachmentError}</p>}<textarea ref={composerInputRef} value={input} onPaste={event => { const pastedImage = [...event.clipboardData.files].find(file => file.type.startsWith('image/')); if (pastedImage) { event.preventDefault(); attachFile(pastedImage); } }} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); sendMessage(event); } }} placeholder={isLoading ? `${PROVIDERS[provider].name} is working — you can write the next prompt…` : `Ask ${PROVIDERS[provider].name} anything…`} rows="3" aria-label={`Message ${PROVIDERS[provider].name}`} aria-busy={isLoading} /><div className="ai-composer-footer"><span>{isLoading ? 'Response in progress · Enter sends when ready' : 'Paste a screenshot · Attach a file · Enter to send'}</span>{isLoading && <button type="button" className="ai-reset-request" onClick={() => { setLoading(previous => ({ ...previous, [provider]: false })); setStatus(previous => ({ ...previous, [provider]: null })); setActivity(previous => [...previous, 'Request released — you can continue typing']); composerInputRef.current?.focus(); }} title="Release the composer if the provider does not finish">Stop waiting</button>}<button type="submit" disabled={(!input.trim() && !attachment) || isLoading} title={isLoading ? 'Wait for the current response to finish' : 'Send message'}>{isLoading ? <FaSpinner className="spinning" /> : <FaPaperPlane />}</button></div></form>
         {permissionPrompt && <div role="dialog" aria-modal="true" aria-label="Agent permission" style={{ position: 'fixed', inset: 0, zIndex: 50000, display: 'grid', placeItems: 'center', padding: 20, background: 'rgba(5,6,14,.66)', backdropFilter: 'blur(7px)' }}><section style={{ width: 'min(560px, 94vw)', border: '1px solid #4b4863', borderRadius: 16, overflow: 'hidden', background: '#20212d', color: '#eef0ff', boxShadow: '0 26px 80px rgba(0,0,0,.55)' }}><header style={{ padding: '20px 22px 12px', fontSize: 17, fontWeight: 750 }}>Allow {permissionPrompt.capability === 'terminal-command' ? 'running this command' : 'workspace changes'}?</header><div style={{ margin: '0 22px 15px', padding: '12px 14px', borderRadius: 9, background: '#181923', color: '#bbc0db', fontFamily: 'ui-monospace, Consolas, monospace', fontSize: 12, lineHeight: 1.55 }}>{permissionPrompt.detail}</div><div style={{ display: 'grid', gap: 7, padding: '0 22px 20px' }}><button onClick={() => choosePermission('once')} style={{ textAlign: 'left', padding: '11px 13px', border: '1px solid #55536b', borderRadius: 8, background: '#393948', color: '#fff', cursor: 'pointer' }}>1&nbsp;&nbsp; Yes, allow this time</button><button onClick={() => choosePermission('conversation')} style={{ textAlign: 'left', padding: '11px 13px', border: 0, background: 'transparent', color: '#c6c9df', cursor: 'pointer' }}>2&nbsp;&nbsp; Yes, allow in this conversation</button><button onClick={() => choosePermission('project')} style={{ textAlign: 'left', padding: '11px 13px', border: 0, background: 'transparent', color: '#c6c9df', cursor: 'pointer' }}>3&nbsp;&nbsp; Yes, always allow in this project</button><button onClick={() => choosePermission('always')} style={{ textAlign: 'left', padding: '11px 13px', border: 0, background: 'transparent', color: '#c6c9df', cursor: 'pointer' }}>4&nbsp;&nbsp; Yes, always allow</button><button onClick={() => choosePermission('deny')} style={{ textAlign: 'left', padding: '11px 13px', border: 0, background: 'transparent', color: '#8e92aa', cursor: 'pointer' }}>5&nbsp;&nbsp; No</button></div></section></div>}
     </aside>;
 };
