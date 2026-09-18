@@ -102,7 +102,27 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
         let inputWriter = null;
         let onDataHandler = null;
         let onResizeHandler = null;
+        let mirrorBuffer = '';
+        let mirrorTimeout = null;
         const generation = ++connectionGenerationRef.current;
+
+        // Terminal output is private in Lab Mode. Faculty supervision uses
+        // the dedicated source-code mirror and session artifact record only;
+        // commands, compiler output, and program output never leave the
+        // student's terminal. Non-lab workspace terminal sharing keeps its
+        // existing compact mirror behavior.
+        const mirrorTerminalOutput = (data) => {
+            if (labMode || !socket || !data) return;
+            mirrorBuffer += data;
+            if (mirrorTimeout) return;
+            mirrorTimeout = setTimeout(() => {
+                if (mirrorBuffer && active && socket.connected) {
+                    socket.emit('terminal:mirror', { termId, data: mirrorBuffer });
+                }
+                mirrorBuffer = '';
+                mirrorTimeout = null;
+            }, 80);
+        };
 
         const startNativeTerminal = async () => {
             if (!localWorkspacePath || !window.electronAPI || !active) return;
@@ -122,7 +142,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
                 window.electronAPI.onTerminalData((data) => {
                     if (active) {
                         term.write(data);
-                        if (socket) socket.emit('terminal:mirror', { termId, data });
+                        mirrorTerminalOutput(data);
                     }
                 });
 
@@ -282,6 +302,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
 
         return () => {
             active = false;
+            if (mirrorTimeout) clearTimeout(mirrorTimeout);
             console.log("[Terminal] Cleaning up shell/socket logic");
             if (shellProcessRef.current) {
                 shellProcessRef.current.kill();

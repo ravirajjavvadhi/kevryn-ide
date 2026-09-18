@@ -43,6 +43,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     }), [session?.collegeId, session?.college?._id, session?.courseId, session?.subject, session?.subjectName, userId, username]);
     const [localLabRoot, setLocalLabRoot] = useState(null);
     const reportMirrorTimeoutRef = useRef(null);
+    const lastSyncPaintAtRef = useRef(0);
 
     const tabCountRef = useRef(0);
     const pasteCountRef = useRef(0);
@@ -263,8 +264,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                         sessionId: session.sessionId || session._id,
                         username,
                         status,
-                        activeFile: activeFileRef.current?.name || null,
-                        code: codeRef.current || ''
+                        // Heartbeats carry presence only. The live code is
+                        // mirrored independently over the lab socket, so this
+                        // request stays tiny even for large source files.
+                        activeFile: activeFileRef.current?.name || null
                     })
                 });
             } catch (e) { console.error("Heartbeat failed", e); }
@@ -415,7 +418,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 if (settled) return;
                 settled = true;
                 clearTimeout(timeout);
-                if (result?.success) setLastSynced(new Date().toLocaleTimeString());
+                if (result?.success && Date.now() - lastSyncPaintAtRef.current >= 1000) {
+                    lastSyncPaintAtRef.current = Date.now();
+                    setLastSynced(new Date().toLocaleTimeString());
+                }
                 resolve(Boolean(result?.success));
             };
             const timeout = setTimeout(() => finish({ success: false }), 4000);
@@ -445,7 +451,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 code: contents ?? codeRef.current ?? '',
                 language: fileLanguage || language || 'javascript'
             });
-            setLastSynced(new Date().toLocaleTimeString());
+            // This timestamp is visual feedback only. Throttling it prevents a
+            // full Lab Mode render for every monitoring packet while typing.
+            if (Date.now() - lastSyncPaintAtRef.current >= 1000) {
+                lastSyncPaintAtRef.current = Date.now();
+                setLastSynced(new Date().toLocaleTimeString());
+            }
         }
         syncLabArtifact(fileName, contents, fileLanguage);
     }, [session?.sessionId, session?._id, username, language, syncLabArtifact]);
@@ -463,9 +474,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const handleCodeChange = (newValue) => {
         setCode(newValue || '');
         
-        // 1. Instant Emit to Faculty (100ms Debounce)
+        // 1. Near-real-time faculty mirror. Coalesce keystroke bursts so a
+        // slow connection never competes with Monaco's typing path.
         if (codeChangeTimeoutRef.current) clearTimeout(codeChangeTimeoutRef.current);
-        codeChangeTimeoutRef.current = setTimeout(() => emitCodeUpdate(), 100); 
+        codeChangeTimeoutRef.current = setTimeout(() => emitCodeUpdate(), 250);
 
         // 2. Persistent DB Auto-Save (5000ms Debounce)
         if (autoSaveTimeoutRef.current) clearTimeout(autoSaveTimeoutRef.current);
@@ -598,8 +610,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         try {
             if (isDesktopLab) {
                 await window.electronAPI.createLabItem(labScope, name, 'file');
-                await loadFiles();
                 const created = { _id: name, path: name, name, type: 'file' };
+                // The local write has already succeeded. Update the Explorer
+                // directly instead of rescanning the full lab folder.
+                setFiles(prev => [...prev.filter(file => file._id !== created._id), created]);
                 setActiveFile(created); setCode(''); setLanguage(detectLanguage(name));
                 syncLabMirror(name, '', detectLanguage(name));
                 syncLabArtifact(name, '', detectLanguage(name), 'create', true);
@@ -1277,7 +1291,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                                     courseId={session?.courseId}
                                     webcontainer={isServerLanguage ? null : webcontainer}
                                     localWorkspacePath={isDesktopLab ? localLabRoot : localWorkspacePath}
-                                    labMode={isDesktopLab}
+                                    // Terminal contents are never part of Lab
+                                    // supervision. This flag blocks terminal
+                                    // mirroring for both browser and desktop labs.
+                                    labMode={true}
                                 />
                             ) : (
                                 <div style={{ padding: '20px', color: '#475569', fontSize: '13px' }}>Connecting to secure terminal shell...</div>
