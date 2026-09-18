@@ -5,7 +5,7 @@ import { io } from 'socket.io-client';
 import axios from 'axios';
 import { motion, useMotionValue, useTransform, useSpring, AnimatePresence } from 'framer-motion';
 import {
-    FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaComments, FaCodeBranch, FaClipboardList, FaPaperPlane, FaPlus, FaEllipsisH, FaChevronUp, FaGithub, FaBell, FaBullhorn, FaSpinner, FaFolderOpen, FaCloudDownloadAlt
+    FaTerminal, FaPlay, FaSave, FaFolderPlus, FaFilePlus, FaFolder, FaFile, FaTrash, FaDownload, FaSync, FaSearch, FaTimes, FaBars, FaChevronRight, FaChevronDown, FaCode, FaCog, FaSignOutAlt, FaRocket, FaGlobe, FaBug, FaCube, FaShieldAlt, FaLightbulb, FaExchangeAlt, FaHistory, FaCheckCircle, FaExclamationTriangle, FaUserGraduate, FaChalkboardTeacher, FaProjectDiagram, FaBook, FaPuzzlePiece, FaMicrochip, FaNetworkWired, FaMagic, FaCloudUploadAlt, FaServer, FaEye, FaShareAlt, FaRobot, FaCodeBranch, FaClipboardList, FaPlus, FaEllipsisH, FaChevronUp, FaGithub, FaBell, FaBullhorn, FaSpinner, FaFolderOpen, FaCloudDownloadAlt
 } from 'react-icons/fa';
 import FileTree from './components/FileTree';
 import Terminal from './components/Terminal';
@@ -86,11 +86,9 @@ function App() {
         if (!token) setIsAppLoading(false);
     }, [token]);
     
-    // Default to Command Center ONLY if they are an ACE student
-    const [showStudentAssignments, setShowStudentAssignments] = useState(() => {
-        const cName = localStorage.getItem('collegeName');
-        return cName ? cName.toLowerCase().includes('ace') : false;
-    });
+    // The Student Command Center is the landing view for every signed-in student.
+    // Faculty and management keep their existing workspace/dashboard routes.
+    const [showStudentAssignments, setShowStudentAssignments] = useState(() => userRole === 'student');
 
     const [authData, setAuthData] = useState({ username: "", password: "", email: "", collegeCode: "" });
     const [userPicture, setUserPicture] = useState(localStorage.getItem('picture') || null); // Store picture
@@ -197,10 +195,6 @@ function App() {
     const [activeMenu, setActiveMenu] = useState(null);
     const [activeRepo, setActiveRepo] = useState(null);
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
-    const [chatMessages, setChatMessages] = useState([]);
-    const [chatInput, setChatInput] = useState("");
-    const [chatVisibility, setChatVisibility] = useState("public");
-    const chatEndRef = useRef(null);
 
     const isNativeDesktop = !!window.electronAPI;
     const initialTerminals = isNativeDesktop 
@@ -862,7 +856,6 @@ function App() {
 
         s.emit('register-user', username);
         fetchFiles();
-        safeEmit('join-chat', { username, sessionId: activeSessionId });
         api.get('/deploy/status').then(res => setDeployStatus(res.data)).catch(() => { });
         // Removed: /api/debug-env health check (unnecessary API call on every login)
 
@@ -873,9 +866,6 @@ function App() {
         });
         s.on('global-broadcast-dismissed', ({ id }) => { setActiveBroadcast(prev => (prev && prev._id === id) ? null : prev); });
 
-        const handleReceiveMessage = (msg) => { setChatMessages(prev => [...prev, msg]); };
-        s.on('receive-message', handleReceiveMessage);
-        s.on('previous-messages', (msgs) => setChatMessages(msgs));
         s.on('receive-code', (data) => {
             // Support both old string format and new object format
             const incomingCode = typeof data === 'string' ? data : data.newCode;
@@ -949,8 +939,6 @@ function App() {
         window.addEventListener('click', closeMenu);
 
         return () => {
-            s.off('receive-message');
-            s.off('previous-messages');
             s.off('receive-code');
             s.off('node-created');
             s.off('file-shared');
@@ -1772,7 +1760,6 @@ function App() {
         setTerminals(n);
         if (activeTermId === id && n.length > 0) setActiveTermId(n[0].id);
     };
-    const sendChatMessage = (e) => { e.preventDefault(); if (!chatInput.trim()) return; safeEmit('send-message', { sender: username, text: chatInput, visibility: chatVisibility, sessionId: activeSessionId }); setChatInput(""); };
     const shareSingleFile = async () => {
         if (!activeFileId) return alert("Select a file first!");
         const target = prompt("Enter username to share THIS file with:");
@@ -2478,6 +2465,21 @@ function App() {
                                     )}
                                 </div>
 
+                                {userRole === 'student' && (
+                                    <button
+                                        type="button"
+                                        className="student-dashboard-link"
+                                        title="Return to your Student Command Center"
+                                        onClick={() => {
+                                            setActiveMenu(null);
+                                            setShowStudentAssignments(true);
+                                        }}
+                                    >
+                                        <FaUserGraduate size={12} />
+                                        Student Dashboard
+                                    </button>
+                                )}
+
                                 <input type="file" ref={fileInputRef} style={{ display: 'none' }} onChange={handleFileUpload} />
                                 <input type="file" ref={folderInputRef} style={{ display: 'none' }} webkitdirectory="" directory="" multiple onChange={handleFolderUpload} />
 
@@ -2559,7 +2561,6 @@ function App() {
                                 <div className="sidebar" style={{ flexShrink: 0, display: isSidebarCollapsed ? 'none' : 'flex', flexDirection: 'column' }}>
                                     <div style={{ display: 'flex', borderBottom: '1px solid var(--border-color)', alignItems: 'center' }}>
                                         <div onClick={() => setSidebarTab('files')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'files' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'files' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'files' ? '1px solid var(--accent-primary)' : 'none' }}><FaFolder title="Files" /></div>
-                                        <div onClick={() => setSidebarTab('chat')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'chat' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'chat' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'chat' ? '1px solid var(--accent-primary)' : 'none' }}><FaComments title="Team Chat" /></div>
                                         <div onClick={() => setSidebarTab('git')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'git' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'git' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'git' ? '1px solid var(--accent-primary)' : 'none' }}><FaCodeBranch title="Source Control" /></div>
                                         <div onClick={() => setSidebarTab('timeline')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'timeline' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'timeline' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'timeline' ? '1px solid var(--accent-primary)' : 'none' }}><FaHistory title="Timeline" /></div>
                                         <div onClick={() => setSidebarTab('snippets')} style={{ flex: 1, padding: '8px', textAlign: 'center', cursor: 'pointer', background: sidebarTab === 'snippets' ? 'var(--bg-tertiary)' : 'transparent', color: sidebarTab === 'snippets' ? 'var(--text-primary)' : 'var(--text-secondary)', borderTop: sidebarTab === 'snippets' ? '1px solid var(--accent-primary)' : 'none' }}><FaCode title="Snippets" /></div>
@@ -2570,7 +2571,6 @@ function App() {
                                             <FaPuzzlePiece title="Extensions & AI Agents" />
                                         </div>
                                         
-                                        <button className="icon-btn" title="New Template" style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', padding: '0 10px', cursor: 'pointer' }}><FaMagic size={11} /></button>
                                     </div>
                                     {/* Sidebar Tab Content Area (Ensure it takes space to push logout down) */}
                                     <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', minHeight: 0 }}>
@@ -2601,40 +2601,6 @@ function App() {
                                                     }
                                                 }}
                                             />
-                                        )}
-                                        {sidebarTab === 'chat' && (
-                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', height: '100%', overflow: 'hidden' }}>
-                                                <div style={{ flex: 1, overflowY: 'auto', padding: '10px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                    {chatMessages.map((msg, i) => (
-                                                        <div key={i} style={{ alignSelf: msg.sender === username ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-                                                            <div style={{ fontSize: '10px', color: 'var(--text-secondary)', marginBottom: '2px', textAlign: msg.sender === username ? 'right' : 'left', display: 'flex', justifyContent: msg.sender === username ? 'flex-end' : 'flex-start', alignItems: 'center', gap: '4px' }}>
-                                                                {msg.visibility === 'private' && <span style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#eab308', padding: '2px 4px', borderRadius: '4px', fontSize: '8px', fontWeight: 'bold' }}>PRIVATE</span>}
-                                                                {msg.sender}
-                                                            </div>
-                                                            <div style={{ padding: '8px', borderRadius: '6px', background: msg.sender === username ? 'var(--accent-primary)' : 'var(--bg-tertiary)', color: 'white', fontSize: '12px', wordWrap: 'break-word', border: msg.visibility === 'private' ? '1px solid #eab308' : 'none' }}>
-                                                                {msg.text}
-                                                            </div>
-                                                        </div>
-                                                    ))}
-                                                    <div ref={chatEndRef} />
-                                                </div>
-                                                <form onSubmit={sendChatMessage} style={{ padding: '10px', borderTop: '1px solid var(--border-color)', display: 'flex', flexDirection: 'column', gap: '5px', background: 'var(--bg-secondary)' }}>
-                                                    <div style={{ display: 'flex', gap: '5px' }}>
-                                                        <select 
-                                                            value={chatVisibility} 
-                                                            onChange={e => setChatVisibility(e.target.value)}
-                                                            style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', padding: '4px', fontSize: '11px', outline: 'none', cursor: 'pointer' }}
-                                                        >
-                                                            <option value="public">Public</option>
-                                                            <option value="private">Private (Project Only)</option>
-                                                        </select>
-                                                    </div>
-                                                    <div style={{ display: 'flex', gap: '5px' }}>
-                                                        <input value={chatInput} onChange={e => setChatInput(e.target.value)} placeholder="Type a message..." style={{ flex: 1, padding: '6px', borderRadius: '4px', border: '1px solid var(--border-color)', background: 'var(--bg-primary)', color: 'var(--text-primary)', fontSize: '12px', outline: 'none' }} />
-                                                        <button type="submit" style={{ background: 'var(--accent-primary)', border: 'none', borderRadius: '4px', color: 'white', padding: '0 10px', cursor: 'pointer' }}><FaPaperPlane size={12} /></button>
-                                                    </div>
-                                                </form>
-                                            </div>
                                         )}
                                     </div>
 

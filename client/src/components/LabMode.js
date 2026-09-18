@@ -137,8 +137,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                     }
                 });
 
-                // NEW: Initialize server-side terminal for the student
-                sock.emit('terminal:create', { termId: 1, userId });
+                // Native Lab Mode owns a real terminal on the student's
+                // machine.  Never create a server PTY for that path: the
+                // socket is only for live supervision and report mirroring.
+                // The web lab still uses its existing browser/server runtime.
+                if (!isDesktopLab) {
+                    sock.emit('terminal:create', { termId: 1, userId, courseId: session?.courseId?._id || session?.courseId });
+                }
             } else {
                 console.error('[LabMode] Missing session ID or username', { session, username });
             }
@@ -510,20 +515,26 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         const isWin = isDesktop && navigator.userAgent.toLowerCase().includes('windows');
         
         const exeExt = isWin ? '.exe' : '';
-        const runPrefix = isWin ? '.\\' : './';
-        const sep = isWin ? ';' : '&&';
         
         // Extract dir and base name for compiled languages that need exact paths
         const dir = filename.includes('/') ? filename.substring(0, filename.lastIndexOf('/')) : '.';
         const base = filename.includes('/') ? filename.substring(filename.lastIndexOf('/') + 1) : filename;
         const baseNoExt = base.replace(`.${ext}`, '');
         
+        // Native compilation artifacts must not become student files. Keep
+        // them in KevRyn's hidden local build folder, which the Lab explorer
+        // intentionally excludes from the student-visible tree.
+        const nativeBuild = '.kevryn-build';
+        const nativeOutput = `${nativeBuild}/${baseNoExt}${exeExt}`;
+        const compileAndRun = (compiler) => isWin
+            ? `New-Item -ItemType Directory -Force "${nativeBuild}" | Out-Null; ${compiler} "${filename}" -o "${nativeOutput.replace(/\//g, '\\')}"; if ($LASTEXITCODE -eq 0) { & ".\\${nativeOutput.replace(/\//g, '\\')}" }`
+            : `mkdir -p "${nativeBuild}" && ${compiler} "${filename}" -o "${nativeOutput}" && "./${nativeOutput}"`;
         const commands = {
             'js': `node "${filename}"`,
             'py': `python3 "${filename}"`,
-            'java': `javac "${filename}" ${sep} java -cp "${dir}" "${baseNoExt}"`,
-            'c': `gcc "${filename}" -o output${exeExt} ${sep} ${runPrefix}output${exeExt}`,
-            'cpp': `g++ "${filename}" -o output${exeExt} ${sep} ${runPrefix}output${exeExt}`,
+            'java': isWin ? `javac "${filename}"; if ($LASTEXITCODE -eq 0) { java -cp "${dir}" "${baseNoExt}" }` : `javac "${filename}" && java -cp "${dir}" "${baseNoExt}"`,
+            'c': compileAndRun('gcc'),
+            'cpp': compileAndRun('g++'),
             'rb': `ruby "${filename}"`,
             'go': `go run "${filename}"`,
             'php': `php "${filename}"`,
@@ -761,7 +772,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             }
             const command = getRunCommand(localPath);
             if (!command) { alert('This file can be opened in the local terminal from its dedicated lab folder.'); return; }
-            window.electronAPI.terminalWrite(command + '\r');
+            const result = window.electronAPI.runLocalCommand
+                ? await window.electronAPI.runLocalCommand(localLabRoot, command)
+                : await window.electronAPI.terminalWrite(command + '\r');
+            if (result?.success === false) alert(result.error || 'Could not start the local run.');
             return;
         }
 
@@ -854,7 +868,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         return ['c', 'cpp', 'java', 'py', 'js', 'ts', 'rb', 'go', 'php', 'sh', 'bash'].includes(ext);
     }, [activeFile?.name]);
 
-    const terminalMode = isServerLanguage ? 'server' : 'local';
+    // A desktop lab always owns one local PTY. Do not remount it when a
+    // student switches between C, Python, HTML, or another file: remounting
+    // destroys the terminal surface and causes the visible blink/flicker.
+    const terminalMode = isDesktopLab ? 'native-lab' : (isServerLanguage ? 'server' : 'local');
     const terminalKey = `lab-term-${terminalMode}`;
 
     return (

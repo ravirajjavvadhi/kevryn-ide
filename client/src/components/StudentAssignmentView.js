@@ -50,6 +50,10 @@ const StudentAssignmentView = ({
     const [studentLanguage, setStudentLanguage] = useState('python'); // Default if 'any'
     const [testResults, setTestResults] = useState(null);
     const [submissionStatus, setSubmissionStatus] = useState(null);
+    const [isRunningTests, setIsRunningTests] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [showSubmitConfirmation, setShowSubmitConfirmation] = useState(false);
+    const [submissionReceipt, setSubmissionReceipt] = useState(null);
 
     // Fullscreen Proctoring State
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -207,6 +211,8 @@ const StudentAssignmentView = ({
         setCode(assignment.starterCode || '');
         setTestResults(null);
         setSubmissionStatus(null);
+        setSubmissionReceipt(null);
+        setShowSubmitConfirmation(false);
         setViewMode('solve');
     };
 
@@ -224,6 +230,8 @@ const StudentAssignmentView = ({
     };
 
     const runTests = async () => {
+        if (!selectedAssignment || isRunningTests || isSubmitting) return;
+        setIsRunningTests(true);
         setSubmissionStatus('Running Tests...');
         try {
             const res = await api.post(`/api/assignments/${selectedAssignment._id}/run-tests`, {
@@ -231,11 +239,14 @@ const StudentAssignmentView = ({
             });
             setTestResults(res.data.results);
             setSubmissionStatus('Tests Completed');
-        } catch (e) { setSubmissionStatus('Error: ' + e.message); }
+        } catch (e) { setSubmissionStatus('Error: ' + (e.response?.data?.error || e.message)); }
+        finally { setIsRunningTests(false); }
     };
 
     const submitAssignment = async () => {
-        if (!window.confirm("Are you sure you want to submit?")) return;
+        if (!selectedAssignment || isSubmitting) return;
+        setShowSubmitConfirmation(false);
+        setIsSubmitting(true);
         setSubmissionStatus('Submitting...');
         try {
             const res = await api.post(`/api/assignments/${selectedAssignment._id}/submit`, {
@@ -244,12 +255,20 @@ const StudentAssignmentView = ({
             setTestResults(res.data.results);
             const { score, maxScore } = res.data.submission;
             setSubmissionStatus(`Submitted Successfully! Marks: ${score}/${maxScore}`);
-            fetchActiveAssignments();
-            fetchCommandSummary();
+            setSubmissionReceipt({ score, maxScore, title: selectedAssignment.title });
+            await Promise.all([fetchActiveAssignments(), fetchCommandSummary()]);
             if (document.fullscreenElement) {
                 document.exitFullscreen().catch(e => console.error(e));
             }
-        } catch (e) { setSubmissionStatus('Submission Error: ' + e.message); }
+            // Keep a short visible receipt, then return to the command centre
+            // with fresh pending/submitted counts.
+            setTimeout(() => {
+                setSelectedAssignment(null);
+                setViewMode('hub');
+                setSubmissionReceipt(null);
+            }, 1400);
+        } catch (e) { setSubmissionStatus('Submission Error: ' + (e.response?.data?.error || e.message)); }
+        finally { setIsSubmitting(false); }
     };
 
     // --- STYLES ---
@@ -465,28 +484,39 @@ const StudentAssignmentView = ({
                     </div>
                     {!(selectedAssignment && selectedAssignment.endTime && new Date() > new Date(selectedAssignment.endTime)) && (
                         <div style={{ display: 'flex', gap: '16px' }}>
-                            <motion.button onClick={runTests} style={{ padding: '10px 24px', borderRadius: '12px', border: '1px solid rgba(255,255,255,0.05)', background: 'rgba(30, 41, 59, 0.5)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '700' }}><FaPlay size={12} color="#60a5fa" /> EXECUTE LOGIC</motion.button>
-                            <motion.button onClick={submitAssignment} style={{ padding: '10px 24px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800' }}><FaPaperPlane size={12} /> DEPLOY SOLUTION</motion.button>
+                            <motion.button disabled={isRunningTests || isSubmitting} onClick={runTests} style={{ padding: '10px 24px', borderRadius: '12px', border: '1px solid rgba(96,165,250,.35)', background: 'rgba(30, 58, 138, .25)', color: '#dbeafe', cursor: isRunningTests || isSubmitting ? 'wait' : 'pointer', opacity: isRunningTests || isSubmitting ? .65 : 1, display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800' }}><FaPlay size={12} color="#60a5fa" /> {isRunningTests ? 'RUNNING TESTS…' : 'RUN TESTS'}</motion.button>
+                            <motion.button disabled={isRunningTests || isSubmitting} onClick={() => setShowSubmitConfirmation(true)} style={{ padding: '10px 24px', borderRadius: '12px', border: 'none', background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', cursor: isRunningTests || isSubmitting ? 'wait' : 'pointer', opacity: isRunningTests || isSubmitting ? .65 : 1, display: 'flex', alignItems: 'center', gap: '10px', fontWeight: '800' }}><FaPaperPlane size={12} /> {isSubmitting ? 'SUBMITTING…' : 'SUBMIT SOLUTION'}</motion.button>
                         </div>
                     )}
                 </div>
-                <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
-                    <div style={{ width: '400px', borderRight: '1px solid rgba(255,255,255,0.05)', display: 'flex', flexDirection: 'column', background: 'rgba(15, 23, 42, 0.2)', backdropFilter: 'blur(5px)' }}>
-                        <div style={{ flex: 1, padding: '32px', overflowY: 'auto' }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '24px' }}><FaBook color="#6366f1" size={14} /><h4 style={{ color: '#fff', margin: 0, fontSize: '12px', fontWeight: '800', textTransform: 'uppercase' }}>Objective Briefing</h4></div>
-                            <div style={{ lineHeight: '1.8', color: '#94a3b8', fontSize: '15px', whiteSpace: 'pre-wrap' }}>{selectedAssignment.description}</div>
-                        </div>
-                        <div style={{ height: '45%', borderTop: '1px solid rgba(255,255,255,0.05)', background: 'rgba(2, 6, 23, 0.5)', padding: '20px' }}>
-                            {submissionStatus && <div style={{ marginBottom: '10px', color: '#818cf8', fontWeight: '600' }}>{submissionStatus}</div>}
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(330px, 36%) minmax(0, 1fr)', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+                    <aside style={{ minWidth: 0, borderRight: '1px solid rgba(148,163,184,.14)', display: 'grid', gridTemplateRows: 'minmax(170px, .85fr) minmax(310px, 1.15fr)', background: '#0b1222' }}>
+                        <section style={{ minHeight: 0, padding: '24px', overflowY: 'auto', borderBottom: '1px solid rgba(148,163,184,.14)' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '9px', marginBottom: '14px' }}><FaBook color="#8b5cf6" size={14} /><h4 style={{ color: '#e2e8f0', margin: 0, fontSize: '11px', fontWeight: '900', letterSpacing: '.1em' }}>OBJECTIVE</h4></div>
+                            <div style={{ lineHeight: '1.65', color: '#b6c2d6', fontSize: '14px', whiteSpace: 'pre-wrap' }}>{selectedAssignment.description || 'No written instructions were added for this assignment. Use the visible test cases below as the expected behaviour.'}</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '17px' }}><span style={{ color: '#bfdbfe', background: 'rgba(59,130,246,.12)', borderRadius: '999px', padding: '5px 9px', fontSize: '11px', fontWeight: '800' }}>{selectedAssignment.maxPoints || 100} marks</span><span style={{ color: '#ddd6fe', background: 'rgba(139,92,246,.12)', borderRadius: '999px', padding: '5px 9px', fontSize: '11px', fontWeight: '800' }}>{selectedAssignment.testCases?.length || 0} tests</span>{selectedAssignment.endTime && <span style={{ color: '#fed7aa', background: 'rgba(249,115,22,.12)', borderRadius: '999px', padding: '5px 9px', fontSize: '11px', fontWeight: '800' }}>Due {new Date(selectedAssignment.endTime).toLocaleString()}</span>}</div>
+                        </section>
+                        <section style={{ minHeight: 0, padding: '20px 24px', overflowY: 'auto', background: '#09101f' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '13px' }}><b style={{ fontSize: '11px', letterSpacing: '.1em', color: '#c4b5fd' }}>TEST CASES</b><span style={{ fontSize: '11px', color: '#94a3b8' }}>{testResults ? `${testResults.filter(result => result.pass).length}/${testResults.length} passed` : `${(selectedAssignment.testCases || []).filter(test => !test.isHidden).length} visible`}</span></div>
+                            {submissionStatus && <div style={{ marginBottom: '12px', color: submissionStatus.includes('Error') ? '#fca5a5' : '#a5b4fc', fontSize: '13px', fontWeight: '700' }}>{submissionStatus}</div>}
+                            {!testResults && (selectedAssignment.testCases || []).map((test, i) => test.isHidden ? <div key={i} style={{ padding: '11px 12px', marginBottom: '9px', background: 'rgba(99,102,241,.08)', border: '1px solid rgba(139,92,246,.2)', borderRadius: '9px', color: '#c4b5fd', fontSize: '12px' }}>Hidden test {i + 1} · evaluated on submission</div> : <article key={i} style={{ marginBottom: '10px', padding: '12px', background: 'rgba(255,255,255,.025)', border: '1px solid rgba(148,163,184,.14)', borderRadius: '9px' }}><b style={{ color: '#dbeafe', fontSize: '12px' }}>Visible test {i + 1}</b><div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '9px', marginTop: '10px', fontSize: '11px', color: '#cbd5e1' }}><span><small style={{ display: 'block', color: '#64748b', marginBottom: '3px' }}>Input</small><code>{test.input === '' ? '(empty input)' : test.input || 'No input'}</code></span><span><small style={{ display: 'block', color: '#64748b', marginBottom: '3px' }}>Expected output</small><code>{test.expectedOutput === '' || test.expectedOutput === undefined ? 'Not configured by faculty' : test.expectedOutput}</code></span></div></article>)}
+                            {!testResults && !(selectedAssignment.testCases || []).length && <p style={{ margin: 0, color: '#94a3b8', fontSize: '13px', lineHeight: 1.55 }}>No test cases were configured by faculty for this assignment.</p>}
                             {testResults && testResults.map((res, i) => (
-                                <div key={i} style={{ marginBottom: '8px', padding: '10px', background: 'rgba(15, 23, 42, 0.4)', borderRadius: '8px', border: `1px solid ${res.pass ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}` }}>
-                                    {res.pass ? '✅' : '❌'} {res.testCase}
-                                </div>
+                                <article key={i} style={{ marginBottom: '10px', padding: '12px', background: res.pass ? 'rgba(16,185,129,.07)' : 'rgba(239,68,68,.07)', borderRadius: '9px', border: `1px solid ${res.pass ? 'rgba(16,185,129,.28)' : 'rgba(239,68,68,.28)'}` }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '10px', fontSize: '12px', fontWeight: '800', color: res.pass ? '#6ee7b7' : '#fca5a5' }}><span>{res.pass ? '✓ Passed' : '× Needs attention'} · Test {i + 1}</span><span>{res.isHidden ? 'Hidden' : 'Visible'}</span></div>
+                                    {!res.isHidden && <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginTop: '9px', fontSize: '11px', color: '#cbd5e1' }}><span><small style={{ display: 'block', color: '#64748b' }}>Input</small><code>{res.input === '' ? '(empty input)' : res.input || 'No input'}</code></span><span><small style={{ display: 'block', color: '#64748b' }}>Expected</small><code>{res.expected === '' || res.expected === undefined ? 'Not configured by faculty' : res.expected}</code></span><span style={{ gridColumn: '1 / -1' }}><small style={{ display: 'block', color: '#64748b' }}>Your output</small><code>{res.actual === '' || res.actual === undefined ? 'No output produced' : res.actual}</code></span></div>}
+                                    {res.error && <p style={{ margin: '9px 0 0', whiteSpace: 'pre-wrap', fontSize: '11px', color: '#fda4af' }}>{res.error}</p>}
+                                </article>
                             ))}
-                        </div>
-                    </div>
-                    <div style={{ flex: 1 }}><Editor height="100%" theme="vs-dark" defaultValue={code} onChange={v => setCode(v)} language={selectedAssignment.language === 'any' ? studentLanguage : selectedAssignment.language} options={{ fontSize: 16, fontFamily: 'JetBrains Mono', minimap: { enabled: false }, readOnly: selectedAssignment && selectedAssignment.endTime && new Date() > new Date(selectedAssignment.endTime) }} /></div>
+                        </section>
+                    </aside>
+                    <main style={{ minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column', background: '#080d19' }}>
+                        <div style={{ height: '42px', flexShrink: 0, padding: '0 18px', borderBottom: '1px solid rgba(148,163,184,.14)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', color: '#94a3b8', fontSize: '12px' }}><span><FaCode color="#60a5fa" /> &nbsp;Solution editor</span><span>{(selectedAssignment.language === 'any' ? studentLanguage : selectedAssignment.language).toUpperCase()} · {code.length} characters</span></div>
+                        <div style={{ flex: 1, minHeight: 0 }}><Editor key={selectedAssignment._id} height="100%" theme="vs-dark" defaultValue={code} onChange={v => setCode(v || '')} language={selectedAssignment.language === 'any' ? studentLanguage : selectedAssignment.language} options={{ fontSize: 16, fontFamily: 'JetBrains Mono', cursorBlinking: 'smooth', minimap: { enabled: false }, padding: { top: 20, bottom: 20 }, smoothScrolling: true, readOnly: selectedAssignment && selectedAssignment.endTime && new Date() > new Date(selectedAssignment.endTime) }} /></div>
+                    </main>
                 </div>
+                {showSubmitConfirmation && <div role="dialog" aria-modal="true" style={{ position: 'fixed', inset: 0, zIndex: 10001, display: 'grid', placeItems: 'center', background: 'rgba(2,6,23,.78)', backdropFilter: 'blur(8px)', padding: '20px' }}><section style={{ width: 'min(460px, 100%)', background: '#111b30', border: '1px solid rgba(139,92,246,.45)', borderRadius: '18px', padding: '26px', boxShadow: '0 24px 70px rgba(0,0,0,.45)' }}><span style={{ color: '#a78bfa', fontSize: '11px', fontWeight: '900', letterSpacing: '.12em' }}>CONFIRM SUBMISSION</span><h3 style={{ margin: '10px 0 8px', fontSize: '22px' }}>{selectedAssignment.title}</h3><p style={{ margin: 0, color: '#94a3b8', lineHeight: 1.6, fontSize: '14px' }}>Submit your current {selectedAssignment.language === 'any' ? studentLanguage : selectedAssignment.language} solution for faculty review and grading.</p><div style={{ margin: '18px 0', padding: '12px', borderRadius: '10px', background: 'rgba(255,255,255,.04)', color: '#cbd5e1', fontSize: '13px' }}>{testResults ? `${testResults.filter(result => result.pass).length}/${testResults.length} latest tests passed` : 'Tests have not been run yet. You can still submit.'}</div><footer style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}><button onClick={() => setShowSubmitConfirmation(false)} style={{ border: '1px solid rgba(255,255,255,.15)', background: 'transparent', color: '#e2e8f0', padding: '10px 14px', borderRadius: '9px', cursor: 'pointer', fontWeight: '700' }}>Review code</button><button onClick={submitAssignment} style={{ border: 0, background: '#10b981', color: '#fff', padding: '10px 14px', borderRadius: '9px', cursor: 'pointer', fontWeight: '800' }}>Yes, submit</button></footer></section></div>}
+                {submissionReceipt && <div role="status" style={{ position: 'fixed', right: '28px', bottom: '28px', zIndex: 10002, padding: '16px 18px', borderRadius: '13px', background: '#064e3b', border: '1px solid rgba(110,231,183,.45)', color: '#ecfdf5', boxShadow: '0 14px 36px rgba(0,0,0,.32)' }}><b>Submission received</b><div style={{ marginTop: '4px', fontSize: '13px' }}>{submissionReceipt.title} · {submissionReceipt.score}/{submissionReceipt.maxScore} marks</div></div>}
             </div>
         );
     };

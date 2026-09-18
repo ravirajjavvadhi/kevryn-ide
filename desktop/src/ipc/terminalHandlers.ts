@@ -10,7 +10,7 @@ let lastRunKey = '';
 let lastRunAt = 0;
 
 export function setupTerminalHandlers(mainWindow: BrowserWindow) {
-    const spawn = (cwd: string, cols?: number, rows?: number) => {
+    const spawn = (cwd: string, cols?: number, rows?: number, labPrompt = false) => {
         if (ptyProcess) {
             ptyProcess.kill();
         }
@@ -21,9 +21,16 @@ export function setupTerminalHandlers(mainWindow: BrowserWindow) {
         }
 
         const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
+        // The Windows default prompt repeats the complete AppData lab path
+        // before every command.  It leaves too little room in xterm and makes
+        // a single run look like broken multi-line output.  Lab Mode already
+        // shows the active course in its header, so use a compact local prompt.
+        const shellArgs = os.platform() === 'win32' && labPrompt
+            ? ['-NoLogo', '-NoExit', '-Command', "function prompt { 'KevRyn Lab> ' }"]
+            : [];
 
         try {
-            ptyProcess = pty.spawn(shell, [], {
+            ptyProcess = pty.spawn(shell, shellArgs, {
                 name: 'xterm-color',
                 cols: cols || 120,
                 rows: rows || 30,
@@ -53,7 +60,7 @@ export function setupTerminalHandlers(mainWindow: BrowserWindow) {
         const labsRoot = path.resolve(app.getPath('userData'), 'Labs');
         const target = path.resolve(cwd || '');
         if (target !== labsRoot && !target.startsWith(labsRoot + path.sep)) return { success: false, error: 'Lab terminal must stay inside its dedicated local lab folder.' };
-        return spawn(target, cols, rows);
+        return spawn(target, cols, rows, true);
     });
 
     ipcMain.handle('terminal-write', (event, data: string) => {
@@ -82,7 +89,9 @@ export function setupTerminalHandlers(mainWindow: BrowserWindow) {
         if (key === lastRunKey && now - lastRunAt < 1000) return { success: true, skippedDuplicate: true };
 
         if (!ptyProcess || ptyCwd !== targetCwd) {
-            const spawned = spawn(targetCwd);
+            const labsRoot = path.resolve(app.getPath('userData'), 'Labs');
+            const isLabDirectory = targetCwd === labsRoot || targetCwd.startsWith(labsRoot + path.sep);
+            const spawned = spawn(targetCwd, undefined, undefined, isLabDirectory);
             if (!spawned.success) return spawned;
         }
 

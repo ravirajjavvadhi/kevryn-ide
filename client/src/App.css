@@ -938,6 +938,34 @@ body.resizing-row .panel-resize-handle {
   color: #ffffff;
 }
 
+/* Clear return path from the general IDE to the student's landing dashboard. */
+.student-dashboard-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 4px;
+  padding: 5px 9px;
+  border: 1px solid rgba(139, 92, 246, 0.48);
+  border-radius: 6px;
+  background: rgba(124, 92, 246, 0.12);
+  color: #d8ceff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background 160ms ease, border-color 160ms ease, color 160ms ease;
+}
+
+.student-dashboard-link:hover,
+.student-dashboard-link:focus-visible {
+  background: rgba(124, 92, 246, 0.24);
+  border-color: #9b87f5;
+  color: #ffffff;
+  outline: none;
+}
+
 /* --- HOLOGRAPHIC DROPDOWN --- */
 .dropdown-menu {
   position: absolute;

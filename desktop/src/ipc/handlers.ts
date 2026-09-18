@@ -238,8 +238,12 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): WorkspaceManager {
         const walk = async (directory: string, relative = '', depth = 0): Promise<any[]> => {
             if (depth > 8) return [];
             const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+            const generatedArtifact = (name: string) => /\.(exe|class|o|obj|pyc)$/i.test(name);
             const nodes = await Promise.all(entries
-                .filter(entry => !entry.name.startsWith('.') && !['node_modules', 'dist', 'build'].includes(entry.name))
+                // Lab Explorer is for student source/assets, not compiler
+                // by-products. Existing legacy output.exe files stay local but
+                // never appear as student-created work.
+                .filter(entry => !entry.name.startsWith('.') && !['node_modules', 'dist', 'build'].includes(entry.name) && (entry.isDirectory() || !generatedArtifact(entry.name)))
                 .map(async entry => {
                     const childRelative = relative ? path.posix.join(relative, entry.name) : entry.name;
                     const full = resolveLabPath(root, childRelative);
