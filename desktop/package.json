@@ -15,7 +15,7 @@
     "dist": "npm run build:client && npm run copy:client && npm run build && electron-builder",
     "dist:linux": "npm run build:client && npm run copy:client && npm run build && electron-builder --linux",
     "build:client": "cd ../client && npm install && npm run build",
-    "copy:client": "node -e \"const fs = require('fs-extra'); fs.copySync('../client/build', './client-build');\""
+    "copy:client": "node -e \"const fs = require('fs-extra'); fs.removeSync('./client-build'); fs.copySync('../client/build', './client-build');\""
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -49,6 +49,7 @@
     "files": [
       "dist/**/*",
       "client-build/**/*",
+      "!client-build/**/*.map",
       "package.json",
       "node_modules/**/*",
       "!node_modules/**/*.gypi",
