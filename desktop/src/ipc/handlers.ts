@@ -100,7 +100,7 @@ const startPreviewServer = async (rootPath: string): Promise<number> => {
     return previewPort;
 };
 
-export function setupIpcHandlers(mainWindow: BrowserWindow) {
+export function setupIpcHandlers(mainWindow: BrowserWindow): WorkspaceManager {
     const runtimeManager = new RuntimeManager(mainWindow);
     const workspaceManager = new WorkspaceManager(mainWindow);
 
@@ -403,4 +403,5 @@ export function setupIpcHandlers(mainWindow: BrowserWindow) {
             return { success: false, error: error.message };
         }
     });
+    return workspaceManager;
 }

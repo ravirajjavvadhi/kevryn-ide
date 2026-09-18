@@ -23,13 +23,12 @@
     "jwt-decode": "^4.0.0",
     "lucide-react": "^0.473.0",
     "marked": "^17.0.1",
-    "monaco-editor": "^0.55.1",
+    "monaco-editor": "^0.56.0",
     "qrcode.react": "^4.2.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-icons": "^5.5.0",
     "react-qr-code": "^2.2.0",
-    "react-scripts": "5.0.1",
     "recharts": "^3.7.0",
     "socket.io-client": "^4.8.3",
     "tailwind-merge": "^2.5.2",
@@ -37,7 +36,11 @@
     "web-vitals": "^2.1.4"
   },
   "devDependencies": {
-    "http-proxy-middleware": "^3.0.5"
+    "http-proxy-middleware": "^3.0.5",
+    "react-scripts": "5.0.1"
+  },
+  "overrides": {
+    "dompurify": "3.4.15"
   },
   "scripts": {
     "start": "react-scripts start",

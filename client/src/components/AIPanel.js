@@ -3,6 +3,7 @@ import axios from 'axios';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { FaBolt, FaCheck, FaChevronDown, FaCode, FaCopy, FaFileCode, FaHistory, FaKey, FaPaperPlane, FaPaperclip, FaPlus, FaRobot, FaSpinner, FaTimes } from 'react-icons/fa';
+import AgentTaskPanel from './AgentTaskPanel';
 
 const PROVIDERS = {
     'google-gemini': {
@@ -61,7 +62,7 @@ const explicitWorkspaceAction = (prompt, earlierMessages, workspace) => {
     return wantsWrite ? { needsTarget: true, write: false, run: false, agentMode: false } : null;
 };
 
-const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, onRunCommand, onAgentWorkspaceAction, targetAgentId = 'groq-assistant', onOpenSettings, userId }) => {
+const AIPanel = ({ token, code, fileName, language, editorContext, dirtyFiles, onApplyCode, onRunCommand, onAgentWorkspaceAction, targetAgentId = 'groq-assistant', onOpenSettings, userId }) => {
     const provider = PROVIDERS[targetAgentId] ? targetAgentId : 'groq-assistant';
     const storageKey = `kevryn.desktop.ai.threads.${userId || 'local'}`;
     const modelKey = `kevryn.desktop.ai.models.${userId || 'local'}`;
@@ -80,6 +81,7 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
     const [atBottom, setAtBottom] = useState(true);
     const [permissionPrompt, setPermissionPrompt] = useState(null);
     const [pendingProjectPlan, setPendingProjectPlan] = useState(null);
+    const [agentWorkspaceOpen, setAgentWorkspaceOpen] = useState(false);
     const messagesRef = useRef(null);
     const composerInputRef = useRef(null);
     const attachmentInputRef = useRef(null);
@@ -346,13 +348,15 @@ const AIPanel = ({ token, code, fileName, language, editorContext, onApplyCode, 
     const renderAssistant = message => <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(message.content || (message.streaming ? 'Thinking…' : ''))) }} />;
     const modelLabel = PROVIDERS[provider].models.find(([id]) => id === selectedModel)?.[1] || selectedModel;
 
+    if (agentWorkspaceOpen) return <AgentTaskPanel provider={provider} model={selectedModel} editorContext={editorContext} dirtyFiles={dirtyFiles} onBack={() => setAgentWorkspaceOpen(false)} />;
+
     return <aside className="ai-workspace" aria-label="AI workspace">
         <header className="ai-workspace-header">
             <div className="ai-provider-identity"><span className="ai-provider-mark">✦</span><div><strong>{PROVIDERS[provider].name}</strong><span>{isLoading ? 'Working' : 'Personal workspace'}</span></div></div>
-            <div className="ai-header-actions"><button className="ai-icon-button" onClick={() => createThread()} title="New conversation"><FaPlus /></button><button className="ai-icon-button" onClick={() => setHistoryOpen(open => !open)} title="Conversation history"><FaHistory /></button><button className="ai-icon-button" onClick={onOpenSettings} title="AI provider settings"><FaKey /></button></div>
+            <div className="ai-header-actions"><button className="ai-icon-button ai-agent-launch" onClick={() => setAgentWorkspaceOpen(true)} title="Open workspace coding agent"><FaCode /></button><button className="ai-icon-button" onClick={() => createThread()} title="New conversation"><FaPlus /></button><button className="ai-icon-button" onClick={() => setHistoryOpen(open => !open)} title="Conversation history"><FaHistory /></button><button className="ai-icon-button" onClick={onOpenSettings} title="AI provider settings"><FaKey /></button></div>
         </header>
         {activity.length > 0 && <div className="ai-activity-strip">{activity.slice(-2).join(' · ')}</div>}
-        <div className="ai-permission-strip" title="Workspace reads are available. Writes and terminal commands ask for permission."><span>Workspace aware</span><span>Writes ask first</span><span>Commands ask first</span></div>
+        <div className="ai-permission-strip" title="Open Workspace agent for reliable multi-step file changes and terminal checks."><span>Workspace aware</span><button onClick={() => setAgentWorkspaceOpen(true)}>Open coding agent</button><span>Commands ask first</span></div>
         <div className="ai-model-bar"><span>Model</span><div className="ai-model-menu"><button onClick={() => setModelOpen(open => !open)} aria-expanded={modelOpen}>{modelLabel}<FaChevronDown /></button>{modelOpen && <div className="ai-model-options" role="listbox">{PROVIDERS[provider].models.map(([id, label]) => <button role="option" aria-selected={id === selectedModel} key={id} onClick={() => { setModels(previous => ({ ...previous, [provider]: id })); setModelOpen(false); }}><span>{label}</span>{id === selectedModel && <FaCheck />}</button>)}</div>}</div></div>
         {historyOpen && <div className="ai-history-drawer"><div><strong>{PROVIDERS[provider].name} conversations</strong><button onClick={() => setHistoryOpen(false)}><FaTimes /></button></div>{providerThreads.length === 0 ? <p>No saved conversations yet.</p> : providerThreads.map(thread => <button key={thread.id} className={thread.id === activeThread?.id ? 'selected' : ''} onClick={() => { setActiveIds(previous => ({ ...previous, [provider]: thread.id })); setHistoryOpen(false); }}>{thread.title}<small>{new Date(thread.updatedAt).toLocaleDateString()}</small></button>)}</div>}
         <div className="ai-conversation" ref={messagesRef} onScroll={onScroll}>

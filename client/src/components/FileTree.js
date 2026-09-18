@@ -15,6 +15,12 @@ const getFileIcon = (name) => {
   if (name.endsWith('.md')) return <FaFile color="#42a5f5" />;
   return <FaFile color="#9e9e9e" />;
 };
+const compareNodes = (left, right) => {
+  // A stable folder-first ordering prevents the Explorer jumping around after
+  // a local agent creates several files in one task.
+  if (left.type !== right.type) return left.type === 'folder' ? -1 : 1;
+  return String(left.name || '').localeCompare(String(right.name || ''), undefined, { numeric: true, sensitivity: 'base' });
+};
 
 // ── Context Menu ────────────────────────────────────────────────────────────
 const ContextMenu = React.memo(({ x, y, node, onClose, onCreate, onCreateFolder, onRename, onDelete, onDownload, onCopyPath, onSetWorkspace }) => {
@@ -67,11 +73,11 @@ const ContextMenu = React.memo(({ x, y, node, onClose, onCreate, onCreateFolder,
       ref={menuRef}
       style={{
         position: 'fixed', top: pos.y, left: pos.x,
-        background: '#1f1f1f', border: '1px solid #454545',
-        borderRadius: '5px', padding: '4px 0',
+        background: '#191823', border: '1px solid rgba(155,132,240,.38)',
+        borderRadius: '8px', padding: '5px 0',
         zIndex: 9999, minWidth: '185px',
-        boxShadow: '0 6px 24px rgba(0,0,0,0.6)',
-        fontFamily: 'Segoe UI, sans-serif',
+        boxShadow: '0 16px 38px rgba(0,0,0,.52)',
+        fontFamily: 'Inter, Segoe UI, sans-serif',
       }}
       onClick={e => e.stopPropagation()}
     >
@@ -183,22 +189,23 @@ const FileTree = React.memo(({
     display: 'flex',
     alignItems: 'center',
     gap: '6px',
-    padding: '3px 6px 3px 0',
+    padding: '5px 8px 5px 4px',
     cursor: 'pointer',
-    borderRadius: '4px',
+    borderRadius: '6px',
     userSelect: 'none',
-    background: isActive ? 'rgba(139, 92, 246, 0.25)' : hovered ? 'rgba(255,255,255,0.06)' : 'transparent',
-    color: isActive ? '#fff' : '#ccc',
-    fontSize: '13px',
+    background: isActive ? 'linear-gradient(90deg, rgba(125,91,232,.34), rgba(91,65,164,.17))' : hovered ? 'rgba(255,255,255,0.055)' : 'transparent',
+    color: isActive ? '#fff' : '#c8c7d3',
+    fontSize: '12px',
     fontFamily: 'Segoe UI, sans-serif',
-    transition: 'background 0.12s',
+    transition: 'background .14s ease, color .14s ease',
   };
 
   return (
     <div style={{ 
-      marginLeft: level === 0 ? '0' : '14px', 
-      borderLeft: level > 0 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none',
-      position: 'relative' 
+      marginLeft: level === 0 ? '0' : '12px',
+      paddingLeft: level === 0 ? '0' : '5px',
+      borderLeft: level > 0 ? '1px solid rgba(151, 134, 207, 0.13)' : 'none',
+      position: 'relative'
     }}>
       {/* ── Node Row ── */}
       <div
@@ -206,6 +213,8 @@ const FileTree = React.memo(({
         className={`file-node ${isActive ? 'active' : ''}`}
         style={nodeStyle}
         tabIndex={0}
+        aria-expanded={isFolder ? isOpen : undefined}
+        aria-label={`${isFolder ? 'Folder' : 'File'} ${data.name}`}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
         onClick={(e) => {
@@ -275,7 +284,7 @@ const FileTree = React.memo(({
       </div>
 
       {/* ── Children ── */}
-      {isOpen && isFolder && data.children && data.children.map(child => (
+      {isOpen && isFolder && [...(data.children || [])].sort(compareNodes).map(child => (
         <FileTree
           key={child._id}
           data={child}

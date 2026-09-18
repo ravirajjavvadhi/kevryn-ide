@@ -18,6 +18,10 @@ export class AgentManager {
         this.registry.set(id, agent);
     }
 
+    public getAgent(agentId: string): AgentExtension | undefined {
+        return this.registry.get(agentId);
+    }
+
     public setupIpc() {
         ipcMain.handle('agent-list', () => {
             return Array.from(this.registry.values()).map(agent => ({

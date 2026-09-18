@@ -4,6 +4,7 @@ import * as path from 'path';
 import { setupIpcHandlers } from '../ipc/handlers';
 import { setupTerminalHandlers } from '../ipc/terminalHandlers';
 import { EnvironmentManager } from '../runtime/EnvironmentManager';
+import { AgentRuntime } from '../agents/runtime/AgentRuntime';
 
 // Disable Chromium Sandbox to prevent crashes on strict Ubuntu college networks
 app.commandLine.appendSwitch('no-sandbox');
@@ -33,7 +34,7 @@ async function createWindow() {
     await EnvironmentManager.detectAll();
 
     // Setup IPC Handlers
-    setupIpcHandlers(win);
+    const workspaceManager = setupIpcHandlers(win);
     setupTerminalHandlers(win);
 
     // Setup Agent Hub
@@ -46,6 +47,30 @@ async function createWindow() {
     agentManager.registerAgent(new GroqAdapter());
     agentManager.setupIpc();
     agentManager.initializeAgents().catch(console.error);
+
+    // Workspace tasks use a dedicated main-process runtime. Renderer code only
+    // receives events and asks for approvals; it cannot grant itself file or
+    // terminal access.
+    const agentRuntime = new AgentRuntime(
+        () => workspaceManager.getActiveWorkspace(),
+        (id) => agentManager.getAgent(id),
+        (_owner, event) => { if (!win.isDestroyed()) win.webContents.send('agent-task-event', event); }
+    );
+    ipcMain.handle('agent-task-start', (event, input) => agentRuntime.start(event.sender.id, input || {}));
+    ipcMain.handle('agent-task-list', (event) => agentRuntime.snapshot(event.sender.id));
+    ipcMain.handle('agent-task-approve', (event, taskId: string, approvalId: string, allowed: boolean) => {
+        agentRuntime.approve(event.sender.id, taskId, approvalId, allowed); return { success: true };
+    });
+    ipcMain.handle('agent-task-mode', (event, taskId: string, mode: 'ask' | 'edit' | 'trusted') => {
+        agentRuntime.setMode(event.sender.id, taskId, mode); return { success: true };
+    });
+    ipcMain.handle('agent-task-cancel', (event, taskId: string) => { agentRuntime.cancel(event.sender.id, taskId); return { success: true }; });
+    ipcMain.handle('agent-task-undo', async (event, taskId: string, changeId: string) => {
+        await agentRuntime.undo(event.sender.id, taskId, changeId); return { success: true };
+    });
+    ipcMain.handle('agent-task-editor-state', (event, dirtyFiles: string[]) => { agentRuntime.updateEditor(event.sender.id, dirtyFiles || []); return { success: true }; });
+    const windowWebContentsId = win.webContents.id;
+    win.webContents.on('destroyed', () => agentRuntime.cancelOwner(windowWebContentsId));
 
     // Load React UI
     const isDev = !app.isPackaged;

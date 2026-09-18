@@ -1,8 +1,11 @@
 import { AgentExtension, AgentStatus, ExtensionManifest } from '../../core/AgentExtension';
 import axios from 'axios';
 import * as https from 'https';
+import { providerTurn } from '../../runtime/ProviderTurn';
+import { TurnRequest } from '../../runtime/Protocol';
 
 export class GeminiAdapter implements AgentExtension {
+    agentTurn(request: TurnRequest) { return providerTurn('gemini', this.apiKey || '', request); }
     private status: AgentStatus = 'NOT_INSTALLED';
     private apiKey: string | null = null;
 

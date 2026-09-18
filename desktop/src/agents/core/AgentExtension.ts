@@ -22,6 +22,7 @@ export interface AgentExtension {
     
     // Core interaction
     sendChat(message: string, context: any): AsyncGenerator<string, void, unknown>;
+    agentTurn?(request: import('../runtime/Protocol').TurnRequest): Promise<import('../runtime/Protocol').Turn>;
     
     // Disposes resources
     dispose(): void;

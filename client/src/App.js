@@ -2232,6 +2232,7 @@ function App() {
                             serverUrl={SERVER_URL}
                             userId={userId}
                             onBack={() => setShowStudentAssignments(false)}
+                            onSessionExpired={handleLogout}
                             activeSessionId={activeSessionId}
                             onEnterLab={async () => {
                                 if (window.__KEVRYN_DESKTOP__ && window.electronAPI && activeSession?.courseId) {
@@ -2988,6 +2989,7 @@ function App() {
                                                         code={code}
                                                         fileName={fileName}
                                                         language={getLanguage(fileName)}
+                                                        dirtyFiles={fileName && dirtyFiles[activeFileId] ? [fileName] : []}
                                                         editorContext={(() => {
                                                             const editor = editorRef.current;
                                                             const position = editor?.getPosition?.();

@@ -49,6 +49,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     signoutAgent: (agentId: string) => ipcRenderer.invoke('agent-signout', agentId),
     openProviderKeyPage: (agentId: string) => ipcRenderer.invoke('open-provider-key-page', agentId),
     chatWithAgent: (agentId: string, message: string, context: any) => ipcRenderer.invoke('agent-chat', agentId, message, context),
+    startAgentTask: (input: any) => ipcRenderer.invoke('agent-task-start', input),
+    listAgentTasks: () => ipcRenderer.invoke('agent-task-list'),
+    resolveAgentTaskApproval: (taskId: string, approvalId: string, allowed: boolean) => ipcRenderer.invoke('agent-task-approve', taskId, approvalId, allowed),
+    setAgentTaskMode: (taskId: string, mode: 'ask' | 'edit' | 'trusted') => ipcRenderer.invoke('agent-task-mode', taskId, mode),
+    cancelAgentTask: (taskId: string) => ipcRenderer.invoke('agent-task-cancel', taskId),
+    undoAgentTaskChange: (taskId: string, changeId: string) => ipcRenderer.invoke('agent-task-undo', taskId, changeId),
+    updateAgentTaskEditorState: (dirtyFiles: string[]) => ipcRenderer.invoke('agent-task-editor-state', dirtyFiles),
+    onAgentTaskEvent: (callback: (event: any) => void) => {
+        ipcRenderer.removeAllListeners('agent-task-event');
+        ipcRenderer.on('agent-task-event', (_event, taskEvent) => callback(taskEvent));
+    },
     onAgentChatChunk: (agentId: string, requestIdOrCallback: string | ((chunk: string) => void), possibleCallback?: (chunk: string) => void) => {
         const requestId = typeof requestIdOrCallback === 'string' ? requestIdOrCallback : '';
         const callback = typeof requestIdOrCallback === 'function' ? requestIdOrCallback : possibleCallback;
