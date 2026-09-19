@@ -21,7 +21,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
 
         console.log("[Terminal] Initializing persistent XTerm instance");
         const term = new XTerminal({
-            cursorBlink: false,
+            cursorBlink: true,
             theme: {
                 background: '#1e1e1e',
                 foreground: '#ffffff',
@@ -156,6 +156,10 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
                     window.electronAPI.terminalResize(size.cols, size.rows);
                 });
 
+                // xterm is not a normal input element. Give the local Lab
+                // terminal focus after it has mounted so it accepts typing
+                // immediately rather than requiring a precise canvas click.
+                requestAnimationFrame(() => term.focus());
                 console.log("[Terminal] Native Desktop Shell Connected");
 
                 return () => {

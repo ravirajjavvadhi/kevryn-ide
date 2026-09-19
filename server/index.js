@@ -1703,6 +1703,25 @@ function getLabDir(userId, courseId) {
     return labDir;
 }
 
+// Browser Lab Mode needs a server-side process in order to execute code, but
+// it must never reuse a student's general workspace or another lab's files.
+// Each active lab session therefore receives an execution-only directory below
+// the student's course lab root. Desktop Lab Mode does not use this helper.
+function getSessionLabDir(userId, courseId, sessionId) {
+    const normalizedSessionId = String(sessionId || '');
+    if (!mongoose.Types.ObjectId.isValid(normalizedSessionId)) {
+        throw new Error('Invalid lab session directory request.');
+    }
+    const courseRoot = getLabDir(userId, courseId);
+    const sessionRoot = path.resolve(courseRoot, '.kevryn-sessions', normalizedSessionId);
+    const expectedRoot = path.resolve(courseRoot, '.kevryn-sessions');
+    if (sessionRoot !== expectedRoot && !sessionRoot.startsWith(expectedRoot + path.sep)) {
+        throw new Error('Invalid lab session directory path.');
+    }
+    if (!fs.existsSync(sessionRoot)) fs.mkdirSync(sessionRoot, { recursive: true });
+    return sessionRoot;
+}
+
 
 
 
@@ -3538,6 +3557,52 @@ io.on('connection', (socket) => {
         }
     });
 
+    // The browser client has no local filesystem. Keep its runnable source in
+    // a session-isolated execution directory so its PTY uses the same files
+    // that the faculty monitor sees. This never writes File/general workspace.
+    socket.on('lab-execution-file-event', async ({ sessionId, username, path: filePath, code, action }, acknowledgement) => {
+        const respond = (payload) => {
+            if (typeof acknowledgement === 'function') acknowledgement(payload);
+        };
+        try {
+            if (!sessionId || !username || !filePath || !isSocketStudent(username) || socketToUser[socket.id]?.sessionId !== sessionId) {
+                respond({ success: false, error: 'Unauthorized lab execution file request.' });
+                return;
+            }
+            const safePath = String(filePath).replace(/\\/g, '/').replace(/^\/+/, '');
+            if (!safePath || safePath.split('/').some(segment => !segment || segment === '.' || segment === '..') || safePath.length > 500) {
+                respond({ success: false, error: 'Invalid lab execution file path.' });
+                return;
+            }
+            const fileCode = typeof code === 'string' ? code : '';
+            if (fileCode.length > 2 * 1024 * 1024) {
+                respond({ success: false, error: 'Lab execution file exceeds the size limit.' });
+                return;
+            }
+            const labSession = await LabSession.findById(sessionId).select('courseId allowedStudents collegeId isActive').lean();
+            if (!labSession?.isActive || !(labSession.allowedStudents || []).includes(username) || (socket.user.collegeId && String(socket.user.collegeId) !== String(labSession.collegeId))) {
+                respond({ success: false, error: 'This lab session is not available.' });
+                return;
+            }
+            const sessionDir = getSessionLabDir(socket.user.userId, labSession.courseId, sessionId);
+            const targetPath = path.resolve(sessionDir, ...safePath.split('/'));
+            if (!targetPath.startsWith(sessionDir + path.sep)) {
+                respond({ success: false, error: 'Invalid lab execution file path.' });
+                return;
+            }
+            if (action === 'delete') {
+                await fs.promises.rm(targetPath, { force: true });
+            } else {
+                await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
+                await fs.promises.writeFile(targetPath, fileCode, 'utf8');
+            }
+            respond({ success: true });
+        } catch (error) {
+            console.error('[LAB EXECUTION] Could not update browser lab source:', error.message);
+            respond({ success: false, error: 'Could not prepare the lab file for execution.' });
+        }
+    });
+
     // NEW: Real-time status update (Immediate feedback for Active/Idle)
     socket.on('student-status-update', async ({ sessionId, username, status }) => {
         if (sessionId && username && status && isSocketStudent(username) && socketToUser[socket.id]?.sessionId === sessionId) {
@@ -3882,7 +3947,7 @@ io.on('connection', (socket) => {
     // --- TERMINAL HANDLING ---
     const terminals = {}; // Store active terminals for this socket
 
-    socket.on('terminal:create', ({ termId, userId, courseId: payloadCourseId }) => {
+    socket.on('terminal:create', async ({ termId, userId, courseId: payloadCourseId, sessionId }) => {
         console.log(`[TERMINAL] Request to create terminal ${termId} for user ${userId}`);
 
         // CHECK: Debounce creation to prevent rapid crash loops
@@ -3925,8 +3990,25 @@ io.on('connection', (socket) => {
         // Ensure baseUserDir is defined or handled. It seems missing in this scope based on snippets.
         // Assuming getUserDir uses a global base or internal logic.
         let termCwd;
-        if (userId) {
-            termCwd = courseId ? getLabDir(userId, courseId) : getUserDir(userId);
+        if (sessionId) {
+            // student-join-lab performs its database work asynchronously. Do
+            // not require its transient socket map here; the authenticated
+            // identity and active-session enrolment checks below are the
+            // authoritative guard and avoid a connection-time race.
+            if (!isSocketStudent(socket.user?.username)) {
+                socket.emit('terminal:data', { termId, data: '\r\nAccess denied for this lab terminal.\r\n' });
+                return;
+            }
+            const labSession = await LabSession.findById(sessionId).select('courseId allowedStudents collegeId isActive').lean();
+            if (!labSession?.isActive || !(labSession.allowedStudents || []).includes(socket.user.username) || (socket.user.collegeId && String(socket.user.collegeId) !== String(labSession.collegeId))) {
+                socket.emit('terminal:data', { termId, data: '\r\nThis lab session is no longer available.\r\n' });
+                return;
+            }
+            termCwd = getSessionLabDir(socket.user.userId, labSession.courseId, sessionId);
+        } else if (socket.user?.userId || userId) {
+            // Preserve non-lab terminals, preferring the authenticated user.
+            const terminalUserId = socket.user?.userId || userId;
+            termCwd = courseId ? getLabDir(terminalUserId, courseId) : getUserDir(terminalUserId);
         } else {
             // Fallback - Use the new global storage root
             termCwd = baseUserDir;

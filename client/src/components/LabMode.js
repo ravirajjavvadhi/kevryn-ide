@@ -35,6 +35,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const socketRef = useRef(null);
     const codeRef = useRef(code);
     const activeFileRef = useRef(activeFile);
+    const editorRef = useRef(null);
 
     // NEW: Beast Monitoring State
     const [tabSwitches, setTabSwitches] = useState(0);
@@ -65,6 +66,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     // Keep refs in sync
     useEffect(() => { codeRef.current = code; }, [code]);
     useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
+    useEffect(() => {
+        if (!activeFile) return;
+        // Monaco remains mounted as files change, so onMount alone cannot
+        // restore focus after creating, importing, or selecting a file.
+        requestAnimationFrame(() => editorRef.current?.focus());
+    }, [activeFile?._id]);
 
     useEffect(() => {
         const move = event => {
@@ -179,7 +186,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 // socket is only for live supervision and report mirroring.
                 // The web lab still uses its existing browser/server runtime.
                 if (!isDesktopLab) {
-                    sock.emit('terminal:create', { termId: 1, userId, courseId: session?.courseId?._id || session?.courseId });
+                    sock.emit('terminal:create', {
+                        termId: 1,
+                        userId,
+                        courseId: session?.courseId?._id || session?.courseId,
+                        sessionId: session?.sessionId || session?._id
+                    });
                 }
             } else {
                 console.error('[LabMode] Missing session ID or username', { session, username });
@@ -466,7 +478,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             // The acknowledgement confirms report persistence, not local file
             // saving. A slow/offline mirror must never leave the Save button
             // in a pending state or block local execution.
+            const mirrorExecution = !isDesktopLab && isSessionScopedLab;
             let settled = false;
+            let pendingResponses = mirrorExecution ? 2 : 1;
+            let allSucceeded = true;
             const finish = (result) => {
                 if (settled) return;
                 settled = true;
@@ -477,6 +492,11 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 }
                 resolve(Boolean(result?.success));
             };
+            const receive = (result) => {
+                allSucceeded = allSucceeded && Boolean(result?.success);
+                pendingResponses -= 1;
+                if (pendingResponses === 0) finish({ success: allSucceeded });
+            };
             const timeout = setTimeout(() => finish({ success: false }), 4000);
             socket.emit('student-lab-file-event', {
                 sessionId: session.sessionId || session._id,
@@ -486,7 +506,16 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 language: fileLanguage || 'plaintext',
                 action,
                 importedFrom
-            }, finish);
+            }, receive);
+            if (mirrorExecution) {
+                socket.emit('lab-execution-file-event', {
+                    sessionId: session.sessionId || session._id,
+                    username,
+                    path: filePath,
+                    code: contents || '',
+                    action
+                }, receive);
+            }
         });
         if (immediate) return send();
         if (reportMirrorTimeoutRef.current) clearTimeout(reportMirrorTimeoutRef.current);
@@ -494,7 +523,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         // coalesced so it never makes local typing feel network-bound.
         reportMirrorTimeoutRef.current = setTimeout(() => { void send(); }, 1500);
         return Promise.resolve(true);
-    }, [isDesktopLab, session?.sessionId, session?._id, username]);
+    }, [isDesktopLab, isSessionScopedLab, session?.sessionId, session?._id, username]);
 
     const syncLabMirror = useCallback((fileName, contents, fileLanguage) => {
         if (socketRef.current && (session?.sessionId || session?._id) && username) {
@@ -716,12 +745,25 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         if (session?.disablePreviousFileImport) return;
         setShowImport(true); setSelectedImport(null);
         try {
-            if (isDesktopLab) setImportableFiles((await window.electronAPI.listPreviousLabFiles(labScope)) || []);
-            else {
-                const activeSessionId = session?.sessionId || session?._id;
+            const activeSessionId = session?.sessionId || session?._id;
+            let serverFiles = [];
+            try {
                 const response = await api.get(`/lab/importable-files?sessionId=${encodeURIComponent(activeSessionId)}`);
-                setImportableFiles(response.data?.files || []);
+                serverFiles = (response.data?.files || []).map(file => ({ ...file, source: 'session-archive' }));
+            } catch (error) {
+                // A network problem must not hide valid local history in the
+                // desktop app. Browser Lab Mode still reports the empty state.
+                if (!isDesktopLab) throw error;
             }
+            if (!isDesktopLab) { setImportableFiles(serverFiles); return; }
+
+            // A desktop lab is local-first, but its completed-session archive
+            // is the same protected record shown in Student Command Center.
+            // Merge it with older local-only folders so switching devices or
+            // updating the app never hides a student's earlier work.
+            const localFiles = ((await window.electronAPI.listPreviousLabFiles(labScope)) || []).map(file => ({ ...file, source: 'local-folder' }));
+            const serverKeys = new Set(serverFiles.map(file => `${file.sourceSessionId}:${file.path}`));
+            setImportableFiles([...serverFiles, ...localFiles.filter(file => !serverKeys.has(`${file.sourceSessionId}:${file.path}`))]);
         } catch (_) { setImportableFiles([]); }
     };
 
@@ -732,8 +774,17 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         try {
             let created;
             if (isDesktopLab) {
-                const result = await window.electronAPI.importPreviousLabFile(labScope, entry.sourceSessionId, entry.path, entry.path);
-                created = { _id: result.path, path: result.path, name: result.path.split('/').pop(), type: 'file', content: result.content || '' };
+                if (files.some(file => (file.path || file.name) === entry.path)) throw new Error('A file with this name already exists in the current session.');
+                if (entry.source === 'session-archive') {
+                    // Server records are only a private history source. The
+                    // imported copy is written into this session's local
+                    // folder and executes locally like every other file.
+                    await window.electronAPI.writeLabFile(labScope, entry.path, entry.code || '');
+                    created = { _id: entry.path, path: entry.path, name: entry.path.split('/').pop(), type: 'file', content: entry.code || '', language: entry.language || detectLanguage(entry.path) };
+                } else {
+                    const result = await window.electronAPI.importPreviousLabFile(labScope, entry.sourceSessionId, entry.path, entry.path);
+                    created = { _id: result.path, path: result.path, name: result.path.split('/').pop(), type: 'file', content: result.content || '' };
+                }
             } else {
                 const filePath = entry.path || entry.name;
                 if (files.some(file => (file.path || file.name) === filePath)) throw new Error('A file with this name already exists in the current session.');
@@ -853,6 +904,9 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             } else if (isSessionScopedLab) {
                 setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code, updatedAt: new Date().toISOString() } : file));
                 syncLabMirror(activeFile.name, code, language);
+                // Wait for the browser's dedicated session mirror before Run
+                // can send a command to its PTY. This prevents stale files.
+                await syncLabArtifact(activeFile.path || activeFile.name, code, language, 'update', true);
             } else {
                 await api.put(`/files/${activeFile._id}`, { content: code });
                 setFiles(prev => prev.map(f => f._id === activeFile._id ? { ...f, content: code } : f));
@@ -893,7 +947,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             }
         } catch (e) { console.error("Save failed", e); }
         finally { setSaving(false); }
-    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, isSessionScopedLab, labScope, syncLabMirror, language]);
+    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, isSessionScopedLab, labScope, syncLabMirror, syncLabArtifact, language]);
 
     // Keyboard shortcuts are handled in the main shortcut block below
 
@@ -1393,6 +1447,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                             height="100%" language={language} value={code}
                             theme={theme === 'light' ? 'light' : 'vs-dark'}
                             onChange={handleCodeChange}
+                            onMount={editor => {
+                                editorRef.current = editor;
+                                // Newly selected/created lab files are ready
+                                // for uninterrupted typing immediately.
+                                requestAnimationFrame(() => editor.focus());
+                            }}
                             options={{
                                 minimap: { enabled: false },
                                 fontSize: 15,
