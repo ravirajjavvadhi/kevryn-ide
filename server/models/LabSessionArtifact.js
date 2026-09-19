@@ -16,7 +16,14 @@ const LabSessionArtifactSchema = new mongoose.Schema({
         code: { type: String, default: '' },
         createdAt: { type: Date, default: Date.now },
         updatedAt: { type: Date, default: Date.now },
-        deletedAt: { type: Date, default: null }
+        deletedAt: { type: Date, default: null },
+        // Copy provenance is report metadata only. It never links the current
+        // file to a mutable prior file or exposes any personal workspace path.
+        importedFrom: {
+            sessionId: { type: mongoose.Schema.Types.ObjectId, ref: 'LabSession' },
+            path: String,
+            importedAt: Date
+        }
     }],
     lastSyncedAt: { type: Date, default: Date.now }
 }, { timestamps: true });

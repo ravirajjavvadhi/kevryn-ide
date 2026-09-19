@@ -54,8 +54,10 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
     const [selectedCourseId, setSelectedCourseId] = useState(""); // NEW: Phase 18
     const [selectedBatchId, setSelectedBatchId] = useState(""); // NEW: Batch Integration
     const [duration, setDuration] = useState(60); // NEW: Duration in minutes
+    const [disablePreviousFileImport, setDisablePreviousFileImport] = useState(false);
     const [sessionStartTime, setSessionStartTime] = useState(null); // NEW: Global start
     const [sessionDuration, setSessionDuration] = useState(60); // NEW: Active session duration
+    const [activeImportDisabled, setActiveImportDisabled] = useState(false);
     const [isCreatingSession, setIsCreatingSession] = useState(false);
     const [timetableSlots, setTimetableSlots] = useState([]); // NEW: Timetable slots
     const [searchQuery, setSearchQuery] = useState("");
@@ -69,6 +71,8 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
 
     // Data State
     const [studentFiles, setStudentFiles] = useState([]);
+    const [courseHistoryFiles, setCourseHistoryFiles] = useState([]);
+    const [fileScope, setFileScope] = useState('current');
     const [studentPortfolio, setStudentPortfolio] = useState(null);
     const [selectedFileContent, setSelectedFileContent] = useState(null);
     const [newStudentId, setNewStudentId] = useState("");
@@ -78,16 +82,35 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
 
     // NEW: Beast Monitoring States
     const [announcementText, setAnnouncementText] = useState("");
+    const [showNoteComposer, setShowNoteComposer] = useState(false);
+    const [sessionNoteTitle, setSessionNoteTitle] = useState('');
+    const [sessionNoteText, setSessionNoteText] = useState('');
     const [alerts, setAlerts] = useState([]); // Array of { username, type, message, timestamp }
     const [raisedHands, setRaisedHands] = useState([]); // Array of usernames
     const [showTimeline, setShowTimeline] = useState(false);
     const [sessionTimeline, setSessionTimeline] = useState([]); // For the current session
 
     const socketRef = useRef(null);
+    const selectedStudentRef = useRef(null);
+    const fileRefreshTimeoutRef = useRef(null);
     const api = useMemo(() => axios.create({
         baseURL: serverUrl || SERVER_URL,
         headers: { Authorization: token }
     }), [serverUrl, token]);
+
+    // The faculty live-file list is deliberately scoped to the selected
+    // session. It never asks the student's general workspace for data.
+    const fetchStudentFiles = useCallback(async (username) => {
+        if (!username || !sessionId) return setStudentFiles([]);
+        try {
+            const res = await api.get(`/lab/student-files/${username}?sessionId=${sessionId}`);
+            setStudentFiles(res.data || []);
+        } catch (e) { setStudentFiles([]); }
+    }, [api, sessionId]);
+
+    useEffect(() => {
+        selectedStudentRef.current = selectedStudent;
+    }, [selectedStudent]);
 
     // --- SESSION MANAGEMENT ---
     useEffect(() => {
@@ -103,6 +126,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                     setSemester(s.semester);
                     setSessionStartTime(s.startTime); // NEW
                     setSessionDuration(s.duration || 60); // NEW
+                    setActiveImportDisabled(Boolean(s.disablePreviousFileImport));
                     setSelectedCourseId(s.courseId || ""); // FIX: Set selectedCourseId for reports
                     setIsCreatingSession(false);
 
@@ -154,7 +178,8 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                     semester: semester || "Sem 1",
                     courseId: finalCourseId, // NEW: Link to persistent roster
                     batchId: selectedBatchId, // NEW: Link to specific batch
-                    duration: parseInt(duration) || 60 // NEW: Duration
+                    duration: parseInt(duration) || 60, // NEW: Duration
+                    disablePreviousFileImport
                 });
             }
 
@@ -162,6 +187,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                 setSessionId(res.data.session._id);
                 setSessionStartTime(res.data.session.startTime); // NEW
                 setSessionDuration(res.data.session.duration || 60); // NEW
+                setActiveImportDisabled(Boolean(res.data.session.disablePreviousFileImport));
                 localStorage.setItem('lastSessionId', res.data.session._id);
 
                 setIsCreatingSession(false);
@@ -223,12 +249,23 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                     lastActive: data.lastActive || new Date().toLocaleTimeString(),
                     code: data.code !== undefined ? data.code : (prev[data.username]?.code || ''),
                     activeFile: data.activeFile || prev[data.username]?.activeFile || null,
+                    labFiles: data.labFiles !== undefined ? data.labFiles : (prev[data.username]?.labFiles || []),
                     // BEAST FIELDS
                     tabSwitchCount: data.tabSwitchCount !== undefined ? data.tabSwitchCount : (prev[data.username]?.tabSwitchCount || 0),
                     pasteCount: data.pasteCount !== undefined ? data.pasteCount : (prev[data.username]?.pasteCount || 0),
                     attentionScore: data.attentionScore !== undefined ? data.attentionScore : (prev[data.username]?.attentionScore || 100)
                 }
             }));
+
+            // A local desktop create/save/rename/delete emits an artifact
+            // update. Refresh only the faculty's currently selected student,
+            // with a tiny debounce so multiple file events remain one request.
+            if (Array.isArray(data.labFiles) && selectedStudentRef.current === data.username) {
+                if (fileRefreshTimeoutRef.current) clearTimeout(fileRefreshTimeoutRef.current);
+                fileRefreshTimeoutRef.current = setTimeout(() => {
+                    fetchStudentFiles(data.username);
+                }, 180);
+            }
 
             // Auto-flag alerts
             if (data.tabSwitchCount > 5 || data.attentionScore < 40) {
@@ -259,16 +296,13 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
             setRaisedHands(prev => prev.filter(u => u !== username));
         });
 
-        return () => socket.disconnect();
-    }, [sessionId, serverUrl]);
+        return () => {
+            if (fileRefreshTimeoutRef.current) clearTimeout(fileRefreshTimeoutRef.current);
+            socket.disconnect();
+        };
+    }, [sessionId, serverUrl, fetchStudentFiles]);
 
     // --- DATA FETCHING ---
-    const fetchStudentFiles = useCallback(async (username) => {
-        try {
-            const res = await api.get(`/lab/student-files/${username}?sessionId=${sessionId}`);
-            setStudentFiles(res.data || []);
-        } catch (e) { setStudentFiles([]); }
-    }, [api, sessionId]);
 
     const fetchPortfolio = useCallback(async (username) => {
         try {
@@ -324,6 +358,8 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
         setSelectedFileContent(null);
         setActiveTab('live');
         fetchStudentFiles(username);
+        setFileScope('current');
+        setCourseHistoryFiles([]);
         fetchPortfolio(username); // Prefetch portfolio
         // fetchStudentReport(username); // Will be called when tab is active
     };
@@ -392,6 +428,22 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
         socketRef.current.emit('faculty-announcement', { sessionId, message: announcementText });
         setAnnouncementText("");
         alert("Announcement broadcasted.");
+    };
+
+    const fetchCourseHistoryFiles = async (username) => {
+        if (!username || !sessionId) return;
+        try {
+            const response = await api.get(`/lab/session/${sessionId}/student/${encodeURIComponent(username)}/course-history`);
+            setCourseHistoryFiles(response.data?.sessions || []);
+        } catch (_) { setCourseHistoryFiles([]); }
+    };
+
+    const sendSessionNote = async () => {
+        if (!sessionNoteText.trim() || !sessionId) return;
+        try {
+            await api.post(`/lab/session/${sessionId}/notes`, { title: sessionNoteTitle.trim(), message: sessionNoteText.trim() });
+            setSessionNoteTitle(''); setSessionNoteText(''); setShowNoteComposer(false);
+        } catch (error) { alert(error?.response?.data?.error || 'Could not send the session note.'); }
     };
 
     const handleAcknowledge = (uname) => {
@@ -595,6 +647,11 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                             style={{ width: '100%', padding: '10px', background: '#0f172a', border: '1px solid #334155', borderRadius: '6px', color: '#fff' }} />
                     </div>
 
+                    <label style={{ display: 'flex', gap: '9px', alignItems: 'flex-start', marginBottom: '16px', padding: '10px', border: '1px solid #334155', borderRadius: '7px', color: '#cbd5e1', fontSize: '12px', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={disablePreviousFileImport} onChange={e => setDisablePreviousFileImport(e.target.checked)} style={{ marginTop: 2 }} />
+                        <span><strong>Disable previous-file import</strong><br /><span style={{ color: '#94a3b8' }}>Students begin with a clean session and cannot copy a file from an earlier lab.</span></span>
+                    </label>
+
 
                     <button onClick={handleCreateSession} style={{ width: '100%', padding: '12px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
                         🚀 Launch Lab Session
@@ -644,7 +701,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                             {Object.values(students).filter(s => s.status === 'distracted').length} DISTRACTED
                         </span>
                     </div>
-                    {sessionId && <GlobalSessionTimer startTime={sessionStartTime} duration={sessionDuration} />}
+                    {sessionId && <><GlobalSessionTimer startTime={sessionStartTime} duration={sessionDuration} /><span title="This session rule is fixed after launch" style={{ fontSize: 10, padding: '5px 8px', borderRadius: 6, color: activeImportDisabled ? '#fbbf24' : '#86efac', border: `1px solid ${activeImportDisabled ? 'rgba(251,191,36,.35)' : 'rgba(134,239,172,.28)'}` }}>{activeImportDisabled ? 'IMPORT LOCKED' : 'IMPORT ALLOWED'}</span></>}
                     <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
                         {sessionId && (
                             <button onClick={handleEndSession} style={{ background: '#ef4444', border: 'none', padding: '6px 12px', borderRadius: '6px', color: '#fff', fontSize: '12px', cursor: 'pointer', fontWeight: '600' }}>
@@ -833,6 +890,7 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                                 </div>
                             </div>
                             <div style={{ display: 'flex', gap: '20px', height: '100%' }}>
+                                <button onClick={() => setShowNoteComposer(true)} style={{ alignSelf: 'center', background: 'rgba(99,102,241,.12)', border: '1px solid rgba(129,140,248,.32)', color: '#c4b5fd', borderRadius: 6, padding: '5px 9px', cursor: 'pointer', fontSize: 11, fontWeight: 700 }}>SEND NOTE</button>
                                 <button onClick={() => setActiveTab('live')} style={{ background: 'transparent', border: 'none', borderBottom: activeTab === 'live' ? '3px solid #6366f1' : '3px solid transparent', color: activeTab === 'live' ? '#6366f1' : '#64748b', transition: 'all 0.2s', padding: '0 5px', cursor: 'pointer', fontSize: '12px', fontWeight: '600' }}>
                                     LIVE FEED
                                 </button>
@@ -893,14 +951,19 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                                     {/* File List */}
                                     <div style={{ width: '250px', borderLeft: '1px solid #334155', background: '#0f172a', padding: '15px', overflowY: 'auto' }}>
                                         <div style={{ fontSize: '11px', fontWeight: 'bold', color: '#94a3b8', marginBottom: '10px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                                            FILES ({studentFiles.length})
-                                            <FaSync style={{ cursor: 'pointer' }} onClick={() => fetchStudentFiles(selectedStudent)} />
+                                            <span>{fileScope === 'current' ? `CURRENT SESSION (${studentFiles.length})` : 'COURSE HISTORY'}</span>
+                                            <FaSync style={{ cursor: 'pointer' }} onClick={() => fileScope === 'current' ? fetchStudentFiles(selectedStudent) : fetchCourseHistoryFiles(selectedStudent)} />
                                         </div>
-                                        {studentFiles.map(f => (
+                                        <div style={{ display: 'flex', gap: 5, marginBottom: 10 }}>
+                                            <button onClick={() => { setFileScope('current'); fetchStudentFiles(selectedStudent); }} style={{ flex: 1, padding: '5px 4px', fontSize: 10, borderRadius: 5, border: '1px solid #334155', cursor: 'pointer', background: fileScope === 'current' ? '#3730a3' : 'transparent', color: '#dbeafe' }}>Current</button>
+                                            <button onClick={() => { setFileScope('history'); fetchCourseHistoryFiles(selectedStudent); }} style={{ flex: 1, padding: '5px 4px', fontSize: 10, borderRadius: 5, border: '1px solid #334155', cursor: 'pointer', background: fileScope === 'history' ? '#3730a3' : 'transparent', color: '#dbeafe' }}>History</button>
+                                        </div>
+                                        {fileScope === 'current' && studentFiles.map(f => (
                                             <div key={f._id} onClick={() => handleViewFile(f)} style={{ padding: '8px', marginBottom: '4px', borderRadius: '6px', background: selectedFileContent?._id === f._id ? '#1e293b' : 'transparent', color: '#cbd5e1', fontSize: '12px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <FaFile size={10} color="#64748b" /> {f.name}
                                             </div>
                                         ))}
+                                        {fileScope === 'history' && (courseHistoryFiles.length ? courseHistoryFiles.map(history => <div key={history._id} style={{ marginBottom: 12 }}><div style={{ color: '#818cf8', fontSize: 10, fontWeight: 700, marginBottom: 5 }}>{history.sessionName} · {history.startTime ? new Date(history.startTime).toLocaleDateString() : ''}</div>{history.files.map(file => <div key={file._id} onClick={() => handleViewFile(file)} style={{ padding: '7px 8px', marginBottom: 3, borderRadius: 5, color: '#cbd5e1', fontSize: 12, cursor: 'pointer', background: 'rgba(255,255,255,.025)' }}><FaFile size={10} color="#64748b" /> {file.name}</div>)}</div>) : <div style={{ color: '#64748b', fontSize: 12, paddingTop: 12 }}>No earlier files from this faculty's course sessions.</div>)}
                                     </div>
                                 </div>
                             )}
@@ -1056,6 +1119,17 @@ const MonitorDashboard = ({ token, serverUrl, userId, onLogout, isEmbedded, onSe
                     </div>
                 )}
             </div>
+            {showNoteComposer && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 4000, background: 'rgba(2,6,23,.72)', display: 'grid', placeItems: 'center', padding: 20 }}>
+                    <div style={{ width: 'min(480px, 94vw)', background: '#111b31', border: '1px solid #6366f1', borderRadius: 12, padding: 20, boxShadow: '0 22px 70px rgba(0,0,0,.5)' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}><strong style={{ color: '#fff' }}>Send a session note</strong><button onClick={() => setShowNoteComposer(false)} style={{ border: 0, background: 'transparent', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>×</button></div>
+                        <div style={{ fontSize: 12, color: '#94a3b8', marginBottom: 12 }}>Students can reopen this note at any time during this lab.</div>
+                        <input value={sessionNoteTitle} onChange={event => setSessionNoteTitle(event.target.value)} placeholder="Optional title" maxLength={140} style={{ width: '100%', boxSizing: 'border-box', marginBottom: 9, padding: 10, background: '#0b1220', color: '#fff', border: '1px solid #334155', borderRadius: 7, outline: 'none' }} />
+                        <textarea autoFocus value={sessionNoteText} onChange={event => setSessionNoteText(event.target.value)} placeholder="Write guidance for every student in this session…" style={{ width: '100%', minHeight: 120, resize: 'vertical', boxSizing: 'border-box', padding: 10, background: '#0b1220', color: '#fff', border: '1px solid #334155', borderRadius: 7, outline: 'none' }} />
+                        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 14 }}><button onClick={() => setShowNoteComposer(false)} style={{ border: 0, background: 'transparent', color: '#94a3b8', cursor: 'pointer' }}>Cancel</button><button onClick={sendSessionNote} style={{ border: 0, background: '#4f46e5', color: '#fff', borderRadius: 6, padding: '8px 12px', cursor: 'pointer', fontWeight: 700 }}>Send note</button></div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

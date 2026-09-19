@@ -11,7 +11,7 @@ let previewRoot = '';
 let previewPort = 0;
 let previewWindow: BrowserWindow | null = null;
 
-type LabWorkspaceScope = { collegeId?: string; studentId?: string; courseId?: string; subject?: string };
+type LabWorkspaceScope = { collegeId?: string; studentId?: string; courseId?: string; subject?: string; sessionId?: string };
 
 // Lab workspaces must never be derived from a user supplied absolute path.
 // Electron owns the root under per-user application data, making the layout
@@ -21,11 +21,17 @@ const safeLabSegment = (value: unknown, fallback: string) => {
     const cleaned = String(value || fallback).trim().replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 120);
     return cleaned || fallback;
 };
-const labRootFor = (scope: LabWorkspaceScope) => path.join(
+const labCourseRootFor = (scope: LabWorkspaceScope) => path.join(
     app.getPath('userData'), 'Labs',
     safeLabSegment(scope.collegeId, 'local-institution'),
     safeLabSegment(scope.studentId, 'student'),
     safeLabSegment(scope.courseId || scope.subject, 'general-lab')
+);
+// A new supervised lab always gets its own folder. This prevents any prior
+// session files from appearing until the student explicitly imports one.
+const labRootFor = (scope: LabWorkspaceScope) => path.join(
+    labCourseRootFor(scope),
+    safeLabSegment(scope.sessionId, 'unscheduled-session')
 );
 const resolveLabPath = (root: string, relativePath = '.') => {
     const target = path.resolve(root, relativePath || '.');
@@ -288,6 +294,49 @@ export function setupIpcHandlers(mainWindow: BrowserWindow): WorkspaceManager {
         const target = resolveLabPath(root, relativePath);
         await fs.promises.rm(target, { recursive: true, force: true });
         return { success: true };
+    });
+    ipcMain.handle('lab-list-previous-files', async (_event, scope: LabWorkspaceScope) => {
+        const courseRoot = labCourseRootFor(scope || {});
+        const currentSession = safeLabSegment(scope?.sessionId, 'unscheduled-session');
+        try {
+            const sessionEntries = await fs.promises.readdir(courseRoot, { withFileTypes: true });
+            const results: Array<{ sourceSessionId: string; path: string; name: string; updatedAt: string }> = [];
+            const walk = async (root: string, sessionId: string, relative = '', depth = 0): Promise<void> => {
+                if (depth > 8 || results.length >= 250) return;
+                const entries = await fs.promises.readdir(root, { withFileTypes: true });
+                for (const entry of entries) {
+                    if (entry.name.startsWith('.') || ['node_modules', 'dist', 'build'].includes(entry.name)) continue;
+                    const child = relative ? path.posix.join(relative, entry.name) : entry.name;
+                    const full = resolveLabPath(path.join(courseRoot, sessionId), child);
+                    if (entry.isDirectory()) await walk(full, sessionId, child, depth + 1);
+                    else if (!/\.(exe|class|o|obj|pyc)$/i.test(entry.name)) {
+                        const stat = await fs.promises.stat(full);
+                        if (stat.size <= 2 * 1024 * 1024) results.push({ sourceSessionId: sessionId, path: child, name: entry.name, updatedAt: stat.mtime.toISOString() });
+                    }
+                }
+            };
+            for (const entry of sessionEntries) {
+                if (!entry.isDirectory() || entry.name === currentSession) continue;
+                await walk(path.join(courseRoot, entry.name), entry.name);
+            }
+            return results.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+        } catch (error: any) {
+            if (error?.code === 'ENOENT') return [];
+            throw error;
+        }
+    });
+    ipcMain.handle('lab-import-previous-file', async (_event, scope: LabWorkspaceScope, sourceSessionId: string, sourcePath: string, targetPath?: string) => {
+        const courseRoot = labCourseRootFor(scope || {});
+        const sourceRoot = path.join(courseRoot, safeLabSegment(sourceSessionId, 'invalid-session'));
+        const targetRoot = labRootFor(scope || {});
+        const source = resolveLabPath(sourceRoot, sourcePath);
+        const destinationRelative = targetPath || sourcePath;
+        const target = resolveLabPath(targetRoot, destinationRelative);
+        const stat = await fs.promises.stat(source);
+        if (!stat.isFile() || stat.size > 2 * 1024 * 1024) throw new Error('Only text files up to 2 MB can be imported into Lab Mode.');
+        await fs.promises.mkdir(path.dirname(target), { recursive: true });
+        await fs.promises.copyFile(source, target, fs.constants.COPYFILE_EXCL);
+        return { success: true, path: destinationRelative, content: await fs.promises.readFile(target, 'utf8') };
     });
     ipcMain.handle('open-lab-preview', async (_event, scope: LabWorkspaceScope, relativePath: string) => {
         const root = labRootFor(scope || {});

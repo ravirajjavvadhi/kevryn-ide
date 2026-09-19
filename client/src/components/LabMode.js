@@ -18,6 +18,17 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const [language, setLanguage] = useState('javascript');
     const [newFileName, setNewFileName] = useState('');
     const [showNewFile, setShowNewFile] = useState(false);
+    const [showImport, setShowImport] = useState(false);
+    const [importableFiles, setImportableFiles] = useState([]);
+    const [importingPath, setImportingPath] = useState('');
+    const [selectedImport, setSelectedImport] = useState(null);
+    const [sessionNotes, setSessionNotes] = useState([]);
+    const [showNotes, setShowNotes] = useState(false);
+    const [noteIndex, setNoteIndex] = useState(0);
+    const [unreadNoteCount, setUnreadNoteCount] = useState(0);
+    const [notesMinimized, setNotesMinimized] = useState(false);
+    const [notesPosition, setNotesPosition] = useState({ right: 28, bottom: 28 });
+    const noteDragRef = useRef(null);
     const [saving, setSaving] = useState(false);
     const [editingFileId, setEditingFileId] = useState(null);
     const [tempFileName, setTempFileName] = useState('');
@@ -35,12 +46,15 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     const [lastSynced, setLastSynced] = useState(null); // NEW: Visual feedback
     const wcBridgeRef = useRef(null);
     const isDesktopLab = typeof window !== 'undefined' && Boolean(window.electronAPI?.getLabWorkspace);
+    const isSessionScopedLab = Boolean(session?.sessionId || session?._id);
     const labScope = useMemo(() => ({
         collegeId: session?.collegeId || session?.college?._id,
         studentId: userId || username,
         courseId: session?.courseId?._id || session?.courseId,
-        subject: session?.subject || session?.subjectName
-    }), [session?.collegeId, session?.college?._id, session?.courseId, session?.subject, session?.subjectName, userId, username]);
+        subject: session?.subject || session?.subjectName,
+        sessionId: session?.sessionId || session?._id
+    }), [session?.collegeId, session?.college?._id, session?.courseId, session?.subject, session?.subjectName, session?.sessionId, session?._id, userId, username]);
+    const notesStorageKey = `kevryn.lab.notes.${labScope.sessionId || 'unknown'}`;
     const [localLabRoot, setLocalLabRoot] = useState(null);
     const reportMirrorTimeoutRef = useRef(null);
     const lastSyncPaintAtRef = useRef(0);
@@ -51,6 +65,28 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
     // Keep refs in sync
     useEffect(() => { codeRef.current = code; }, [code]);
     useEffect(() => { activeFileRef.current = activeFile; }, [activeFile]);
+
+    useEffect(() => {
+        const move = event => {
+            if (!noteDragRef.current) return;
+            const { x, y, left, top } = noteDragRef.current;
+            setNotesPosition({ left: Math.max(8, left + event.clientX - x), top: Math.max(8, top + event.clientY - y), right: 'auto', bottom: 'auto' });
+        };
+        const end = () => { noteDragRef.current = null; };
+        window.addEventListener('pointermove', move); window.addEventListener('pointerup', end);
+        return () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', end); };
+    }, []);
+
+    useEffect(() => {
+        try {
+            const saved = JSON.parse(localStorage.getItem(notesStorageKey) || '{}');
+            if (saved.position) setNotesPosition(saved.position);
+            if (typeof saved.minimized === 'boolean') setNotesMinimized(saved.minimized);
+        } catch (_) { /* optional local UI preference */ }
+    }, [notesStorageKey]);
+    useEffect(() => {
+        try { localStorage.setItem(notesStorageKey, JSON.stringify({ position: notesPosition, minimized: notesMinimized })); } catch (_) { /* storage unavailable */ }
+    }, [notesStorageKey, notesPosition, notesMinimized]);
 
     useEffect(() => {
         if (!isDesktopLab) return;
@@ -183,6 +219,11 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             // Auto-clear after 10s if student doesn't dismiss
             setTimeout(() => setAnnouncement(null), 10000);
         });
+        sock.on('faculty-session-note', (note) => {
+            if (!note?._id) return;
+            setSessionNotes(previous => previous.some(item => item._id === note._id) ? previous : [...previous, note]);
+            if (!showNotes) setUnreadNoteCount(value => value + 1);
+        });
 
         sock.on('faculty-acknowledge', ({ username: ackUsername }) => {
             if (ackUsername === username) {
@@ -200,7 +241,15 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             }
             sock.disconnect();
         };
-    }, [session?.sessionId, session?._id, username, userId, onLogout]); // Stable dependencies (No 'language'!)
+    }, [session?.sessionId, session?._id, username, userId, onLogout, showNotes]); // Stable dependencies (No 'language'!)
+
+    useEffect(() => {
+        const activeSessionId = session?.sessionId || session?._id;
+        if (!token || !activeSessionId) return;
+        api.get(`/lab/session/${activeSessionId}/notes`)
+            .then(response => setSessionNotes(response.data?.notes || []))
+            .catch(() => setSessionNotes([]));
+    }, [api, session?.sessionId, session?._id, token]);
 
 
     // --- Load Files ---
@@ -233,10 +282,13 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 setFiles(flatten(localFiles));
                 return;
             }
-            // NEW: Fetch files filtered by lab courseId if present
-            const url = session?.courseId ? `/files?courseId=${session.courseId}` : '/files';
-            const res = await api.get(url);
-            setFiles(res.data || []);
+            const activeSessionId = session?.sessionId || session?._id;
+            if (activeSessionId) {
+                const res = await api.get(`/lab/session/${activeSessionId}/my-files`);
+                setFiles(res.data?.files || []);
+                return;
+            }
+            setFiles([]);
         } catch (e) { console.error("Failed to load files:", e); }
     }, [api, session, isDesktopLab, labScope]); // Added api, session
 
@@ -401,11 +453,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
         };
     }, [session, username, updateStatus]);
 
-    // Desktop keeps the source of truth on disk locally, but faculty still get
-    // an ephemeral live mirror for the active session. This is a socket update,
-    // not a file upload or remote execution request.
-    const syncLabArtifact = useCallback((filePath, contents, fileLanguage, action = 'update', immediate = false) => {
-        if (!isDesktopLab || !socketRef.current || !(session?.sessionId || session?._id) || !username) return Promise.resolve(false);
+    // The canonical desktop file stays on the student's disk. Both desktop and
+    // browser labs additionally keep a session-only report mirror, which is
+    // separate from the general workspace and is the sole source for faculty
+    // session file lists and reports.
+    const syncLabArtifact = useCallback((filePath, contents, fileLanguage, action = 'update', immediate = false, importedFrom = null) => {
+        if (!socketRef.current || !(session?.sessionId || session?._id) || !username) return Promise.resolve(false);
         const send = () => new Promise(resolve => {
             const socket = socketRef.current;
             if (!socket?.connected) { resolve(false); return; }
@@ -431,7 +484,8 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 path: filePath,
                 code: contents || '',
                 language: fileLanguage || 'plaintext',
-                action
+                action,
+                importedFrom
             }, finish);
         });
         if (immediate) return send();
@@ -489,6 +543,12 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                     await window.electronAPI.writeLabFile(labScope, currentFile.path || currentFile._id, newValue || '');
                     setFiles(prev => prev.map(f => f._id === currentFile._id ? { ...f, content: newValue } : f));
                     setLastSynced(new Date().toLocaleTimeString());
+                    return;
+                }
+                if (isSessionScopedLab) {
+                    const nextCode = newValue || '';
+                    setFiles(prev => prev.map(file => file._id === currentFile._id ? { ...file, content: nextCode, updatedAt: new Date().toISOString() } : file));
+                    syncLabArtifact(currentFile.path || currentFile.name, nextCode, currentFile.language || detectLanguage(currentFile.name), 'update', true);
                     return;
                 }
                 // Background quiet save - passing autoSave=true skips timeline history clutter
@@ -567,6 +627,11 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             } catch (error) { console.error('[LabMode] Could not open local lab file:', error); }
             return;
         }
+        if (isSessionScopedLab) {
+            setActiveFile(file); setCode(file.content || ''); setLanguage(file.language || detectLanguage(file.name));
+            syncLabMirror(file.name, file.content || '', file.language || detectLanguage(file.name));
+            return;
+        }
         // STEP 1: SAVE PREVIOUS FILE
         if (activeFile && activeFile._id !== file._id) {
             console.log(`[LAB-SWITCH] Saving ${activeFile.name}...`);
@@ -620,6 +685,14 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 setNewFileName(''); setShowNewFile(false);
                 return;
             }
+            if (isSessionScopedLab) {
+                const created = { _id: `lab:${name}`, path: name, name, type: 'file', content: '', language: detectLanguage(name) };
+                setFiles(prev => [...prev.filter(file => file._id !== created._id), created]);
+                setActiveFile(created); setCode(''); setLanguage(created.language);
+                syncLabArtifact(name, '', created.language, 'create', true);
+                setNewFileName(''); setShowNewFile(false);
+                return;
+            }
             const res = await api.post('/files', {
                 name,
                 content: '',
@@ -630,11 +703,49 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             setActiveFile(res.data);
             setCode('');
             setLanguage(detectLanguage(name));
+            // Browser labs also contribute only to this lab's session record.
+            syncLabArtifact(name, '', detectLanguage(name), 'create', true);
         } catch (e) {
             alert("Failed to create file: " + (e.response?.data?.error || e.message));
         }
         setNewFileName('');
         setShowNewFile(false);
+    };
+
+    const openImport = async () => {
+        if (session?.disablePreviousFileImport) return;
+        setShowImport(true); setSelectedImport(null);
+        try {
+            if (isDesktopLab) setImportableFiles((await window.electronAPI.listPreviousLabFiles(labScope)) || []);
+            else {
+                const activeSessionId = session?.sessionId || session?._id;
+                const response = await api.get(`/lab/importable-files?sessionId=${encodeURIComponent(activeSessionId)}`);
+                setImportableFiles(response.data?.files || []);
+            }
+        } catch (_) { setImportableFiles([]); }
+    };
+
+    const importPreviousFile = async (entry) => {
+        const sourceKey = `${entry?.sourceSessionId}:${entry?.path}`;
+        if (!entry || importingPath) return;
+        setImportingPath(sourceKey);
+        try {
+            let created;
+            if (isDesktopLab) {
+                const result = await window.electronAPI.importPreviousLabFile(labScope, entry.sourceSessionId, entry.path, entry.path);
+                created = { _id: result.path, path: result.path, name: result.path.split('/').pop(), type: 'file', content: result.content || '' };
+            } else {
+                const filePath = entry.path || entry.name;
+                if (files.some(file => (file.path || file.name) === filePath)) throw new Error('A file with this name already exists in the current session.');
+                created = { _id: `lab:${filePath}`, path: filePath, name: filePath.split('/').pop(), type: 'file', content: entry.code || '', language: entry.language || detectLanguage(filePath) };
+            }
+            setFiles(previous => [...previous.filter(file => file._id !== created._id), created]);
+            setActiveFile(created); setCode(created.content || entry.code || ''); setLanguage(entry.language || detectLanguage(created.name));
+            syncLabArtifact(created.path || created.name, created.content || entry.code || '', entry.language || detectLanguage(created.name), 'create', true, { sessionId: entry.sourceSessionId, path: entry.path, importedAt: new Date().toISOString() });
+            setShowImport(false);
+        } catch (error) {
+            alert(error?.message || 'The file could not be imported. A file with the same name may already exist.');
+        } finally { setImportingPath(''); }
     };
 
     const handleDeleteFile = async (fileId, e) => {
@@ -649,7 +760,16 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 if (activeFile?._id === fileId) { setActiveFile(null); setCode('// Select or create a file to start coding...'); }
                 return;
             }
+            if (isSessionScopedLab) {
+                const removed = files.find(file => file._id === fileId);
+                syncLabArtifact(removed?.path || removed?.name || fileId.replace(/^lab:/, ''), '', detectLanguage(removed?.name || ''), 'delete', true);
+                setFiles(prev => prev.filter(file => file._id !== fileId));
+                if (activeFile?._id === fileId) { setActiveFile(null); setCode('// Select or create a file to start coding...'); }
+                return;
+            }
             await api.delete(`/files/${fileId}`);
+            const removed = files.find(file => file._id === fileId);
+            syncLabArtifact(removed?.name || fileId, '', detectLanguage(removed?.name || ''), 'delete', true);
             setFiles(prev => prev.filter(f => f._id !== fileId));
             if (activeFile?._id === fileId) {
                 setActiveFile(null);
@@ -683,7 +803,24 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 if (activeFile?._id === fileId) { setActiveFile({ ...activeFile, _id: nextPath, path: nextPath, name: newName }); setLanguage(detectLanguage(newName)); }
                 setEditingFileId(null); return;
             }
+            if (isSessionScopedLab) {
+                const file = files.find(item => item._id === fileId);
+                if (!file) throw new Error('Lab file no longer exists.');
+                const parent = (file.path || '').includes('/') ? file.path.slice(0, file.path.lastIndexOf('/') + 1) : '';
+                const nextPath = `${parent}${newName}`;
+                if (files.some(item => item._id !== fileId && (item.path || item.name) === nextPath)) throw new Error('A file with that name already exists.');
+                syncLabArtifact(file.path || file.name, '', detectLanguage(file.name), 'delete', true);
+                syncLabArtifact(nextPath, activeFile?._id === fileId ? code : file.content || '', detectLanguage(newName), 'create', true);
+                setFiles(prev => prev.map(item => item._id === fileId ? { ...item, _id: `lab:${nextPath}`, path: nextPath, name: newName } : item));
+                if (activeFile?._id === fileId) { setActiveFile({ ...activeFile, _id: `lab:${nextPath}`, path: nextPath, name: newName }); setLanguage(detectLanguage(newName)); }
+                setEditingFileId(null); return;
+            }
             await api.put(`/files/${fileId}`, { newName });
+            const renamed = files.find(file => file._id === fileId);
+            if (renamed) {
+                syncLabArtifact(renamed.name, '', detectLanguage(renamed.name), 'delete', true);
+                syncLabArtifact(newName, activeFile?._id === fileId ? code : '', detectLanguage(newName), 'create', true);
+            }
             setFiles(prev => prev.map(f => f._id === fileId ? { ...f, name: newName } : f));
             if (activeFile?._id === fileId) {
                 setActiveFile({ ...activeFile, name: newName });
@@ -712,6 +849,9 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             if (isDesktopLab) {
                 await window.electronAPI.writeLabFile(labScope, activeFile.path || fullPath, code);
                 setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code } : file));
+                syncLabMirror(activeFile.name, code, language);
+            } else if (isSessionScopedLab) {
+                setFiles(prev => prev.map(file => file._id === activeFile._id ? { ...file, content: code, updatedAt: new Date().toISOString() } : file));
                 syncLabMirror(activeFile.name, code, language);
             } else {
                 await api.put(`/files/${activeFile._id}`, { content: code });
@@ -753,7 +893,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
             }
         } catch (e) { console.error("Save failed", e); }
         finally { setSaving(false); }
-    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, labScope, syncLabMirror, language]);
+    }, [activeFile, code, emitCodeUpdate, api, userId, session?.courseId, findFileFullPath, isDesktopLab, isSessionScopedLab, labScope, syncLabMirror, language]);
 
     // Keyboard shortcuts are handled in the main shortcut block below
 
@@ -1034,6 +1174,10 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
 
                     <div style={{ width: '1px', height: '24px', background: 'rgba(255,255,255,0.1)' }}></div>
 
+                    <button onClick={() => { setNoteIndex(Math.max(0, sessionNotes.length - 1)); setUnreadNoteCount(0); setNotesMinimized(false); setShowNotes(true); }} style={{ background: 'rgba(99,102,241,0.12)', border: '1px solid rgba(129,140,248,0.35)', color: '#c4b5fd', padding: '7px 10px', borderRadius: '8px', cursor: 'pointer', fontSize: '12px', fontWeight: 700 }}>
+                        Notes {unreadNoteCount ? `(${unreadNoteCount})` : sessionNotes.length ? `(${sessionNotes.length})` : ''}
+                    </button>
+
                     <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
                         {/* Run Button */}
                         <button
@@ -1133,12 +1277,15 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                         display: 'flex', justifyContent: 'space-between', alignItems: 'center'
                     }}>
                         <span>Explorer</span>
-                        <button onClick={() => setShowNewFile(!showNewFile)} style={{
-                            background: 'rgba(34, 197, 94, 0.1)', border: 'none', color: '#4ade80',
-                            cursor: 'pointer', padding: '4px', borderRadius: '4px'
-                        }} title="New File">
-                            <FaPlus size={10} />
-                        </button>
+                        <div style={{ display: 'flex', gap: '7px' }}>
+                            {!session?.disablePreviousFileImport && <button onClick={openImport} style={{ background: 'rgba(99,102,241,0.12)', border: 'none', color: '#a5b4fc', cursor: 'pointer', padding: '4px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 700 }} title="Import a previous lab file">IMPORT</button>}
+                            <button onClick={() => setShowNewFile(!showNewFile)} style={{
+                                background: 'rgba(34, 197, 94, 0.1)', border: 'none', color: '#4ade80',
+                                cursor: 'pointer', padding: '4px', borderRadius: '4px'
+                            }} title="New File">
+                                <FaPlus size={10} />
+                            </button>
+                        </div>
                     </div>
 
                     {showNewFile && (
@@ -1316,6 +1463,22 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                 <FaExclamationTriangle color="#ef4444" size={10} />
                 <span>EXAM PROTOCOL ACTIVE</span>
             </div>
+
+            {showImport && (
+                <div style={{ position: 'fixed', inset: 0, zIndex: 12000, background: 'rgba(2,6,23,.78)', display: 'grid', placeItems: 'center', padding: 24 }}>
+                    <div style={{ width: 'min(760px, 94vw)', maxHeight: '75vh', display: 'flex', flexDirection: 'column', background: '#10192d', border: '1px solid #4f46e5', borderRadius: 14, boxShadow: '0 24px 80px rgba(0,0,0,.55)' }}>
+                        <div style={{ padding: '18px 20px', borderBottom: '1px solid #26334d', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}><div><strong>Import previous lab file</strong><div style={{ fontSize: 12, color: '#94a3b8', marginTop: 4 }}>Only your earlier work for this course is available.</div></div><button onClick={() => setShowImport(false)} style={{ background: 'transparent', border: 0, color: '#cbd5e1', cursor: 'pointer', fontSize: 20 }}>×</button></div>
+                        <div style={{ overflowY: 'auto', padding: 12, display: 'grid', gridTemplateColumns: selectedImport ? 'minmax(0,.9fr) minmax(0,1.1fr)' : '1fr', gap: 10 }}>{<div>{importableFiles.length ? importableFiles.map(entry => { const key = `${entry.sourceSessionId}:${entry.path}`; return <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, borderBottom: '1px solid #1e293b' }}><FaFile color="#818cf8"/><div style={{ flex: 1, minWidth: 0 }}><div style={{ color: '#f8fafc', fontWeight: 700 }}>{entry.path}</div><div style={{ color: '#94a3b8', fontSize: 11, marginTop: 3 }}>{entry.sourceSessionName || 'Previous session'} · {entry.updatedAt ? new Date(entry.updatedAt).toLocaleDateString() : ''}</div></div><button onClick={() => setSelectedImport(entry)} style={{ background: 'rgba(99,102,241,.18)', color: '#c4b5fd', border: '1px solid #4f46e5', borderRadius: 6, padding: '7px 10px', cursor: 'pointer', fontWeight: 700 }}>Preview</button></div>; }) : <div style={{ padding: 30, textAlign: 'center', color: '#94a3b8' }}>No previous supervised files are available for this course.</div>}</div>}{selectedImport && <div style={{ minHeight: 250, display: 'flex', flexDirection: 'column', border: '1px solid #26334d', borderRadius: 8, overflow: 'hidden' }}><div style={{ padding: 10, color: '#c4b5fd', fontSize: 12, fontWeight: 700 }}>{selectedImport.path}<small style={{ display: 'block', color: '#94a3b8', marginTop: 3 }}>{selectedImport.language || 'text'} · copied as a new file</small></div><pre style={{ flex: 1, margin: 0, padding: 12, overflow: 'auto', background: '#0b1220', color: '#e2e8f0', fontSize: 12 }}>{selectedImport.code || 'Preview is available after import on this desktop.'}</pre><button disabled={Boolean(importingPath)} onClick={() => importPreviousFile(selectedImport)} style={{ margin: 10, background: '#4f46e5', color: '#fff', border: 0, borderRadius: 6, padding: '9px 11px', cursor: 'pointer', fontWeight: 700 }}>{importingPath ? 'Importing…' : 'Import copy'}</button></div>}</div>
+                    </div>
+                </div>
+            )}
+
+            {showNotes && (
+                <div style={{ position: 'fixed', zIndex: 11500, ...notesPosition, width: notesMinimized ? 230 : 360, minWidth: 230, minHeight: notesMinimized ? 0 : 180, resize: notesMinimized ? 'none' : 'both', overflow: 'auto', background: '#10192d', border: '1px solid #6366f1', borderRadius: 12, boxShadow: '0 18px 55px rgba(0,0,0,.48)' }}>
+                    <div onPointerDown={event => { if (event.target.closest('button')) return; const rect = event.currentTarget.parentElement.getBoundingClientRect(); noteDragRef.current = { x: event.clientX, y: event.clientY, left: rect.left, top: rect.top }; }} style={{ padding: '12px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: notesMinimized ? 0 : '1px solid #26334d', cursor: 'move', userSelect: 'none' }}><strong style={{ fontSize: 13 }}>Faculty notes</strong><span style={{ display: 'flex', gap: 6 }}><button onClick={() => setNotesMinimized(value => !value)} style={{ border: 0, background: 'transparent', color: '#cbd5e1', cursor: 'pointer' }}>{notesMinimized ? '▣' : '—'}</button><button onClick={() => setShowNotes(false)} style={{ border: 0, background: 'transparent', color: '#cbd5e1', cursor: 'pointer', fontSize: 18 }}>×</button></span></div>
+                    {!notesMinimized && (sessionNotes.length ? <div style={{ padding: 16, color: '#e2e8f0', whiteSpace: 'pre-wrap', lineHeight: 1.55 }}><strong style={{ display: 'block', color: '#c4b5fd', marginBottom: 7 }}>{sessionNotes[noteIndex]?.title || 'Faculty note'}</strong>{sessionNotes[noteIndex]?.message}<div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 20, color: '#94a3b8', fontSize: 12 }}><button disabled={!noteIndex} onClick={() => setNoteIndex(value => Math.max(0, value - 1))} style={{ background: 'transparent', border: 0, color: '#a5b4fc', cursor: 'pointer' }}>← Previous</button><span>{noteIndex + 1} / {sessionNotes.length}</span><button disabled={noteIndex >= sessionNotes.length - 1} onClick={() => setNoteIndex(value => Math.min(sessionNotes.length - 1, value + 1))} style={{ background: 'transparent', border: 0, color: '#a5b4fc', cursor: 'pointer' }}>Next →</button></div></div> : <div style={{ padding: 22, color: '#94a3b8' }}>No notes from faculty yet.</div>)}
+                </div>
+            )}
         </div>
     );
 };

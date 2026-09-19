@@ -116,6 +116,7 @@ const Submission = require('./models/Submission');
 const LabSession = require('./LabSessionModel');
 const LabReport = require('./models/LabReport'); // NEW: Phase 11
 const LabSessionArtifact = require('./models/LabSessionArtifact');
+const LabSessionNote = require('./models/LabSessionNote');
 const FileHistory = require('./FileHistory');
 const Message = require('./Message');
 const Snippet = require('./Snippet');
@@ -657,7 +658,7 @@ app.get('/auth/github/callback', async (req, res) => {
 // 1. Create Session (Faculty Only)
 app.post('/lab/create-session', authenticate, async (req, res) => {
     try {
-        const { sessionName, subject, semester, allowedStudents, courseId, batchId, duration } = req.body;
+        const { sessionName, subject, semester, allowedStudents, courseId, batchId, duration, disablePreviousFileImport } = req.body;
         const facultyId = req.user.userId; // Securely take from token
         const collegeId = req.user.collegeId;
 
@@ -704,7 +705,8 @@ app.post('/lab/create-session', authenticate, async (req, res) => {
             subject: subject || 'General',
             semester: semester || 'Sem 1',
             duration: duration || 60,
-            allowedStudents: whitelistedStudents
+            allowedStudents: whitelistedStudents,
+            disablePreviousFileImport: disablePreviousFileImport === true
 
         });
         await session.save();
@@ -1541,17 +1543,39 @@ app.get('/lab/student-files/:username', authenticate, async (req, res) => {
         const { sessionId } = req.query;
         const user = await User.findOne({ username });
         if (!user) return res.status(404).json({ error: 'Student not found' });
-        
-        let query = { owner: user._id };
+
+        // A selected live session must never fall back to the student's
+        // general File workspace. Desktop Lab Mode writes its own local files
+        // and mirrors them here as LabSessionArtifact records; browser labs
+        // use the same session-only report shape.
         if (sessionId && sessionId !== 'null' && sessionId !== 'undefined') {
-            const session = await LabSession.findById(sessionId);
-            if (session && session.courseId) {
-                query.courseId = session.courseId;
-            } else if (session && !session.courseId) {
-                 query.$or = [{ courseId: { $exists: false } }, { courseId: null }];
-            }
+            const session = await LabSession.findById(sessionId).select('facultyId collegeId').lean();
+            if (!session) return res.status(404).json({ error: 'Lab session not found' });
+            const isOwner = String(session.facultyId) === String(req.user.userId);
+            const isManagement = ['admin', 'college_admin'].includes(req.user.role)
+                && (!req.user.collegeId || String(req.user.collegeId) === String(session.collegeId));
+            if (!isOwner && !isManagement) return res.status(403).json({ error: 'Not authorized to view these lab files' });
+
+            const artifact = await LabSessionArtifact.findOne({ sessionId: session._id, studentId: user._id })
+                .select('files').lean();
+            const files = (artifact?.files || [])
+                .filter(file => !file.deletedAt)
+                .map(file => ({
+                    _id: `lab:${file.path}`,
+                    name: file.path.split('/').pop(),
+                    path: file.path,
+                    content: file.code || '',
+                    language: file.language || 'plaintext',
+                    createdAt: file.createdAt,
+                    updatedAt: file.updatedAt,
+                    isSessionArtifact: true
+                }));
+            return res.json(files);
         }
-        
+
+        // This legacy non-session view remains available only when a caller
+        // deliberately requests a student's general workspace.
+        let query = { owner: user._id };
         const files = await File.find(query).select('name content updatedAt createdAt');
         res.json(files || []);
     } catch (e) {
@@ -2808,6 +2832,136 @@ app.get('/files/:id', authenticate, async (req, res) => {
         res.status(500).json({ error: "Error fetching file" });
     }
 });
+
+// Browser Lab Mode uses the exact same session artifact store as the native
+// desktop client. It intentionally never reads the legacy File collection.
+app.get('/lab/session/:sessionId/my-files', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Student access required' });
+        const session = await LabSession.findById(req.params.sessionId).select('collegeId allowedStudents').lean();
+        if (!session || !(session.allowedStudents || []).includes(req.user.username)) return res.status(403).json({ error: 'Not enrolled in this lab session' });
+        const artifact = await LabSessionArtifact.findOne({ sessionId: session._id, studentId: req.user.userId }).select('files').lean();
+        res.json({ files: (artifact?.files || []).filter(file => !file.deletedAt).map(file => ({
+            _id: `lab:${file.path}`, path: file.path, name: file.path.split('/').pop(), content: file.code || '', language: file.language || 'plaintext',
+            createdAt: file.createdAt, updatedAt: file.updatedAt, importedFrom: file.importedFrom || null
+        })) });
+    } catch (error) { res.status(500).json({ error: 'Could not load current session files' }); }
+});
+
+// Student-only archive for supervised lab work. Personal/general workspace
+// files are deliberately not part of this endpoint.
+app.get('/lab/my-session-files', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Student access required' });
+        const student = await User.findById(req.user.userId).select('_id username collegeId').lean();
+        if (!student) return res.status(404).json({ error: 'Student not found' });
+        const artifacts = await LabSessionArtifact.find({
+            studentId: student._id,
+            ...(student.collegeId ? { collegeId: student.collegeId } : {})
+        }).select('sessionId courseId courseName files updatedAt').sort({ updatedAt: -1 }).lean();
+        const sessions = await LabSession.find({ _id: { $in: artifacts.map(item => item.sessionId) } })
+            .select('sessionName subject startTime courseId facultyId').lean();
+        const byId = new Map(sessions.map(item => [String(item._id), item]));
+        const archive = artifacts.map(item => {
+            const session = byId.get(String(item.sessionId));
+            return {
+                sessionId: item.sessionId,
+                sessionName: session?.sessionName || item.courseName || 'Lab session',
+                subject: session?.subject || item.courseName || 'General',
+                courseId: session?.courseId || item.courseId,
+                date: session?.startTime || item.updatedAt,
+                files: (item.files || []).filter(file => !file.deletedAt).map(file => ({
+                    path: file.path, name: file.path.split('/').pop(), language: file.language,
+                    code: file.code || '', createdAt: file.createdAt, updatedAt: file.updatedAt
+                }))
+            };
+        }).filter(item => item.files.length);
+        res.json({ archive });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not load supervised lab files' });
+    }
+});
+
+// Returns only prior work for the same student and course. It is used for the
+// explicit Import action; no previous file appears in a newly started lab by
+// itself.
+app.get('/lab/importable-files', authenticate, async (req, res) => {
+    try {
+        if (req.user.role !== 'student') return res.status(403).json({ error: 'Student access required' });
+        const { sessionId } = req.query;
+        const session = await LabSession.findById(sessionId).select('collegeId courseId allowedStudents disablePreviousFileImport isActive').lean();
+        if (!session) return res.status(404).json({ error: 'Lab session not found' });
+        if (!session.isActive || session.disablePreviousFileImport) return res.status(403).json({ error: 'Previous-file import is disabled for this lab session' });
+        const student = await User.findById(req.user.userId).select('_id username rollNumber collegeId').lean();
+        if (!student || !(session.allowedStudents || []).some(value => value === student.username || value === student.rollNumber)) return res.status(403).json({ error: 'You are not enrolled in this lab session' });
+        const artifacts = await LabSessionArtifact.find({
+            studentId: student._id,
+            courseId: session.courseId,
+            sessionId: { $ne: session._id },
+            ...(session.collegeId ? { collegeId: session.collegeId } : {})
+        }).select('sessionId files updatedAt').sort({ updatedAt: -1 }).lean();
+        const sessions = await LabSession.find({ _id: { $in: artifacts.map(item => item.sessionId) } })
+            .select('sessionName subject startTime').lean();
+        const byId = new Map(sessions.map(item => [String(item._id), item]));
+        res.json({ files: artifacts.flatMap(item => (item.files || []).filter(file => !file.deletedAt).map(file => ({
+            sourceSessionId: item.sessionId,
+            sourceSessionName: byId.get(String(item.sessionId))?.sessionName || 'Previous lab',
+            sourceDate: byId.get(String(item.sessionId))?.startTime || item.updatedAt,
+            path: file.path, name: file.path.split('/').pop(), language: file.language,
+            code: file.code || '', updatedAt: file.updatedAt
+        }))) });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not load importable lab files' });
+    }
+});
+
+// Faculty history remains limited to the same course, same student, and
+// sessions created by the current faculty member.
+app.get('/lab/session/:sessionId/student/:username/course-history', authenticate, async (req, res) => {
+    try {
+        const current = await LabSession.findById(req.params.sessionId).select('facultyId collegeId courseId').lean();
+        if (!current) return res.status(404).json({ error: 'Lab session not found' });
+        if (String(current.facultyId) !== String(req.user.userId)) return res.status(403).json({ error: 'Only the session faculty can view course history' });
+        const student = await User.findOne({ username: req.params.username, role: 'student', ...(current.collegeId ? { collegeId: current.collegeId } : {}) }).select('_id').lean();
+        if (!student) return res.status(404).json({ error: 'Student not found' });
+        const sessions = await LabSession.find({ facultyId: req.user.userId, courseId: current.courseId, _id: { $ne: current._id } })
+            .select('_id sessionName subject startTime').sort({ startTime: -1 }).lean();
+        const artifacts = await LabSessionArtifact.find({ studentId: student._id, sessionId: { $in: sessions.map(item => item._id) } })
+            .select('sessionId files').lean();
+        const filesBySession = new Map(artifacts.map(item => [String(item.sessionId), (item.files || []).filter(file => !file.deletedAt)]));
+        res.json({ sessions: sessions.map(item => ({ ...item, files: (filesBySession.get(String(item._id)) || []).map(file => ({
+            _id: `history:${item._id}:${file.path}`, path: file.path, name: file.path.split('/').pop(), code: file.code || '', language: file.language, updatedAt: file.updatedAt
+        })) })).filter(item => item.files.length) });
+    } catch (error) {
+        res.status(500).json({ error: 'Could not load course file history' });
+    }
+});
+
+app.get('/lab/session/:sessionId/notes', authenticate, async (req, res) => {
+    try {
+        const session = await LabSession.findById(req.params.sessionId).select('facultyId collegeId allowedStudents').lean();
+        if (!session) return res.status(404).json({ error: 'Lab session not found' });
+        const isFaculty = String(session.facultyId) === String(req.user.userId);
+        const isStudent = req.user.role === 'student' && (session.allowedStudents || []).includes(req.user.username);
+        if (!isFaculty && !isStudent) return res.status(403).json({ error: 'Not authorized for this session' });
+        res.json({ notes: await LabSessionNote.find({ sessionId: session._id }).select('title message createdAt').sort({ createdAt: 1 }).lean() });
+    } catch (error) { res.status(500).json({ error: 'Could not load session notes' }); }
+});
+
+app.post('/lab/session/:sessionId/notes', authenticate, async (req, res) => {
+    try {
+        const title = String(req.body?.title || '').trim();
+        const message = String(req.body?.message || '').trim();
+        if (!message) return res.status(400).json({ error: 'A note cannot be empty' });
+        const session = await LabSession.findById(req.params.sessionId).select('facultyId collegeId isActive').lean();
+        if (!session) return res.status(404).json({ error: 'Lab session not found' });
+        if (!session.isActive || String(session.facultyId) !== String(req.user.userId)) return res.status(403).json({ error: 'Only the active session faculty can send notes' });
+        const note = await LabSessionNote.create({ collegeId: session.collegeId, sessionId: session._id, facultyId: req.user.userId, title, message });
+        const payload = { _id: note._id, title: note.title, message: note.message, createdAt: note.createdAt };
+        io.to(`lab-${session._id}`).emit('faculty-session-note', payload);
+        res.status(201).json({ note: payload });
+    } catch (error) { res.status(500).json({ error: 'Could not send session note' }); }
+});
 app.post('/share', authenticate, (req, res) => res.status(403).json({ error: 'Personal workspace sharing is disabled. Lab supervision uses session-only reports.' }));
 app.delete('/files/:id', authenticate, async (req, res) => {
     try {
@@ -3089,6 +3243,7 @@ app.post('/project/sync', authenticate, async (req, res) => { /* Keep existing *
 // --- SOCKET INITIALIZATION moved to top ---
 
 io.on('connection', (socket) => {
+    const isSocketStudent = (username) => socket.user?.role === 'student' && socket.user?.username === username && Boolean(socket.user?.userId);
     socket.on('register-user', (u) => socket.join(u));
     socket.on('join-file', async (fid) => {
         try {
@@ -3180,6 +3335,11 @@ io.on('connection', (socket) => {
 
     // Faculty joins a session room to receive student updates
     socket.on('faculty-join', async ({ sessionId }) => {
+        if (!socket.user?.userId || !['faculty', 'admin', 'college_admin'].includes(socket.user.role)) return;
+        const ownedSession = await LabSession.findById(sessionId).select('facultyId collegeId').lean();
+        const isOwner = ownedSession && String(ownedSession.facultyId) === String(socket.user.userId);
+        const isManagement = ownedSession && ['admin', 'college_admin'].includes(socket.user.role) && (!socket.user.collegeId || String(socket.user.collegeId) === String(ownedSession.collegeId));
+        if (!isOwner && !isManagement) return;
         facultySessionId = sessionId; // Track which session this faculty is monitoring
         if (sessionId) {
             socket.join(`lab-${sessionId}`);
@@ -3210,7 +3370,9 @@ io.on('connection', (socket) => {
 
     // Student joins a session room and notifies faculty
     socket.on('student-join-lab', async ({ sessionId, username, userId, initialData }) => {
-        if (sessionId && username) {
+        if (sessionId && username && isSocketStudent(username) && String(socket.user.userId) === String(userId || socket.user.userId)) {
+            const joinedSession = await LabSession.findById(sessionId).select('allowedStudents collegeId isActive').lean();
+            if (!joinedSession?.isActive || !(joinedSession.allowedStudents || []).includes(username) || (socket.user.collegeId && String(socket.user.collegeId) !== String(joinedSession.collegeId))) return;
             socket.join(`lab-${sessionId}`);
             console.log(`[DIAGNOSTIC] STUDENT JOIN LAB: ${username} (Socket: ${socket.id}) for session ${sessionId}`);
 
@@ -3274,7 +3436,7 @@ io.on('connection', (socket) => {
     // Student sends code updates â†’ broadcast to faculty
     socket.on('student-code-update', ({ sessionId, username, fileName, code, language }) => {
         // console.log(`[LAB] Code update from ${username} | session: ${sessionId} | len: ${(code || '').length}`);
-        if (sessionId && username) {
+        if (sessionId && username && isSocketStudent(username) && socketToUser[socket.id]?.sessionId === sessionId) {
             // Update state
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
 
@@ -3305,12 +3467,12 @@ io.on('connection', (socket) => {
     // mirror only, keyed to the one active session. It never writes File (the
     // general workspace) and it does not alter the live active/idle/offline
     // state maintained above.
-    socket.on('student-lab-file-event', async ({ sessionId, username, path: filePath, code, language, action }, acknowledgement) => {
+    socket.on('student-lab-file-event', async ({ sessionId, username, path: filePath, code, language, action, importedFrom }, acknowledgement) => {
         try {
             const acknowledge = (payload) => {
                 if (typeof acknowledgement === 'function') acknowledgement(payload);
             };
-            if (!sessionId || !username || !filePath) {
+            if (!sessionId || !username || !filePath || !isSocketStudent(username) || socketToUser[socket.id]?.sessionId !== sessionId) {
                 acknowledge({ success: false, error: 'Missing supervised-lab file details.' });
                 return;
             }
@@ -3354,8 +3516,9 @@ io.on('connection', (socket) => {
                 artifact.files[fileIndex].language = String(language || artifact.files[fileIndex].language || 'plaintext');
                 artifact.files[fileIndex].updatedAt = now;
                 artifact.files[fileIndex].deletedAt = null;
+                if (importedFrom?.sessionId && importedFrom?.path) artifact.files[fileIndex].importedFrom = { sessionId: importedFrom.sessionId, path: String(importedFrom.path), importedAt: importedFrom.importedAt ? new Date(importedFrom.importedAt) : now };
             } else {
-                artifact.files.push({ path: safePath, code: fileCode, language: String(language || 'plaintext'), createdAt: now, updatedAt: now });
+                artifact.files.push({ path: safePath, code: fileCode, language: String(language || 'plaintext'), createdAt: now, updatedAt: now, importedFrom: importedFrom?.sessionId && importedFrom?.path ? { sessionId: importedFrom.sessionId, path: String(importedFrom.path), importedAt: importedFrom.importedAt ? new Date(importedFrom.importedAt) : now } : undefined });
             }
             artifact.lastSyncedAt = now;
             await artifact.save();
@@ -3377,7 +3540,7 @@ io.on('connection', (socket) => {
 
     // NEW: Real-time status update (Immediate feedback for Active/Idle)
     socket.on('student-status-update', async ({ sessionId, username, status }) => {
-        if (sessionId && username && status) {
+        if (sessionId && username && status && isSocketStudent(username) && socketToUser[socket.id]?.sessionId === sessionId) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
             const studentState = liveLabState[sessionId][username] || {};
 
@@ -3408,7 +3571,7 @@ io.on('connection', (socket) => {
 
     // Tab Switch Event (Consolidated & Persisted)
     socket.on('student-tab-switch', async ({ sessionId, username, direction, count }) => {
-        if (sessionId && username) {
+        if (sessionId && username && isSocketStudent(username) && socketToUser[socket.id]?.sessionId === sessionId) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
             const studentState = liveLabState[sessionId][username] || {};
 
@@ -3463,6 +3626,7 @@ io.on('connection', (socket) => {
 
     // Paste Event (Consolidated & Persisted)
     socket.on('student-raise-hand', async ({ sessionId, username }) => {
+        if (!sessionId || !username || !isSocketStudent(username) || socketToUser[socket.id]?.sessionId !== sessionId) return;
         io.to(`lab-${sessionId}`).emit('student-raise-hand', { username });
 
         // Update DB timeline
@@ -3483,6 +3647,8 @@ io.on('connection', (socket) => {
     });
 
     socket.on('faculty-acknowledge', async ({ sessionId, username }) => {
+        const sessionOwner = await LabSession.findById(sessionId).select('facultyId').lean();
+        if (!sessionOwner || String(sessionOwner.facultyId) !== String(socket.user?.userId)) return;
         io.to(`lab-${sessionId}`).emit('faculty-acknowledge', { username });
 
         // Update DB timeline and set raiseHand to false
@@ -3505,6 +3671,8 @@ io.on('connection', (socket) => {
     // Faculty Announcement Broadcast to Lab Session Students
     socket.on('faculty-announcement', async ({ sessionId, message }) => {
         if (!sessionId || !message) return;
+        const sessionOwner = await LabSession.findById(sessionId).select('facultyId').lean();
+        if (!sessionOwner || String(sessionOwner.facultyId) !== String(socket.user?.userId)) return;
         console.log(`[LAB ANNOUNCEMENT] Faculty broadcasted to session lab-${sessionId}: "${message}"`);
         
         // Broadcast immediately to ALL students in this lab room
@@ -3527,7 +3695,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('student-paste', async ({ sessionId, username, charCount, count }) => {
-        if (sessionId && username) {
+        if (sessionId && username && isSocketStudent(username) && socketToUser[socket.id]?.sessionId === sessionId) {
             if (!liveLabState[sessionId]) liveLabState[sessionId] = {};
             const studentState = liveLabState[sessionId][username] || {};
 
@@ -3577,6 +3745,7 @@ io.on('connection', (socket) => {
 
     // Student explicitly leaves (Logout button)
     socket.on('student-leave-lab', async ({ sessionId, username, userId }) => {
+        if (!sessionId || !username || !isSocketStudent(username) || socketToUser[socket.id]?.sessionId !== sessionId) return;
         if (liveLabState[sessionId] && liveLabState[sessionId][username]) {
             liveLabState[sessionId][username].status = 'offline';
             liveLabState[sessionId][username].explicitlyLeft = true; // LOCKDOWN: Cannot be revived except by student-join-lab

@@ -12,6 +12,10 @@ const LabSessionSchema = new mongoose.Schema({
     duration: { type: Number, default: 60 }, // NEW: in minutes
     endTime: { type: Date },
     isActive: { type: Boolean, default: true },
+    // Faculty can opt out of bringing any earlier lab work into this exact
+    // supervised session. The default keeps the student import workflow
+    // available without exposing files automatically.
+    disablePreviousFileImport: { type: Boolean, default: false },
 
 
     // Whitelisted students for this session
