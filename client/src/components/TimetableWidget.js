@@ -7,6 +7,7 @@ const TimetableWidget = ({ token, serverUrl, onLabStarted }) => {
     const [schedule, setSchedule] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [viewMode, setViewMode] = useState('today'); // 'today' or 'week'
+    const [importLockedByTimetable, setImportLockedByTimetable] = useState({});
 
     const api = axios.create({
         baseURL: serverUrl,
@@ -29,9 +30,16 @@ const TimetableWidget = ({ token, serverUrl, onLabStarted }) => {
     };
 
     const handleStartLab = async (timetableId) => {
-        if (!window.confirm("Start this scheduled lab session now?")) return;
+        const disablePreviousFileImport = Boolean(importLockedByTimetable[timetableId]);
+        const confirmationMessage = disablePreviousFileImport
+            ? 'Start this scheduled lab with previous-file import disabled?'
+            : 'Start this scheduled lab session now?';
+
+        if (!window.confirm(confirmationMessage)) return;
         try {
-            const res = await api.post(`/timetable/start-lab/${timetableId}`);
+            const res = await api.post(`/api/timetable/start-lab/${timetableId}`, {
+                disablePreviousFileImport
+            });
             if (onLabStarted) {
                 onLabStarted(res.data.session);
             } else {
@@ -200,14 +208,40 @@ const TimetableWidget = ({ token, serverUrl, onLabStarted }) => {
                             </div>
                             
                             {viewMode === 'today' && (
-                                <button 
-                                    onClick={() => handleStartLab(cls._id)}
-                                    style={styles.startBtn}
-                                    onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)'; }}
-                                    onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
-                                >
-                                    <FaPlayCircle /> Start Lab
-                                </button>
+                                <>
+                                    <label style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '9px',
+                                        margin: '0 0 12px',
+                                        color: '#cbd5e1',
+                                        cursor: 'pointer',
+                                        fontSize: '0.78rem',
+                                        lineHeight: 1.35
+                                    }}>
+                                        <input
+                                            type="checkbox"
+                                            checked={Boolean(importLockedByTimetable[cls._id])}
+                                            onChange={(event) => setImportLockedByTimetable((previous) => ({
+                                                ...previous,
+                                                [cls._id]: event.target.checked
+                                            }))}
+                                            style={{ marginTop: '3px', accentColor: '#8b5cf6' }}
+                                        />
+                                        <span>
+                                            <strong style={{ color: '#e2e8f0', display: 'block' }}>Disable previous-file import</strong>
+                                            Students start with a clean lab session.
+                                        </span>
+                                    </label>
+                                    <button
+                                        onClick={() => handleStartLab(cls._id)}
+                                        style={styles.startBtn}
+                                        onMouseOver={(e) => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(16, 185, 129, 0.3)'; }}
+                                        onMouseOut={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
+                                    >
+                                        <FaPlayCircle /> Start Lab
+                                    </button>
+                                </>
                             )}
                         </motion.div>
                     ))}
