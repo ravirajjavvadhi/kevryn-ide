@@ -1496,6 +1496,7 @@ const LabMode = ({ session, username, userId, token, theme, webcontainer, onLogo
                                     termId={1}
                                     userId={userId}
                                     courseId={session?.courseId}
+                                    sessionId={session?.sessionId || session?._id}
                                     webcontainer={isServerLanguage ? null : webcontainer}
                                     localWorkspacePath={isDesktopLab ? localLabRoot : localWorkspacePath}
                                     // Terminal contents are never part of Lab

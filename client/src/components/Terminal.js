@@ -3,7 +3,7 @@ import { Terminal as XTerminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import '@xterm/xterm/css/xterm.css';
 
-const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, localWorkspacePath, labMode = false }) => {
+const Terminal = ({ socket, termId, userId, webcontainer, courseId, sessionId, onError, localWorkspacePath, labMode = false }) => {
     const xtermRef = useRef(null);
     const fitAddonRef = useRef(null);
     const shellProcessRef = useRef(null);
@@ -259,11 +259,11 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
                 });
             }
 
-            socket.emit('terminal:create', { termId, userId, courseId });
+            socket.emit('terminal:create', { termId, userId, courseId, sessionId });
             socket.on('terminal:data', handleData);
             
             const onConnectHandler = () => {
-                socket.emit('terminal:create', { termId, userId, courseId });
+                socket.emit('terminal:create', { termId, userId, courseId, sessionId });
             };
             socket.on('connect', onConnectHandler);
 
@@ -314,7 +314,7 @@ const Terminal = ({ socket, termId, userId, webcontainer, courseId, onError, loc
             }
             if (cleanupLogic) cleanupLogic();
         };
-    }, [socket, webcontainer, userId, termId, courseId, localWorkspacePath, labMode]);
+    }, [socket, webcontainer, userId, termId, courseId, sessionId, localWorkspacePath, labMode]);
 
     return (
         <div
