@@ -27,6 +27,7 @@ const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
     const [masterContextId, setMasterContextId] = useState("");
     const [isLoadingSchedule, setIsLoadingSchedule] = useState(true);
     const [startingLab, setStartingLab] = useState(false);
+    const [disablePreviousFileImport, setDisablePreviousFileImport] = useState(false);
 
     // Overlay Engine
     const [activeOverlay, setActiveOverlay] = useState(null); // 'monitor', 'assignments', 'aptitude', 'reports'
@@ -79,7 +80,9 @@ const FacultyHub = ({ token, SERVER_URL: serverUrl, userId, onLogout }) => {
         try {
             setStartingLab(true);
             // Auto-create/start the lab session for this timetable context
-            await api.post(`/api/timetable/start-lab/${masterContextId}`);
+            await api.post(`/api/timetable/start-lab/${masterContextId}`, {
+                disablePreviousFileImport
+            });
             setActiveOverlay('monitor');
         } catch (err) {
             console.error("Failed to start lab via timetable", err);
@@ -362,6 +365,12 @@ const GatewayCard = ({ title, desc, icon, color, onClick }) => (
                                                 </div>
                                                 <h3 style={{ fontSize: '20px', fontWeight: '800', color: '#f8fafc', margin: '0 0 8px 0' }}>{block.label}</h3>
                                                 <p style={{ margin: 0, fontSize: '14px', color: '#94a3b8', lineHeight: '1.5' }}>{block.desc}</p>
+                                                {block.id === 'monitor' && (
+                                                    <label onClick={event => event.stopPropagation()} style={{ marginTop: 18, display: 'flex', alignItems: 'flex-start', gap: 9, padding: '10px 11px', borderRadius: 9, border: '1px solid rgba(248,113,113,.28)', background: 'rgba(127,29,29,.12)', color: '#e2e8f0', fontSize: 12, lineHeight: 1.4, cursor: 'pointer' }}>
+                                                        <input type="checkbox" checked={disablePreviousFileImport} onChange={event => setDisablePreviousFileImport(event.target.checked)} style={{ marginTop: 2, accentColor: '#ef4444' }} />
+                                                        <span><strong>Disable previous-file import</strong><br /><span style={{ color: '#94a3b8' }}>Students start with a clean lab session.</span></span>
+                                                    </label>
+                                                )}
                                             </div>
                                         </motion.div>
                                     ))}

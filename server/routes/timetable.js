@@ -356,7 +356,11 @@ router.post('/start-lab/:timetableId', authenticate, async (req, res) => {
             subject: timetable.subjectName,
             semester: `Year ${timetable.year}`,
             duration: duration,
-            allowedStudents: allowedStudents
+            allowedStudents: allowedStudents,
+            // The choice is made immediately before launch and becomes a
+            // fixed session rule. Existing timetable launches remain allowed
+            // by default when the field is omitted.
+            disablePreviousFileImport: req.body?.disablePreviousFileImport === true
         });
 
         await session.save();
