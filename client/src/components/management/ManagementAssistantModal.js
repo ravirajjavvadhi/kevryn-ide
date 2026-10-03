@@ -177,13 +177,37 @@ const ManagementAssistantModal = ({ token, onClose }) => {
                 : 'No immediate attendance or performance risk is visible in the verified records.';
             return { content: `Verified student report for ${student.rollNumber || student.username}. Attendance is ${summary.attendancePercentage}% with ${summary.labsAttended} of ${summary.labsAssigned} labs attended. ${summary.averageScore === null ? 'There are no graded submissions yet.' : `Average graded score is ${summary.averageScore}%.`} ${attention}`, blocks, freshness: new Date().toISOString() };
         }
-        if (/attendance.*(?:risk|below|low)|at[- ]risk/i.test(text)) {
-            const result = await api.get('/api/management-ai/attendance-risk');
-            return { content: `Attendance risk report — below ${result.data.threshold}%`, blocks: [{ type: 'table', title: 'Students needing attention', columns: ['Roll number', 'Attendance', 'Labs'], rows: result.data.students.slice(0, 20).map(item => [item.rollNumber || item.username, `${item.attendancePercentage}%`, `${item.labsAttended}/${item.labsAssigned}`]) }], freshness: new Date().toISOString() };
+        const attendanceThreshold = text.match(/(?:below|under|less than|lower than|<)\s*(\d{1,3})\s*%?/i)?.[1];
+        const asksAttendanceRisk = (/attendance|at[- ]risk|low[- ]attendance/i.test(text) || (/\bstudents?\b/i.test(text) && Boolean(attendanceThreshold)))
+            && (/(?:risk|below|under|less than|lower than|low)/i.test(text) || Boolean(attendanceThreshold));
+        if (asksAttendanceRisk) {
+            const threshold = Math.max(0, Math.min(100, Number(attendanceThreshold || 75)));
+            const result = await api.get('/api/management-ai/attendance-risk', { params: { threshold } });
+            return {
+                content: `Verified attendance report — ${result.data.students.length} student(s) are below ${result.data.threshold}%.`,
+                blocks: [{ type: 'table', title: `Students below ${result.data.threshold}% attendance`, columns: ['Roll number', 'Attendance', 'Labs'], rows: result.data.students.slice(0, 50).map(item => [item.rollNumber || item.username, `${item.attendancePercentage}%`, `${item.labsAttended}/${item.labsAssigned}`]) }],
+                freshness: new Date().toISOString()
+            };
         }
         if (/faculty.*(?:workload|load|performance)|workload.*faculty/i.test(text)) {
             const result = await api.get('/api/management-ai/faculty-workload');
             return { content: 'Faculty workload — current institution', blocks: [{ type: 'table', title: 'Faculty workload', columns: ['Faculty', 'Weekly slots', 'Labs (30 days)', 'Attendance'], rows: result.data.map(item => [item.username, item.weeklySlots, item.labsLast30Days, `${item.attendancePercentage}%`]) }], freshness: new Date().toISOString() };
+        }
+        if (/global analytics|institution (?:overview|summary|analytics)|overall (?:analytics|summary|report)|how many (?:students|faculty|courses)/i.test(text)) {
+            const result = await api.get('/api/management-ai/overview');
+            const data = result.data.summary;
+            return {
+                content: 'Verified institution overview from the current college records.',
+                blocks: [{ type: 'kpis', items: [
+                    { label: 'Students', value: data.totalStudents, tone: 'primary' },
+                    { label: 'Faculty', value: data.totalFaculty, tone: 'primary' },
+                    { label: 'Courses', value: data.totalCourses, tone: 'primary' },
+                    { label: 'Scheduled today', value: data.scheduledToday, tone: 'success' },
+                    { label: 'Live labs', value: data.liveLabs, tone: data.liveLabs ? 'success' : 'neutral' },
+                    { label: 'Attendance', value: `${data.attendance.percentage}%`, tone: data.attendance.percentage < 75 ? 'warning' : 'success' }
+                ] }],
+                freshness: result.data.generatedAt
+            };
         }
         return null;
     };

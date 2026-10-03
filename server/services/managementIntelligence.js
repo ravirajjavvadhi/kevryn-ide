@@ -4,6 +4,7 @@ const Timetable = require('../models/Timetable');
 const Course = require('../models/Course');
 const overviewCache = new Map();
 const OVERVIEW_TTL_MS = 30 * 1000;
+const INSTITUTION_TIME_ZONE = process.env.INSTITUTION_TIME_ZONE || 'Asia/Kolkata';
 const cacheKey = collegeId => String(collegeId || 'global');
 const invalidateInstitutionOverview = collegeId => overviewCache.delete(cacheKey(collegeId));
 
@@ -14,6 +15,10 @@ const startOfToday = () => {
     end.setDate(end.getDate() + 1);
     return { start, end };
 };
+
+const institutionWeekday = () => new Intl.DateTimeFormat('en-US', {
+    weekday: 'long', timeZone: INSTITUTION_TIME_ZONE
+}).format(new Date());
 
 const attendanceFor = session => {
     const attendees = new Set((session.activeStudents || []).map(item => item.username).filter(Boolean));
@@ -39,10 +44,11 @@ async function getInstitutionSnapshot(collegeId, { studentQuery } = {}) {
         $or: [{ startTime: { $gte: start, $lt: end } }, { isActive: true }]
     }).populate('facultyId', 'username').populate('courseId', 'name code').lean();
 
-    const sessions = todaySessions.map(session => {
+    const sessionRecords = todaySessions.map(session => {
         const attendance = attendanceFor(session);
         return {
             id: String(session._id),
+            timetableId: session.timetableId ? String(session.timetableId) : null,
             name: session.sessionName,
             subject: session.courseId?.name || session.subject || 'General Lab',
             courseCode: session.courseId?.code || '',
@@ -54,14 +60,38 @@ async function getInstitutionSnapshot(collegeId, { studentQuery } = {}) {
             attendance
         };
     });
-    const totalExpected = sessions.reduce((sum, item) => sum + item.attendance.expected, 0);
-    const totalAttended = sessions.reduce((sum, item) => sum + item.attendance.attended, 0);
-    const [totalStudents, totalFaculty, totalCourses, scheduledToday] = await Promise.all([
+    const [totalStudents, totalFaculty, totalCourses, todaysTimetable] = await Promise.all([
         User.countDocuments({ ...scope, role: 'student', isActiveStudent: { $ne: false } }),
         User.countDocuments({ ...scope, role: 'faculty' }),
         Course.countDocuments(scope),
-        Timetable.countDocuments({ ...scope, dayOfWeek: new Intl.DateTimeFormat('en-US', { weekday: 'long' }).format(new Date()) })
+        Timetable.find({ ...scope, dayOfWeek: institutionWeekday() }).populate('facultyId', 'username').lean()
     ]);
+
+    const sessionsByTimetable = new Map(sessionRecords.filter(item => item.timetableId).map(item => [item.timetableId, item]));
+    const scheduledRecords = todaysTimetable.map(item => {
+        const startedSession = sessionsByTimetable.get(String(item._id));
+        if (startedSession) return { ...startedSession, scheduled: true };
+        return {
+            id: `timetable:${item._id}`,
+            timetableId: String(item._id),
+            name: `${item.subjectName} (${item.department}-${item.year}-${item.section})`,
+            subject: item.subjectName || 'General Lab',
+            courseCode: item.subjectCode || '',
+            faculty: item.facultyId?.username || 'Unassigned',
+            startTime: item.startTime || null,
+            endTime: item.endTime || null,
+            durationMinutes: null,
+            status: 'scheduled',
+            attendance: { attended: 0, expected: 0 },
+            scheduled: true
+        };
+    });
+    // Retain manually-created sessions too, but do not duplicate timetable
+    // sessions that were already represented by their scheduled slot.
+    const todayLabs = [...scheduledRecords, ...sessionRecords.filter(item => !item.timetableId)];
+    const startedLabs = sessionRecords.length;
+    const totalExpected = sessionRecords.reduce((sum, item) => sum + item.attendance.expected, 0);
+    const totalAttended = sessionRecords.reduce((sum, item) => sum + item.attendance.attended, 0);
 
     let student = null;
     if (studentQuery && studentQuery.trim()) {
@@ -92,13 +122,15 @@ async function getInstitutionSnapshot(collegeId, { studentQuery } = {}) {
     const snapshot = {
         generatedAt: new Date().toISOString(),
         summary: {
-            totalStudents, totalFaculty, totalCourses, scheduledToday,
-            labsToday: sessions.length,
-            completedLabs: sessions.filter(item => item.status === 'completed').length,
-            liveLabs: sessions.filter(item => item.status === 'live').length,
+            totalStudents, totalFaculty, totalCourses,
+            scheduledToday: todaysTimetable.length,
+            labsToday: todayLabs.length,
+            startedLabs,
+            completedLabs: todayLabs.filter(item => item.status === 'completed').length,
+            liveLabs: todayLabs.filter(item => item.status === 'live').length,
             attendance: { attended: totalAttended, expected: totalExpected, percentage: totalExpected ? Math.round((totalAttended / totalExpected) * 100) : 0 }
         },
-        todayLabs: sessions,
+        todayLabs,
         student
     };
     if (!studentQuery) overviewCache.set(key, { value: snapshot, expiresAt: Date.now() + OVERVIEW_TTL_MS });

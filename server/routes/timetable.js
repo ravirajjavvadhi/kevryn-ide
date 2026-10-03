@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const mongoose = require('mongoose');
 
 const Timetable = require('../models/Timetable');
+const { invalidateInstitutionOverview } = require('../services/managementIntelligence');
 const CollegeStructure = require('../models/CollegeStructure');
 const User = require('../User');
 const LabSession = require('../LabSessionModel');
@@ -316,7 +317,8 @@ router.post('/start-lab/:timetableId', authenticate, async (req, res) => {
     try {
         if (req.user.role !== 'faculty') return res.status(403).json({ error: "Faculty only" });
 
-        const timetable = await Timetable.findById(req.params.timetableId);
+        const timetableScope = req.user.collegeId ? { collegeId: req.user.collegeId } : {};
+        const timetable = await Timetable.findOne({ _id: req.params.timetableId, ...timetableScope });
         if (!timetable) return res.status(404).json({ error: "Timetable entry not found" });
 
         // Ensure this faculty owns this timetable entry
@@ -326,6 +328,7 @@ router.post('/start-lab/:timetableId', authenticate, async (req, res) => {
 
         // Gather all active students in this Dept/Year/Section
         const students = await User.find({
+            ...(req.user.collegeId ? { collegeId: req.user.collegeId } : {}),
             department: timetable.department,
             year: timetable.year,
             section: timetable.section,
@@ -352,6 +355,7 @@ router.post('/start-lab/:timetableId', authenticate, async (req, res) => {
         const session = new LabSession({
             facultyId: req.user.userId,
             collegeId: timetable.collegeId || undefined,
+            timetableId: timetable._id,
             sessionName: sessionName,
             subject: timetable.subjectName,
             semester: `Year ${timetable.year}`,
@@ -364,6 +368,7 @@ router.post('/start-lab/:timetableId', authenticate, async (req, res) => {
         });
 
         await session.save();
+        invalidateInstitutionOverview(timetable.collegeId || req.user.collegeId);
         
         // Notify all clients
         const io = req.app.get('io');

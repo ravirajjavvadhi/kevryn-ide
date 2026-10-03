@@ -3,6 +3,10 @@ const mongoose = require('mongoose');
 const LabSessionSchema = new mongoose.Schema({
     collegeId: { type: mongoose.Schema.Types.ObjectId, ref: 'College' },
     facultyId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    // Links timetable-launched sessions to the exact scheduled slot.  This
+    // lets reporting distinguish a planned lab from one that is live or has
+    // completed without guessing from its display name.
+    timetableId: { type: mongoose.Schema.Types.ObjectId, ref: 'Timetable' },
     courseId: { type: mongoose.Schema.Types.ObjectId, ref: 'Course' },
     batchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Batch' },
     sessionName: { type: String, required: true },
@@ -51,5 +55,6 @@ const LabSessionSchema = new mongoose.Schema({
 LabSessionSchema.index({ isActive: 1, facultyId: 1 }); // Faculty active session lookup
 LabSessionSchema.index({ isActive: 1, allowedStudents: 1 }); // Student session check
 LabSessionSchema.index({ startTime: -1 }); // Sort by recent
+LabSessionSchema.index({ collegeId: 1, timetableId: 1, startTime: -1 });
 
 module.exports = mongoose.model('LabSession', LabSessionSchema);
